@@ -1843,6 +1843,13 @@ window.ParkoreenLocalSave = (() => {
         return `parkoreen_local_save_v1:${encodeURIComponent(mapId)}:${encodeURIComponent(userId)}:${namespace}`;
     };
 
+    const getProfileKey = (namespace) => {
+        if (typeof namespace !== 'string' || !/^[a-z0-9_-]{1,32}$/i.test(namespace)) return null;
+        const userId = getUserId();
+        if (!userId) return null;
+        return `parkoreen_local_profile_save_v1:${encodeURIComponent(userId)}:${namespace}`;
+    };
+
     const read = (world, namespace) => {
         const key = getKey(world, namespace);
         if (!key) return null;
@@ -1880,7 +1887,44 @@ window.ParkoreenLocalSave = (() => {
         }
     };
 
-    return { getKey, read, write, remove };
+    const readProfile = (namespace) => {
+        const key = getProfileKey(namespace);
+        if (!key) return null;
+        try {
+            const serialized = localStorage.getItem(key) || 'null';
+            if (serialized.length > 1048576) return null;
+            const value = JSON.parse(serialized);
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const writeProfile = (namespace, value) => {
+        const key = getProfileKey(namespace);
+        if (!key || !value || typeof value !== 'object' || Array.isArray(value)) return false;
+        try {
+            const serialized = JSON.stringify(value);
+            if (serialized.length > 1048576) return false;
+            localStorage.setItem(key, serialized);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    const removeProfile = (namespace) => {
+        const key = getProfileKey(namespace);
+        if (!key) return false;
+        try {
+            localStorage.removeItem(key);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    return { getKey, read, write, remove, getProfileKey, readProfile, writeProfile, removeProfile };
 })();
 window.MapManager = new MapManager(window.Auth);
 window.MultiplayerManager = new MultiplayerManager(window.Auth);

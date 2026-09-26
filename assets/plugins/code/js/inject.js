@@ -233,11 +233,13 @@
         variables: new Map(),
         playerVariables: new Map(),
         persistedMechanicsKey: null,
+        persistedCampaignKey: null,
         lists: new Map(),
         playerLists: new Map(),
         objectHealth: new Map(),
         pendingChoiceRoutes: new Map(),
         persistedMechanics: { map: Object.create(null), player: Object.create(null), objects: Object.create(null), lists: Object.create(null), playerLists: Object.create(null) },
+        persistedCampaign: { values: Object.create(null) },
         objectMotions: new Map(),
         tilemapCellOriginals: new Map(),
         tilemapCellOverrides: new Map(),
@@ -448,12 +450,19 @@
         if (!Number.isFinite(state.lastErrorToastAt)) state.lastErrorToastAt = 0;
         if (typeof state.sharedMechanicsDirty !== 'boolean') state.sharedMechanicsDirty = false;
         ensurePersistentMechanicsLoaded(world, state);
+        ensurePersistentCampaignLoaded(state);
         for (const variable of getCodeData(world).variables) {
             if (variable.enabled === false || variable.variableType === 'list' || variable.scope === 'player') continue;
             if (!state.variables.has(variable.id)) {
-                const savedValue = variable.persist === true && variable.variableType !== 'list'
-                    ? state.persistedMechanics.map[variable.id]
-                    : undefined;
+                const campaignValue = variable.scope === 'campaign' && !getMultiplayerManager()?.getRoomCode?.() &&
+                    window.engine?.state !== 'testing'
+                    ? getMechanicsCampaignKey(variable) && Object.hasOwn(state.persistedCampaign.values, variable.campaignKey)
+                        ? state.persistedCampaign.values[variable.campaignKey] : null
+                    : null;
+                const savedValue = variable.scope === 'campaign'
+                    ? campaignValue?.kind === 'scalar' && campaignValue.valueType === variable.valueType
+                        ? campaignValue.value : undefined
+                    : variable.persist === true ? state.persistedMechanics.map[variable.id] : undefined;
                 const initialValue = isValidVariableValue(variable, savedValue)
                     ? normalizeVariableValue(variable, savedValue)
                     : normalizeVariableValue(variable, variable.defaultValue);
@@ -464,9 +473,16 @@
             if (variable.enabled === false || variable.variableType !== 'list' || variable.scope === 'player' || state.lists.has(variable.id)) continue;
             const isHostedRoom = Boolean(getMultiplayerManager()?.getRoomCode?.());
             const isTestRun = window.engine?.state === 'testing';
-            const savedList = variable.persist === true && !isHostedRoom && !isTestRun
-                ? state.persistedMechanics.lists[variable.id]
-                : undefined;
+            const campaignValue = variable.scope === 'campaign' && !isHostedRoom && !isTestRun
+                ? getMechanicsCampaignKey(variable) && Object.hasOwn(state.persistedCampaign.values, variable.campaignKey)
+                    ? state.persistedCampaign.values[variable.campaignKey] : null
+                : null;
+            const savedList = variable.scope === 'campaign'
+                ? campaignValue?.kind === 'list' && isValidMechanicsList(variable, campaignValue.items)
+                    ? campaignValue.items : undefined
+                : variable.persist === true && !isHostedRoom && !isTestRun
+                    ? state.persistedMechanics.lists[variable.id]
+                    : undefined;
             const initialList = isValidMechanicsList(variable, savedList)
                 ? normalizeMechanicsList(savedList)
                 : getMechanicsListDefaults(world, variable, state);
@@ -595,6 +611,61 @@
         worldState.persistedMechanicsKey = key;
         worldState.persistedMechanics = { map, player, objects, lists, playerLists };
         return worldState.persistedMechanics;
+    };
+
+    const ensurePersistentCampaignLoaded = (worldState) => {
+        const saveStore = window.ParkoreenLocalSave;
+        const key = saveStore?.getProfileKey?.('campaign') || null;
+        if (worldState.persistedCampaignKey === key) {
+            if (!worldState.persistedCampaign || typeof worldState.persistedCampaign !== 'object') {
+                worldState.persistedCampaign = { values: Object.create(null) };
+            }
+            if (!worldState.persistedCampaign.values || typeof worldState.persistedCampaign.values !== 'object' ||
+                Array.isArray(worldState.persistedCampaign.values)) {
+                worldState.persistedCampaign.values = Object.create(null);
+            }
+            return worldState.persistedCampaign;
+        }
+        const saved = key ? saveStore?.readProfile?.('campaign') : null;
+        const values = saved?.values && typeof saved.values === 'object' && !Array.isArray(saved.values)
+            ? saved.values : Object.create(null);
+        worldState.persistedCampaignKey = key;
+        worldState.persistedCampaign = { values };
+        return worldState.persistedCampaign;
+    };
+
+    const getMechanicsCampaignKey = variable =>
+        typeof variable?.campaignKey === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(variable.campaignKey)
+            ? variable.campaignKey : '';
+
+    const persistMechanicsCampaignValue = (world, variable, value) => {
+        if (variable?.scope !== 'campaign' || window.engine?.state === 'testing' ||
+            getMultiplayerManager()?.getRoomCode?.()) return false;
+        const campaignKey = getMechanicsCampaignKey(variable);
+        if (!campaignKey || !world) return false;
+        const worldState = getWorldState(world);
+        if (!worldState) return false;
+        const record = ensurePersistentCampaignLoaded(worldState);
+        const values = Object.assign(Object.create(null), record.values);
+        const nextValue = variable.variableType === 'list'
+            ? isValidMechanicsList(variable, value) ? { kind: 'list', items: normalizeMechanicsList(value) } : null
+            : isValidVariableValue(variable, value)
+                ? { kind: 'scalar', valueType: variable.valueType, value: normalizeVariableValue(variable, value) }
+                : null;
+        if (!nextValue) return false;
+        const previous = values[campaignKey];
+        if (JSON.stringify(previous) === JSON.stringify(nextValue)) return false;
+        values[campaignKey] = nextValue;
+        while (Object.keys(values).length > 512) {
+            const oldestKey = Object.keys(values).find(key => key !== campaignKey);
+            if (!oldestKey) break;
+            delete values[oldestKey];
+        }
+        const nextRecord = { values };
+        if (!window.ParkoreenLocalSave?.writeProfile?.('campaign', nextRecord)) return false;
+        worldState.persistedCampaign = nextRecord;
+        worldState.persistedCampaignKey = window.ParkoreenLocalSave?.getProfileKey?.('campaign') || null;
+        return true;
     };
 
     const SHARED_MECHANICS_ACTIONS = new Set([
@@ -1236,6 +1307,7 @@
     };
 
     const persistMechanicsVariableValue = (world, variable, value, player = null, context = {}) => {
+        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value);
         if (variable?.persist !== true || variable.variableType === 'list' || !isValidVariableValue(variable, value)) return false;
         if (window.engine?.state === 'testing') return false;
         if (variable.scope === 'player' && !isLocalPlayerTarget(player, context)) return false;
@@ -1272,6 +1344,7 @@
     };
 
     const persistMechanicsListValue = (world, variable, value) => {
+        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value);
         if (variable?.variableType !== 'list' || variable.persist !== true || !isValidMechanicsList(variable, value) ||
             window.engine?.state === 'testing' || getMultiplayerManager()?.getRoomCode?.()) return false;
         const worldState = getWorldState(world);

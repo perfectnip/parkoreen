@@ -357,7 +357,8 @@ const CODE_DEFAULT_VARIABLE = {
     type: CODE_BLOCK_TYPES.VARIABLE,
     enabled: true,
     variableType: CODE_VARIABLE_TYPES.VARIABLE, // 'variable' or 'list'
-    scope: 'map', // Map-shared state or a separate value/List for each player.
+    scope: 'map', // Map, cross-scene campaign, or separate per-player state.
+    campaignKey: '', // Stable key reused by campaign variables across maps.
     persist: false, // Opt into a browser-local save slot for this variable.
     valueType: 'string', // string, integer, float, boolean
     defaultValue: '',

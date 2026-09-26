@@ -235,7 +235,7 @@
     const renderVariableOptions = (selectedId, valueType = null) => {
         const variables = getVariables(valueType);
         return `<option value="">${variables.length ? 'Select a variable…' : 'No compatible variables'}</option>${variables.map(variable =>
-            `<option value="${escapeHtml(variable.id)}" ${variable.id === selectedId ? 'selected' : ''}>${variable.scope === 'player' ? 'Player' : 'Map'} · ${escapeHtml(variable.name)}</option>`
+            `<option value="${escapeHtml(variable.id)}" ${variable.id === selectedId ? 'selected' : ''}>${variable.scope === 'player' ? 'Player' : variable.scope === 'campaign' ? 'Campaign' : 'Map'} · ${escapeHtml(variable.name)}</option>`
         ).join('')}`;
     };
 
@@ -249,7 +249,7 @@
     const renderListVariableOptions = (selectedId) => {
         const variables = getListVariables();
         return `<option value="">${variables.length ? 'Select a list…' : 'No enabled list variables'}</option>${variables.map(variable =>
-            `<option value="${escapeHtml(variable.id)}" ${variable.id === selectedId ? 'selected' : ''}>${variable.scope === 'player' ? 'Player' : 'Map'} · ${escapeHtml(variable.name)}</option>`
+            `<option value="${escapeHtml(variable.id)}" ${variable.id === selectedId ? 'selected' : ''}>${variable.scope === 'player' ? 'Player' : variable.scope === 'campaign' ? 'Campaign' : 'Map'} · ${escapeHtml(variable.name)}</option>`
         ).join('')}`;
     };
 
@@ -1518,8 +1518,8 @@
                         : type === 'event'
                             ? `${Array.isArray(block.actions) ? block.actions.length : 0} actions`
                             : block.variableType === CODE_VARIABLE_TYPES.LIST
-                                ? `${block.scope === 'player' ? 'Player' : 'Map'} · List (${Math.min(CODE_MAX_LIST_ITEMS, Array.isArray(block.listItems) ? block.listItems.length : 0)} initial items)`
-                                : `${block.scope === 'player' ? 'Player' : 'Map'} · ${CODE_VALUE_TYPES.find(item => item.id === block.valueType)?.label || block.valueType || 'value'}`
+                                ? `${block.scope === 'player' ? 'Player' : block.scope === 'campaign' ? 'Campaign' : 'Map'} · List (${Math.min(CODE_MAX_LIST_ITEMS, Array.isArray(block.listItems) ? block.listItems.length : 0)} initial items)`
+                                : `${block.scope === 'player' ? 'Player' : block.scope === 'campaign' ? 'Campaign' : 'Map'} · ${CODE_VALUE_TYPES.find(item => item.id === block.valueType)?.label || block.valueType || 'value'}`
                 };
                 allNodes.push(node);
                 if (block.id) nodesByType[type].set(block.id, node);
@@ -1770,6 +1770,16 @@
 
     const getVariableError = (variable) => {
         if (!variable || typeof variable !== 'object') return 'Invalid variable record';
+        if (!['map', 'campaign', 'player'].includes(variable.scope)) return 'Choose a supported variable scope';
+        if (variable.scope === 'campaign') {
+            if (typeof variable.campaignKey !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(variable.campaignKey)) {
+                return 'Campaign keys must use 1–64 letters, numbers, underscores, or hyphens';
+            }
+            if (getVariables().some(candidate => candidate.id !== variable.id && candidate.scope === 'campaign' &&
+                candidate.enabled !== false && candidate.campaignKey === variable.campaignKey)) {
+                return 'Campaign keys must be unique within this map';
+            }
+        }
         if (variable.variableType === CODE_VARIABLE_TYPES.LIST) {
             const items = Array.isArray(variable.listItems) ? variable.listItems : [];
             const listLength = variable.listLength === undefined ? items.length : variable.listLength;
@@ -2750,10 +2760,10 @@
             const valueType = CODE_VALUE_TYPES.find(v => v.id === block.valueType)?.label || block.valueType;
             if (block.variableType === CODE_VARIABLE_TYPES.LIST) {
                 const itemCount = Math.min(CODE_MAX_LIST_ITEMS, Number.isInteger(block.listLength) ? block.listLength : 0);
-                typeDescription = error ? `⚠ ${error}` : `${block.scope === 'player' ? 'Player' : 'Map'} List (${itemCount} initial items)${block.persist === true ? ' · saves locally' : ''}`;
+                typeDescription = error ? `⚠ ${error}` : `${block.scope === 'player' ? 'Player' : block.scope === 'campaign' ? 'Campaign' : 'Map'} List (${itemCount} initial items)${block.persist === true || block.scope === 'campaign' ? ' · saves locally' : ''}`;
             } else {
-                const scopeLabel = block.scope === 'player' ? 'Player' : 'Map';
-                typeDescription = error ? `⚠ ${error}` : `${scopeLabel} · ${valueType}: ${block.defaultValue !== undefined ? block.defaultValue : 'undefined'}${block.persist === true ? ' · saves locally' : ''}`;
+                const scopeLabel = block.scope === 'player' ? 'Player' : block.scope === 'campaign' ? 'Campaign' : 'Map';
+                typeDescription = error ? `⚠ ${error}` : `${scopeLabel} · ${valueType}: ${block.defaultValue !== undefined ? block.defaultValue : 'undefined'}${block.persist === true || block.scope === 'campaign' ? ' · saves locally' : ''}`;
             }
         } else {
             const actionCount = Array.isArray(block.actions) ? block.actions.length : 0;
@@ -5623,7 +5633,7 @@
     const showVariableEditor = (variable) => {
         currentView = 'editVariable';
         editingBlock = variable;
-        if (!['map', 'player'].includes(variable.scope)) variable.scope = 'map';
+        if (!['map', 'campaign', 'player'].includes(variable.scope)) variable.scope = 'map';
 
         // Update header
         const backBtn = document.getElementById('code-editor-back');
@@ -5696,7 +5706,7 @@
                 content.querySelectorAll('[data-var-type]').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 variable.variableType = btn.dataset.varType;
-                if (!['map', 'player'].includes(variable.scope)) variable.scope = 'map';
+                if (!['map', 'campaign', 'player'].includes(variable.scope)) variable.scope = 'map';
                 
                 // Re-render config section
                 const configSection = document.getElementById('variable-config-section');
@@ -5751,11 +5761,13 @@
             <div class="trigger-form-group">
                 <label class="trigger-form-label">Scope</label>
                 <select class="trigger-form-input" id="variable-scope">
-                    <option value="map" ${variable.scope !== 'player' ? 'selected' : ''}>Map (shared)</option>
+                    <option value="map" ${variable.scope === 'map' ? 'selected' : ''}>Map (shared)</option>
+                    <option value="campaign" ${variable.scope === 'campaign' ? 'selected' : ''}>Campaign (shared across maps)</option>
                     <option value="player" ${variable.scope === 'player' ? 'selected' : ''}>Player (separate value per player)</option>
                 </select>
-                <small class="trigger-description">Player variables are stored separately for each player and can drive that player's conditions and event branches.</small>
+                <small class="trigger-description">Map resets when a map loads. Campaign is shared across maps and saved in this browser for this account (or device if signed out). Player stores a separate value per player.</small>
             </div>
+            ${variable.scope === 'campaign' ? `<div class="trigger-form-group"><label class="trigger-form-label" for="variable-campaign-key">Campaign Key</label><input class="trigger-form-input" id="variable-campaign-key" value="${escapeHtml(variable.campaignKey || '')}" maxlength="64" spellcheck="false" placeholder="quest_gate_open"><small class="trigger-description">Use the same key in different maps to share progress. Use letters, numbers, underscores, or hyphens. Campaign values save automatically for solo play.</small></div>` : ''}
             <div class="trigger-form-group">
                 <label class="trigger-form-label">Value Type</label>
                 <select class="trigger-form-input" id="variable-value-type">
@@ -5766,13 +5778,13 @@
                 <label class="trigger-form-label">Default Value</label>
                 ${defaultValueInput}
             </div>
-            <div class="trigger-form-group">
+            ${variable.scope === 'campaign' ? '' : `<div class="trigger-form-group">
                 <label class="trigger-form-label" style="display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="variable-persist" ${variable.persist === true ? 'checked' : ''}>
                     Save this variable between visits
                 </label>
-                <small class="trigger-description">Saved in this browser under your account, or under this browser if signed out. It does not sync to other devices.</small>
-            </div>
+                <small class="trigger-description">Saved locally for this map or player. It does not sync to other devices.</small>
+            </div>`}
         `;
     };
 
@@ -5793,11 +5805,13 @@
             <div class="trigger-form-group">
                 <label class="trigger-form-label">Scope</label>
                 <select class="trigger-form-input" id="variable-scope">
-                    <option value="map" ${variable.scope !== 'player' ? 'selected' : ''}>Map (shared)</option>
+                    <option value="map" ${variable.scope === 'map' ? 'selected' : ''}>Map (shared)</option>
+                    <option value="campaign" ${variable.scope === 'campaign' ? 'selected' : ''}>Campaign (shared across maps)</option>
                     <option value="player" ${variable.scope === 'player' ? 'selected' : ''}>Player (separate List per player)</option>
                 </select>
-                <small class="trigger-description">Player Lists keep separate values for each player, such as inventory items. Hosted values sync from the host to every client.</small>
+                <small class="trigger-description">Campaign Lists save locally across maps for solo play. Player Lists keep separate values per player. Hosted values sync from the host to every client.</small>
             </div>
+            ${variable.scope === 'campaign' ? `<div class="trigger-form-group"><label class="trigger-form-label" for="variable-campaign-key">Campaign Key</label><input class="trigger-form-input" id="variable-campaign-key" value="${escapeHtml(variable.campaignKey || '')}" maxlength="64" spellcheck="false" placeholder="collected_relics"><small class="trigger-description">Use the same key in different maps to share the saved List. Keys allow letters, numbers, underscores, or hyphens.</small></div>` : ''}
             <div class="trigger-form-group">
                 <label class="trigger-form-label">List Length</label>
                 <input type="number" class="trigger-form-input" id="list-length" value="${escapeHtml(String(configuredLength))}" min="0" max="${CODE_MAX_LIST_ITEMS}" step="1">
@@ -5806,13 +5820,13 @@
             <div id="list-items-container">
                 ${itemsHtml}
             </div>
-            <div class="trigger-form-group">
+            ${variable.scope === 'campaign' ? '' : `<div class="trigger-form-group">
                 <label class="trigger-form-label" style="display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="variable-persist" ${variable.persist === true ? 'checked' : ''}>
                     Save this list between visits
                 </label>
-                <small class="trigger-description">Stored locally for this map and browser account. Test runs and hosted rooms neither load nor write local list saves.</small>
-            </div>
+                <small class="trigger-description">Stored locally for this map and browser account. Test runs and hosted rooms neither load nor write local saves.</small>
+            </div>`}
         `;
     };
 
@@ -5864,10 +5878,22 @@
         const scopeSelect = document.getElementById('variable-scope');
         if (scopeSelect) {
             scopeSelect.addEventListener('change', (event) => {
-                variable.scope = event.target.value === 'player' ? 'player' : 'map';
+                variable.scope = ['map', 'campaign', 'player'].includes(event.target.value) ? event.target.value : 'map';
+                const configSection = document.getElementById('variable-config-section');
+                if (configSection) {
+                    configSection.innerHTML = variable.variableType === CODE_VARIABLE_TYPES.LIST
+                        ? renderListConfig(variable, otherVariables) : renderVariableConfig(variable);
+                    attachVariableConfigListeners(variable, otherVariables);
+                }
                 markUnsaved();
             });
         }
+
+        const campaignKeyInput = document.getElementById('variable-campaign-key');
+        if (campaignKeyInput) campaignKeyInput.addEventListener('input', (event) => {
+            variable.campaignKey = event.target.value.trim();
+            markUnsaved();
+        });
 
         const persistInput = document.getElementById('variable-persist');
         if (persistInput) {
@@ -6031,7 +6057,7 @@
                         candidate.id !== editingBlock.id && candidate.scope !== 'player' && candidate.variableType !== CODE_VARIABLE_TYPES.LIST &&
                         ['string', 'integer', 'float', 'boolean'].includes(candidate.valueType));
                     if (!reference) {
-                        showToast('List items can only reference enabled map-scoped single-value variables', 'error');
+                        showToast('List items can only reference enabled shared single-value variables', 'error');
                         return;
                     }
                 } else if (['string', 'integer', 'float', 'boolean'].includes(item?.valueType) &&
@@ -6043,7 +6069,11 @@
         }
 
         editingBlock.name = name;
-        editingBlock.scope = document.getElementById('variable-scope')?.value === 'player' ? 'player' : 'map';
+        editingBlock.scope = ['map', 'campaign', 'player'].includes(document.getElementById('variable-scope')?.value)
+            ? document.getElementById('variable-scope').value : 'map';
+        if (editingBlock.scope === 'campaign') {
+            editingBlock.campaignKey = document.getElementById('variable-campaign-key')?.value.trim() || '';
+        }
         editingBlock.persist = editingBlock.persist === true;
         if (editingBlock.variableType === CODE_VARIABLE_TYPES.LIST && !Number.isInteger(editingBlock.listLength)) {
             editingBlock.listLength = (Array.isArray(editingBlock.listItems) ? editingBlock.listItems : []).length;

@@ -85,7 +85,7 @@
 
     <h2>Variables and Lists</h2>
     <ul>
-      <li><strong>Map scope</strong> shares one value or List in that map session. <strong>Player scope</strong> keeps a separate value or List for each player.</li>
+      <li><strong>Map scope</strong> shares one value or List in that map session. <strong>Campaign scope</strong> shares a value or List across maps that use the same Campaign Key and saves automatically for solo play in this browser account (or on this device while signed out). Campaign saves do not sync to other devices and are not read or written in Test runs or hosted rooms. <strong>Player scope</strong> keeps a separate value or List for each player.</li>
       <li>Scalar values support text, integer, float, and boolean types. Lists hold bounded, typed items and support add, remove, and contains branches.</li>
       <li>Some values can opt into local browser saves for solo play. These saves do not sync between devices; test runs and hosted rooms remain temporary for these options.</li>
       <li>Player scope separates state but does not make it secret in a hosted room.</li>
