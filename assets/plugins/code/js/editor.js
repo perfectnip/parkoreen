@@ -1686,7 +1686,7 @@
                     if (!operators.includes(operator)) return 'Choose a condition supported by this variable type';
                     if (!['truthy', 'falsy'].includes(operator) && ['integer', 'float'].includes(variable.valueType)) {
                         if (!isFiniteActionNumber(config.value)) return 'Enter a valid number for the variable condition';
-                        if (variable.valueType === 'integer' && !Number.isInteger(Number(config.value))) return 'Enter a whole number for the variable condition';
+                        if (variable.valueType === 'integer' && !Number.isSafeInteger(Number(config.value))) return 'Enter a safely representable whole number for the variable condition';
                     }
                     if (!['truthy', 'falsy'].includes(operator) && variable.valueType === 'boolean' && ![true, false, 'true', 'false'].includes(config.value)) {
                         return 'Choose true or false for the boolean condition';
@@ -1763,7 +1763,7 @@
 
     const isValidListActionItem = (valueType, value) => {
         if (valueType === 'string') return typeof value === 'string' && value.length <= CODE_MAX_VARIABLE_STRING_LENGTH;
-        if (valueType === 'integer') return isFiniteActionNumber(value) && Number.isInteger(Number(value));
+        if (valueType === 'integer') return isFiniteActionNumber(value) && Number.isSafeInteger(Number(value));
         if (valueType === 'float') return isFiniteActionNumber(value);
         if (valueType === 'boolean') return isBooleanActionValue(value);
         return false;
@@ -1852,16 +1852,16 @@
             }
             if (action.type === 'addVariable' && !['integer', 'float'].includes(variable?.valueType)) return 'Add requires an integer or float variable';
             if (action.type === 'addVariable' && !isFiniteActionNumber(action.amount)) return 'Enter a finite amount to add';
-            if (action.type === 'addVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.amount) && !Number.isInteger(Number(action.amount))) return 'Enter a whole number to add';
+            if (action.type === 'addVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.amount) && !Number.isSafeInteger(Number(action.amount))) return 'Enter a safely representable whole number to add';
             if (action.type === 'calculateVariable' && !['integer', 'float'].includes(variable?.valueType)) return 'Calculation requires an integer or float variable';
             if (action.type === 'calculateVariable' && !['add', 'subtract', 'multiply', 'divide'].includes(action.operation)) return 'Choose an arithmetic operation';
             if (action.type === 'calculateVariable' && !isFiniteActionNumber(action.operand)) return 'Enter a finite number for the calculation';
-            if (action.type === 'calculateVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.operand) && !Number.isInteger(Number(action.operand))) return 'Integer variables require a whole-number operand';
+            if (action.type === 'calculateVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.operand) && !Number.isSafeInteger(Number(action.operand))) return 'Integer variables require a safely representable whole-number operand';
             if (action.type === 'calculateVariable' && action.operation === 'divide' && Number(action.operand) === 0) return 'A number variable cannot be divided by zero';
             if (action.type === 'toggleVariable' && variable?.valueType !== 'boolean') return 'Toggle requires a boolean variable';
             if (action.type === 'setVariable' && !['string', 'integer', 'float', 'boolean'].includes(variable?.valueType)) return 'Set requires a supported single-value variable';
             if (action.type === 'setVariable' && ['integer', 'float'].includes(variable?.valueType) && !isFiniteActionNumber(action.value)) return 'Enter a finite number for this variable';
-            if (action.type === 'setVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.value) && !Number.isInteger(Number(action.value))) return 'Enter a whole number for this variable';
+            if (action.type === 'setVariable' && variable?.valueType === 'integer' && isFiniteActionNumber(action.value) && !Number.isSafeInteger(Number(action.value))) return 'Enter a safely representable whole number for this variable';
             if (action.type === 'setVariable' && variable?.valueType === 'boolean' && !isBooleanActionValue(action.value)) return 'Choose true or false for this variable';
             if (action.type === 'setVariable' && variable?.valueType === 'string' && (typeof action.value !== 'string' || action.value.length > CODE_MAX_VARIABLE_STRING_LENGTH)) return `Text values can contain at most ${CODE_MAX_VARIABLE_STRING_LENGTH} characters`;
             if (action.type === 'branchVariable') {
@@ -1873,7 +1873,7 @@
                 if (!operators.includes(action.operator || 'equals')) return 'Choose a condition supported by this variable type';
                     if (!['truthy', 'falsy'].includes(action.operator) && ['integer', 'float'].includes(variable.valueType)) {
                         if (!isFiniteActionNumber(action.value)) return 'Enter a valid number for the variable condition';
-                        if (variable.valueType === 'integer' && !Number.isInteger(Number(action.value))) return 'Enter a whole number for the variable condition';
+                        if (variable.valueType === 'integer' && !Number.isSafeInteger(Number(action.value))) return 'Enter a safely representable whole number for the variable condition';
                     }
                     if (!['truthy', 'falsy'].includes(action.operator) && variable.valueType === 'boolean' && !isBooleanActionValue(action.value)) return 'Choose true or false for the boolean condition';
                     if (!['truthy', 'falsy'].includes(action.operator) && variable.valueType === 'string' &&
@@ -1996,7 +1996,7 @@
                 if (!filterOperators.includes(action.filterOperator || 'equals')) return 'Choose a condition supported by the player variable';
                 if (!['truthy', 'falsy'].includes(action.filterOperator || 'equals')) {
                     if (['integer', 'float'].includes(playerCountVariable.valueType) && !isFiniteActionNumber(action.filterValue)) return 'Enter a valid player-variable number';
-                    if (playerCountVariable.valueType === 'integer' && !Number.isInteger(Number(action.filterValue))) return 'Enter a whole number for the player-variable condition';
+                    if (playerCountVariable.valueType === 'integer' && !Number.isSafeInteger(Number(action.filterValue))) return 'Enter a safely representable whole number for the player-variable condition';
                     if (playerCountVariable.valueType === 'boolean' && !isBooleanActionValue(action.filterValue)) return 'Choose true or false for the player-variable condition';
                     if (playerCountVariable.valueType === 'string' && (typeof action.filterValue !== 'string' || action.filterValue.length > CODE_MAX_VARIABLE_STRING_LENGTH)) return `Text conditions can contain at most ${CODE_MAX_VARIABLE_STRING_LENGTH} characters`;
                 }
@@ -5939,7 +5939,7 @@
             defaultValueInput.addEventListener('change', (e) => {
                 let value = e.target.value;
                 const parsedNumber = value.trim() === '' ? NaN : Number(value);
-                if (variable.valueType === 'integer') value = Number.isInteger(parsedNumber) ? parsedNumber : value;
+                if (variable.valueType === 'integer') value = Number.isSafeInteger(parsedNumber) ? parsedNumber : value;
                 else if (variable.valueType === 'float') value = Number.isFinite(parsedNumber) ? parsedNumber : value;
                 else if (variable.valueType === 'boolean') value = value === 'true';
                 variable.defaultValue = value;
@@ -6023,7 +6023,7 @@
                 let value = e.target.value;
                 const itemType = variable.listItems[index].valueType;
                 const parsedNumber = value.trim() === '' ? NaN : Number(value);
-                if (itemType === 'integer') value = Number.isInteger(parsedNumber) ? parsedNumber : value;
+                if (itemType === 'integer') value = Number.isSafeInteger(parsedNumber) ? parsedNumber : value;
                 else if (itemType === 'float') value = Number.isFinite(parsedNumber) ? parsedNumber : value;
                 else if (itemType === 'boolean') value = value === 'true';
                 

@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Mechanics integer variables and List items now accept only safely representable integers, preventing Add, defaults, conditions, and save/load from silently rounding large values.
 - Imported Set, Add, Calculate, Toggle, and Branch Variable actions now reject mismatched values, types, comparisons, and Player targets with rate-limited author diagnostics.
 - Malformed imported List actions now report invalid typed items and unsupported Player List targets instead of silently using the triggering player.
 - Add List Item now reports a rate-limited author diagnostic when the List has reached its item limit.

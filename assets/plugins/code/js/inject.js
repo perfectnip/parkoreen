@@ -1158,7 +1158,7 @@
     const isValidVariableValue = (variable, value) => {
         switch (variable?.valueType) {
             case 'integer':
-                return isFiniteMechanicsNumber(value) && Number.isInteger(Number(value));
+                return isFiniteMechanicsNumber(value) && Number.isSafeInteger(Number(value));
             case 'float':
                 return isFiniteMechanicsNumber(value);
             case 'boolean':
@@ -1195,7 +1195,7 @@
         switch (variable.valueType) {
             case 'integer': {
                 const parsed = Number(value);
-                return Number.isInteger(parsed) ? parsed : 0;
+                return Number.isSafeInteger(parsed) ? parsed : 0;
             }
             case 'float': {
                 const parsed = Number(value);
@@ -2228,7 +2228,7 @@
                     break;
                 }
                 const amount = Number(action.amount);
-                if (!isFiniteMechanicsNumber(action.amount) || (variable.valueType === 'integer' && !Number.isInteger(amount))) {
+                if (!isFiniteMechanicsNumber(action.amount) || (variable.valueType === 'integer' && !Number.isSafeInteger(amount))) {
                     reportMechanicsRuntimeError(world, event, actionSource,
                         'Add to Number Variable needs a finite amount matching the variable type.');
                     break;
@@ -2243,7 +2243,7 @@
                     const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
                     const current = Number(getVariableValue(world, variable, targetPlayer, targetContext)) || 0;
                     const nextValue = current + amount;
-                    if (Number.isFinite(nextValue) && (variable.valueType !== 'integer' || Number.isInteger(nextValue))) {
+                    if (Number.isFinite(nextValue) && (variable.valueType !== 'integer' || Number.isSafeInteger(nextValue))) {
                         setVariableValue(world, variable, nextValue, targetPlayer, targetContext);
                     } else {
                         reportMechanicsRuntimeError(world, event, actionSource,
@@ -2262,7 +2262,7 @@
                 }
                 if (!['add', 'subtract', 'multiply', 'divide'].includes(operation) ||
                     !isFiniteMechanicsNumber(action.operand) ||
-                    (variable.valueType === 'integer' && !Number.isInteger(operand))) {
+                    (variable.valueType === 'integer' && !Number.isSafeInteger(operand))) {
                     reportMechanicsRuntimeError(world, event, actionSource, 'Calculation needs a supported operation and a valid numeric operand.');
                     break;
                 }
@@ -3321,7 +3321,7 @@
         const normalizePythonListItem = (value, requestedType = null) => {
             const inferredType = typeof value === 'string' ? 'string'
                 : typeof value === 'boolean' ? 'boolean'
-                    : typeof value === 'number' ? (Number.isInteger(value) ? 'integer' : 'float')
+                    : typeof value === 'number' ? (Number.isSafeInteger(value) ? 'integer' : 'float')
                         : null;
             const valueType = requestedType === null || requestedType === undefined ? inferredType : requestedType;
             if (!['string', 'integer', 'float', 'boolean'].includes(valueType) ||
