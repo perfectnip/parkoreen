@@ -2421,6 +2421,9 @@
                     const triggerEventId = trigger?.config?.eventId || trigger?.config?.actionId;
                     if (triggerEventId) pending.push(triggerEventId);
                 }
+                // Direct scene transitions and restarts stop this Event's
+                // action loop, so links in later actions cannot be reached.
+                if (action?.type === 'transitionToMap' || action?.type === 'restartScene') break;
             }
         }
 

@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Mechanics reachability now stops following later Event actions after direct scene transitions and restarts, matching runtime chain termination.
 - Mechanics reachability now follows reachable Set Trigger Enabled actions, so Events behind authored-disabled Triggers can be recognized as potentially reachable after being enabled.
 - Mechanics Flow map now routes Event-to-Trigger links backward with the arrow pointing to the target, and routes same-column Event links around cards.
 - Mechanics cards and Flow map now link Events that set a Trigger's enabled state, with labels for enable and disable actions.
