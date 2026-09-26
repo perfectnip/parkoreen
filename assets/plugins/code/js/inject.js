@@ -3179,7 +3179,7 @@
 
         const resolveVariable = (key, requestedScope = null) => {
             if (typeof key !== 'string' || !key ||
-                (requestedScope !== null && !['map', 'player'].includes(requestedScope))) return null;
+                (requestedScope !== null && !['map', 'campaign', 'player'].includes(requestedScope))) return null;
             const variables = getCodeData(world).variables.filter(variable =>
                 variable && variable.enabled !== false && variable.variableType !== 'list' &&
                 ['string', 'integer', 'float', 'boolean'].includes(variable.valueType)
