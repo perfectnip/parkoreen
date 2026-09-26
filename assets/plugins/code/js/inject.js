@@ -2068,29 +2068,51 @@
         }, delayMs);
     };
 
-    const startWorldTimer = (action, world, player, context) => {
-        const timerName = String(action.timerName || '').trim();
-        const delaySeconds = Number(action.seconds);
+    const startWorldTimer = (action, world, player, context, sourceEvent, sourceAction) => {
+        const timerName = typeof action.timerName === 'string' ? action.timerName.trim() : '';
+        const delaySeconds = isFiniteMechanicsNumber(action.seconds) ? Number(action.seconds) : NaN;
+        if (action.repeat !== undefined && ![true, false, 'true', 'false'].includes(action.repeat)) {
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                'Start Timer repeat must be true or false.');
+            return;
+        }
         const repeat = action.repeat === true || action.repeat === 'true';
         const repeatCount = repeat ? Number(action.repeatCount) : 1;
         const maxDelay = window.CODE_MAX_TIMER_DELAY_SECONDS || 86400;
         const maxRepeats = window.CODE_MAX_TIMER_REPEAT_COUNT || 1000;
         const maxTimers = window.CODE_MAX_ACTIVE_TIMERS || 128;
         const event = getCodeData(world).events.find(item => item.id === action.eventId && item.enabled !== false);
-        if (!timerName || timerName.length > 64 || !event || !Number.isFinite(delaySeconds) || delaySeconds < 0.01 || delaySeconds > maxDelay) {
-            console.warn('[Code Plugin] Timer action has an invalid name, event, or delay.');
+        if (!timerName || timerName.length > 64) {
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                'Start Timer needs a name containing 1 to 64 characters.');
+            return;
+        }
+        if (!event) {
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                'Start Timer needs an existing enabled Event.');
+            return;
+        }
+        if (!Number.isFinite(delaySeconds) || delaySeconds < 0.01 || delaySeconds > maxDelay) {
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                `Timer delay must be between 0.01 and ${maxDelay} seconds.`);
             return;
         }
         if (repeat && (!Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > maxRepeats)) {
-            console.warn(`[Code Plugin] Repeating timers must fire between 1 and ${maxRepeats} times.`);
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                `Repeating timers must fire between 1 and ${maxRepeats} times.`);
             return;
         }
 
         const worldState = getWorldState(world);
-        if (!worldState) return;
+        if (!worldState) {
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                'Start Timer could not initialize Mechanics state for this map.');
+            return;
+        }
         const existingTimer = worldState.timers.get(timerName);
         if (!existingTimer && worldState.timers.size >= maxTimers) {
-            console.warn(`[Code Plugin] A map can have at most ${maxTimers} active timers.`);
+            reportMechanicsRuntimeError(world, sourceEvent, sourceAction,
+                `A map can have at most ${maxTimers} active timers.`);
             return;
         }
         if (existingTimer) clearWorldTimer(world, timerName);
@@ -3219,11 +3241,17 @@
                     ...context,
                     sourceEventId: event?.id,
                     sourceEventName: event?.name
-                });
+                }, event, actionSource);
                 break;
-            case 'stopTimer':
-                clearWorldTimer(world, String(action.timerName || '').trim());
+            case 'stopTimer': {
+                if (typeof action.timerName !== 'string' || !action.timerName.trim() || action.timerName.trim().length > 64) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Stop Timer needs a name containing 1 to 64 characters.');
+                    break;
+                }
+                clearWorldTimer(world, action.timerName.trim());
                 break;
+            }
             case 'teleportPlayer':
                 if (!isFiniteMechanicsNumber(action.x) || !isFiniteMechanicsNumber(action.y) ||
                     Math.abs(Number(action.x)) > (window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000) ||
