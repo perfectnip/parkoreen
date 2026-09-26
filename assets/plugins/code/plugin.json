@@ -3,7 +3,7 @@
     "apiVersion": 1,
     "hideInPluginLibrary": true,
     "name": "Code",
-    "version": "0.1.113-beta",
+    "version": "0.1.114-beta",
     "description": "Add triggers and events to your map. Create interactive experiences with player events, zones, and custom logic.",
     "author": "Parkoreen",
     "color": "#3b82f6",

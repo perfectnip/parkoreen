@@ -290,7 +290,7 @@
         });
     };
 
-    const renderListItemActionFields = (action, includeBranches = false) => {
+    const renderListItemActionFields = (action, includeBranches = false, clearOnly = false) => {
         const listVariable = getListVariables().find(variable => variable.id === action.variableId);
         const valueType = ['string', 'integer', 'float', 'boolean'].includes(action.valueType) ? action.valueType : 'string';
         const typeOptions = CODE_VALUE_TYPES.filter(type => ['string', 'integer', 'float', 'boolean'].includes(type.id))
@@ -311,7 +311,8 @@
         const playerTarget = listVariable?.scope === 'player'
             ? `<label class="trigger-form-label">Target player</label><select class="trigger-form-select event-action-field" data-field="playerTarget"><option value="triggering" ${!action.playerTarget || action.playerTarget === 'triggering' ? 'selected' : ''}>Triggering player</option><option value="touched" ${action.playerTarget === 'touched' ? 'selected' : ''}>Touched player</option>${includeBranches ? '' : `<option value="all" ${action.playerTarget === 'all' ? 'selected' : ''}>All live players</option>`}</select>`
             : '';
-        return `<label class="trigger-form-label">List</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderListVariableOptions(action.variableId)}</select>${playerTarget}<label class="trigger-form-label">Item type</label><select class="trigger-form-select event-action-field" data-field="valueType">${typeOptions}</select>${valueField}${branches}`;
+        const itemFields = clearOnly ? '' : `<label class="trigger-form-label">Item type</label><select class="trigger-form-select event-action-field" data-field="valueType">${typeOptions}</select>${valueField}`;
+        return `<label class="trigger-form-label">List</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderListVariableOptions(action.variableId)}</select>${playerTarget}${itemFields}${branches}`;
     };
 
     const getVariableConditionOperators = (variable) => {
@@ -1462,7 +1463,7 @@
     const ACTION_VARIABLE_LINK_LABELS = new Map([
         ['setVariable', 'Sets'], ['addVariable', 'Adds to'], ['calculateVariable', 'Calculates'],
         ['toggleVariable', 'Toggles'], ['branchVariable', 'Checks'], ['appendListItem', 'Adds to'],
-        ['removeListItem', 'Removes from'], ['branchListContains', 'Checks'],
+        ['removeListItem', 'Removes from'], ['clearList', 'Clears'], ['branchListContains', 'Checks'],
         ['setInventoryItemEquipped', 'Equips in'], ['branchInventoryItemEquipped', 'Checks'],
         ['consumeInventoryItem', 'Uses'], ['showList', 'Displays'], ['showVariablePanel', 'Displays']
     ]);
@@ -2031,9 +2032,9 @@
                     if (eventCanReach(target.id, event.id)) return 'This object-health branch creates a recursive Event chain';
                 }
             }
-            if (['appendListItem', 'removeListItem', 'branchListContains'].includes(action.type)) {
+            if (['appendListItem', 'removeListItem', 'clearList', 'branchListContains'].includes(action.type)) {
                 if (!listVariable) return 'Choose an enabled List variable';
-                if (!isValidListActionItem(action.valueType, action.value)) {
+                if (action.type !== 'clearList' && !isValidListActionItem(action.valueType, action.value)) {
                     return 'Enter a valid typed list item';
                 }
                 if (listVariable.scope === 'player') {
@@ -5084,7 +5085,8 @@
             case 'branchPlayerCount': return { type, playerVariableId: '', filterOperator: 'equals', filterValue: '', operator: 'equals', count: 0, trueEventId: '', falseEventId: '' };
             case 'branchObjectHealth': return { type, targetMode: 'fixed', objectId: '', operator: 'lessThanOrEqual', value: 1, trueEventId: '', falseEventId: '' };
             case 'appendListItem':
-            case 'removeListItem': return { type, variableId: '', valueType: 'string', value: '', playerTarget: 'triggering' };
+            case 'removeListItem':
+            case 'clearList': return { type, variableId: '', valueType: 'string', value: '', playerTarget: 'triggering' };
             case 'setInventoryItemEquipped': return { type, variableId: '', itemName: '', slot: 'default', equipped: true, playerTarget: 'triggering' };
             case 'branchListContains': return { type, variableId: '', valueType: 'string', value: '', playerTarget: 'triggering', trueEventId: '', falseEventId: '' };
             case 'branchInventoryItemEquipped': return { type, variableId: '', itemName: '', slot: 'default', playerTarget: 'triggering', trueEventId: '', falseEventId: '' };
@@ -5214,6 +5216,13 @@
                 const scopeHint = list?.scope === 'player' ? 'This changes the selected player’s separate List; the host synchronizes room values to every client.'
                     : list?.scope === 'campaign' ? 'This changes a Campaign List saved across maps during solo play.' : 'This changes a map-shared List.';
                 return `${renderListItemActionFields(action)}<p class="trigger-description">${scopeHint} Lists contain at most ${CODE_MAX_LIST_ITEMS} typed items.</p>`;
+            }
+            case 'clearList': {
+                const list = getListVariables().find(variable => variable.id === action.variableId);
+                const scopeHint = list?.scope === 'player' ? 'Clears the selected player’s separate List; the host synchronizes room values to every client.'
+                    : list?.scope === 'campaign' ? 'Clears this Campaign List and saves the empty List across maps during solo play.'
+                        : 'Clears this map-shared List.';
+                return `${renderListItemActionFields(action, false, true)}<p class="trigger-description">${scopeHint}</p>`;
             }
             case 'branchListContains': {
                 const list = getListVariables().find(variable => variable.id === action.variableId);

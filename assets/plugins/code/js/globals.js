@@ -271,6 +271,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'branchPlayerCount', label: 'Branch on Player Count' },
     { id: 'appendListItem', label: 'Add Item to List' },
     { id: 'removeListItem', label: 'Remove Item from List' },
+    { id: 'clearList', label: 'Clear List' },
     { id: 'setInventoryItemEquipped', label: 'Set Inventory Item Equipped' },
     { id: 'branchInventoryItemEquipped', label: 'Branch on Equipped Item' },
     { id: 'consumeInventoryItem', label: 'Use Inventory Item' },

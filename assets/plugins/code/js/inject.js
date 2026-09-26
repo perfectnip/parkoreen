@@ -669,7 +669,7 @@
     };
 
     const SHARED_MECHANICS_ACTIONS = new Set([
-        'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
+        'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'clearList', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
         'setTriggerEnabled', 'setObjectEnabled', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
         'setObjectPosition', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
     ]);
@@ -2275,10 +2275,11 @@
                 break;
             }
             case 'appendListItem':
-            case 'removeListItem': {
+            case 'removeListItem':
+            case 'clearList': {
                 const variable = getVariable(world, action.variableId);
-                const item = getMechanicsListActionItem(action);
-                if (variable?.variableType !== 'list' || !item) break;
+                const item = action.type === 'clearList' ? null : getMechanicsListActionItem(action);
+                if (variable?.variableType !== 'list' || (action.type !== 'clearList' && !item)) break;
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
                     const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId, player: targetPlayer };
@@ -2286,16 +2287,18 @@
                         ? getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext)
                         : worldState.lists.get(variable.id);
                     if (!Array.isArray(items)) continue;
-                    const nextItems = items.slice();
-                    if (action.type === 'appendListItem') {
+                    const nextItems = action.type === 'clearList' ? [] : items.slice();
+                    if (action.type === 'clearList') {
+                        setMechanicsListValue(world, variable, nextItems, targetContext);
+                    } else if (action.type === 'appendListItem') {
                         if (nextItems.length >= getMechanicsListLimit()) continue;
                         nextItems.push(item);
-                    } else {
+                    } else if (action.type === 'removeListItem') {
                         const index = nextItems.findIndex(candidate => candidate.valueType === item.valueType && Object.is(candidate.value, item.value));
                         if (index < 0) continue;
                         nextItems.splice(index, 1);
+                        setMechanicsListValue(world, variable, nextItems, targetContext);
                     }
-                    setMechanicsListValue(world, variable, nextItems, targetContext);
                 }
                 break;
             }
@@ -3239,6 +3242,21 @@
             return items.map(item => ({ value_type: item.valueType, value: item.value }));
         };
 
+        const clearList = key => {
+            const variable = resolveListVariable(key);
+            if (!variable) return false;
+            const multiplayer = getMultiplayerManager();
+            if (multiplayer?.getRoomCode?.() && !multiplayer.isHost) return false;
+            const context = { ...eventContext, player };
+            const items = variable.scope === 'player'
+                ? getMechanicsPlayerListValue(world, variable, player, context)
+                : getWorldState(world)?.lists.get(variable.id);
+            if (!Array.isArray(items) || items.length === 0) return false;
+            const changed = setMechanicsListValue(world, variable, [], context);
+            if (changed && multiplayer?.getRoomCode?.() && multiplayer.isHost) publishSharedMechanicsState(world);
+            return changed;
+        };
+
         const toObjectSnapshot = object => {
             if (!object) return undefined;
             return {
@@ -3491,6 +3509,20 @@
             return changed;
         };
 
+        const clearPlayerList = (key, playerId) => {
+            const variable = resolveListVariable(key);
+            const targetPlayer = resolveLivePlayer(playerId);
+            if (variable?.scope !== 'player' || !targetPlayer) return false;
+            const multiplayer = getMultiplayerManager();
+            if (multiplayer?.getRoomCode?.() && !multiplayer.isHost) return false;
+            const context = { ...eventContext, targetPlayerId: targetPlayer.id || '__local__', player: targetPlayer };
+            const items = getMechanicsPlayerListValue(world, variable, targetPlayer, context);
+            if (!Array.isArray(items) || items.length === 0) return false;
+            const changed = setMechanicsListValue(world, variable, [], context);
+            if (changed && multiplayer?.getRoomCode?.() && multiplayer.isHost) publishSharedMechanicsState(world);
+            return changed;
+        };
+
         return {
             getContext: () => ({ ...metadata }),
             getObject,
@@ -3534,10 +3566,12 @@
                 return true;
             },
             getList,
+            clearList,
             listContains,
             appendListItem: (key, value, requestedType = null) => changeList(key, value, requestedType, false),
             removeListItem: (key, value, requestedType = null) => changeList(key, value, requestedType, true),
             getPlayerList,
+            clearPlayerList,
             playerListContains,
             appendPlayerListItem: (key, playerId, value, requestedType = null) =>
                 changePlayerList(key, playerId, value, requestedType, false),
