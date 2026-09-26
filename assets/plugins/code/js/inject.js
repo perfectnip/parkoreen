@@ -2291,7 +2291,12 @@
                     if (action.type === 'clearList') {
                         setMechanicsListValue(world, variable, nextItems, targetContext);
                     } else if (action.type === 'appendListItem') {
-                        if (nextItems.length >= getMechanicsListLimit()) continue;
+                        const listLimit = getMechanicsListLimit();
+                        if (nextItems.length >= listLimit) {
+                            reportMechanicsRuntimeError(world, event, actionSource,
+                                `Cannot add an item: List ${variable.name || variable.id} already contains its maximum of ${listLimit} items.`);
+                            continue;
+                        }
                         nextItems.push(item);
                         setMechanicsListValue(world, variable, nextItems, targetContext);
                     } else if (action.type === 'removeListItem') {
