@@ -2544,11 +2544,33 @@
             }
             case 'branchPlayerCount': {
                 const variable = getVariable(world, action.playerVariableId);
-                if (!variable || variable.scope !== 'player' || variable.variableType === 'list') break;
+                if (!variable || variable.scope !== 'player' || variable.variableType === 'list' ||
+                    !['string', 'integer', 'float', 'boolean'].includes(variable.valueType)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Player Count requires an enabled per-player single-value variable.');
+                    break;
+                }
+                const filterOperator = action.filterOperator || 'equals';
+                const allowedFilterOperators = ['equals', 'notEquals', 'truthy', 'falsy'];
+                if (['integer', 'float'].includes(variable.valueType)) allowedFilterOperators.push('greaterThan', 'lessThan');
+                if (!allowedFilterOperators.includes(filterOperator)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Player Count has an unsupported player-variable condition.');
+                    break;
+                }
+                if (!['truthy', 'falsy'].includes(filterOperator) && !isValidVariableValue(variable, action.filterValue)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Player Count has a filter value that does not match the selected variable type.');
+                    break;
+                }
                 const operator = action.operator || 'equals';
                 const threshold = Number(action.count);
                 if (!['equals', 'greaterThan', 'lessThan'].includes(operator) ||
-                    !Number.isInteger(threshold) || threshold < 0 || threshold > 100) break;
+                    !isFiniteMechanicsNumber(action.count) || !Number.isSafeInteger(threshold) || threshold < 0 || threshold > 100) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Player Count needs a supported comparison and a whole-number count from 0 to 100.');
+                    break;
+                }
                 const multiplayer = getMultiplayerManager();
                 const playerIds = new Set();
                 if (multiplayer?.getRoomCode?.()) {
@@ -2563,7 +2585,7 @@
                 }
                 let matches = 0;
                 for (const playerId of playerIds) {
-                    if (evaluateVariableCondition(world, variable.id, action.filterOperator || 'equals', action.filterValue,
+                    if (evaluateVariableCondition(world, variable.id, filterOperator, action.filterValue,
                         { id: playerId }, { ...context, targetPlayerId: playerId })) matches++;
                 }
                 const count = operator === 'greaterThan' ? matches > threshold

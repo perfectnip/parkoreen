@@ -34,6 +34,7 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Player-count action diagnostics</strong>: imported Branch on Player Count actions now report invalid Player variables, filter values or conditions, and count comparisons instead of silently taking the no-match route.</li>
       <li><strong>Trigger reset synchronization</strong>: Play, Test, and Stop cleanup now receives the current world, so a reset can immediately publish cleared Trigger Enabled overrides to the room host snapshot.</li>
       <li><strong>Mechanics revision validation</strong>: hosted Mechanics snapshots now accept and publish only safely representable revision counters, keeping ordering reliable if stored metadata is malformed.</li>
       <li><strong>Exact Mechanics integers</strong>: integer variables, List items, action inputs, and conditions now reject values outside JavaScript's safe integer range, so arithmetic and browser saves do not silently round large whole numbers.</li>
