@@ -2366,11 +2366,23 @@
                 const variable = getVariable(world, action.variableId);
                 const itemName = typeof action.itemName === 'string' ? action.itemName.trim() : '';
                 const rawSlot = action.slot === undefined ? 'default' : action.slot;
-                if (typeof rawSlot !== 'string' || rawSlot.trim().length > 32) break;
+                if (typeof rawSlot !== 'string' || rawSlot.trim().length > 32) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Inventory Item Equipped needs an equipment slot of at most 32 characters.');
+                    break;
+                }
                 const slot = rawSlot.trim() || 'default';
                 if (variable?.variableType !== 'list' || variable.scope !== 'player' || variable.valueType !== 'string' ||
-                    !itemName || itemName.length > 80 || typeof action.equipped !== 'boolean' ||
-                    ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) break;
+                    !itemName || itemName.length > 80 || typeof action.equipped !== 'boolean') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Inventory Item Equipped requires an enabled Player-scoped string List, an item name up to 80 characters, and a boolean equipped value.');
+                    break;
+                }
+                if (![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Inventory Item Equipped has an unsupported Player target.');
+                    break;
+                }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = { id: playerId };
                     const targetContext = { ...context, targetPlayerId: playerId, player: targetPlayer };
@@ -2440,8 +2452,16 @@
                 const rawSlot = action.slot === undefined ? 'default' : action.slot;
                 const slot = typeof rawSlot === 'string' ? rawSlot.trim() || 'default' : '';
                 if (variable?.variableType !== 'list' || variable.scope !== 'player' || variable.valueType !== 'string' ||
-                    !itemName || itemName.length > 80 || typeof rawSlot !== 'string' || rawSlot.trim().length > 32 ||
-                    !['triggering', 'touched', undefined].includes(action.playerTarget)) break;
+                    !itemName || itemName.length > 80 || typeof rawSlot !== 'string' || rawSlot.trim().length > 32) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Equipped Item requires an enabled Player-scoped string List, an item name up to 80 characters, and a slot up to 32 characters.');
+                    break;
+                }
+                if (!['triggering', 'touched', undefined].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Equipped Item has an unsupported Player target.');
+                    break;
+                }
                 const playerId = getVariableTargetIds(variable, action, player, context)[0];
                 if (!playerId) break;
                 const targetPlayer = { id: playerId };
@@ -2461,11 +2481,23 @@
                 const itemName = typeof action.itemName === 'string' ? action.itemName.trim() : '';
                 const rawSlot = action.slot === undefined ? 'default' : action.slot;
                 const slot = typeof rawSlot === 'string' ? rawSlot.trim() || 'default' : '';
-                const playerTarget = action.playerTarget || 'triggering';
+                const playerTarget = action.playerTarget === undefined ? 'triggering' : action.playerTarget;
                 if (variable?.variableType !== 'list' || variable.scope !== 'player' || variable.valueType !== 'string' ||
-                    !itemName || itemName.length > 80 || typeof rawSlot !== 'string' || rawSlot.trim().length > 32 ||
-                    !['triggering', 'touched'].includes(playerTarget) || typeof runEvent !== 'function' ||
-                    typeof runEvent.getRunError !== 'function') break;
+                    !itemName || itemName.length > 80 || typeof rawSlot !== 'string' || rawSlot.trim().length > 32) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Use Inventory Item requires an enabled Player-scoped string List, an item name up to 80 characters, and a slot up to 32 characters.');
+                    break;
+                }
+                if (!['triggering', 'touched'].includes(playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Use Inventory Item has an unsupported Player target.');
+                    break;
+                }
+                if (typeof runEvent !== 'function' || typeof runEvent.getRunError !== 'function') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Use Inventory Item cannot validate its linked Events.');
+                    break;
+                }
                 const trueRouteError = runEvent.getRunError(action.trueEventId);
                 const falseRouteError = action.falseEventId ? runEvent.getRunError(action.falseEventId) : null;
                 if (trueRouteError || falseRouteError) {

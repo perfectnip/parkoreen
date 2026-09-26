@@ -34,6 +34,7 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Inventory action diagnostics</strong>: malformed Set Inventory Item Equipped, Branch on Equipped Item, and Use Inventory Item actions now report invalid Player Lists, item names, slots, targets, or route-validation context.</li>
       <li><strong>Player-count action diagnostics</strong>: imported Branch on Player Count actions now report invalid Player variables, filter values or conditions, and count comparisons instead of silently taking the no-match route.</li>
       <li><strong>Trigger reset synchronization</strong>: Play, Test, and Stop cleanup now receives the current world, so a reset can immediately publish cleared Trigger Enabled overrides to the room host snapshot.</li>
       <li><strong>Mechanics revision validation</strong>: hosted Mechanics snapshots now accept and publish only safely representable revision counters, keeping ordering reliable if stored metadata is malformed.</li>
