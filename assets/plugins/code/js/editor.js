@@ -2394,6 +2394,7 @@
 
     const getUnreachableEventIds = (triggers = getTriggers(), events = getEvents()) => {
         const eventsById = new Map(events.map(event => [event.id, event]));
+        const triggersById = new Map(triggers.map(trigger => [trigger.id, trigger]));
         const reachable = new Set();
         const pending = [];
 
@@ -2412,6 +2413,14 @@
 
             for (const action of Array.isArray(event.actions) ? event.actions : []) {
                 for (const link of getActionEventLinks(action)) pending.push(link.eventId);
+                // A trigger may be authored disabled but enabled by a reachable
+                // Event. Include its linked Event in possible reachability; the
+                // route remains conservative when the action itself is conditional.
+                if (action?.type === 'setTriggerEnabled' && action.enabled === true) {
+                    const trigger = triggersById.get(action.triggerId);
+                    const triggerEventId = trigger?.config?.eventId || trigger?.config?.actionId;
+                    if (triggerEventId) pending.push(triggerEventId);
+                }
             }
         }
 
