@@ -2293,6 +2293,7 @@
                     } else if (action.type === 'appendListItem') {
                         if (nextItems.length >= getMechanicsListLimit()) continue;
                         nextItems.push(item);
+                        setMechanicsListValue(world, variable, nextItems, targetContext);
                     } else if (action.type === 'removeListItem') {
                         const index = nextItems.findIndex(candidate => candidate.valueType === item.valueType && Object.is(candidate.value, item.value));
                         if (index < 0) continue;

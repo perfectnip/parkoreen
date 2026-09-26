@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Declarative Add List Item now commits through the shared persistence and multiplayer synchronization path.
 - Host-authoritative replay now stops at Dialogue, Choices, and Menu actions; later shared actions cannot run before the local UI pause or declared selection Event completes.
 - Mechanics path diagnostics now stop after a Run Event that always transitions or restarts, and after a branch only when every route ends the shared Event chain.
 - Mechanics reachability, execution-limit warnings, and timer-cycle analysis now stop at direct scene transitions and restarts, matching the Event runtime's terminal action order.
