@@ -2279,7 +2279,21 @@
             case 'clearList': {
                 const variable = getVariable(world, action.variableId);
                 const item = action.type === 'clearList' ? null : getMechanicsListActionItem(action);
-                if (variable?.variableType !== 'list' || (action.type !== 'clearList' && !item)) break;
+                if (variable?.variableType !== 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This action requires an enabled List variable.');
+                    break;
+                }
+                if (action.type !== 'clearList' && !item) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This List action needs a valid typed item.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This Player List action has an unsupported target player.');
+                    break;
+                }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
                     const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId, player: targetPlayer };
@@ -2352,7 +2366,21 @@
             case 'branchListContains': {
                 const variable = getVariable(world, action.variableId);
                 const item = getMechanicsListActionItem(action);
-                if (variable?.variableType !== 'list' || !item) break;
+                if (variable?.variableType !== 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This action requires an enabled List variable.');
+                    break;
+                }
+                if (!item) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This List condition needs a valid typed item.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'This Player List condition has an unsupported target player.');
+                    break;
+                }
                 const playerId = getVariableTargetIds(variable, action, player, context)[0];
                 if (variable.scope === 'player' && !playerId) break;
                 const targetPlayer = playerId ? { id: playerId } : player;
@@ -2360,7 +2388,7 @@
                 const items = variable.scope === 'player'
                     ? getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext)
                     : worldState.lists.get(variable.id);
-                if (!item || !Array.isArray(items)) break;
+                if (!Array.isArray(items)) break;
                 const contains = items.some(candidate => candidate.valueType === item.valueType && Object.is(candidate.value, item.value));
                 const eventId = contains ? action.trueEventId : action.falseEventId;
                 if (eventId && typeof runEvent === 'function') return runEvent(eventId);

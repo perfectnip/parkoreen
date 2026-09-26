@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Malformed imported List actions now report invalid typed items and unsupported Player List targets instead of silently using the triggering player.
 - Add List Item now reports a rate-limited author diagnostic when the List has reached its item limit.
 - Declarative Add List Item now commits through the shared persistence and multiplayer synchronization path.
 - Host-authoritative replay now stops at Dialogue, Choices, and Menu actions; later shared actions cannot run before the local UI pause or declared selection Event completes.
