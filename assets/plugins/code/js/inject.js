@@ -2662,11 +2662,20 @@
                 break;
             }
             case 'setObjectEnabled': {
-                if (typeof action.enabled !== 'boolean') break;
+                if (typeof action.enabled !== 'boolean') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Enabled needs an enabled or disabled state.');
+                    break;
+                }
                 const enabled = action.enabled;
                 const object = world?.getObjectById?.(action.objectId);
+                if (!object) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Enabled needs an existing map object.');
+                    break;
+                }
                 const wasEnabled = object?._mechanicsEnabled !== false;
-                if (!object || !world?.setMechanicsObjectEnabled?.(object.id, enabled)) break;
+                if (!world?.setMechanicsObjectEnabled?.(object.id, enabled)) break;
                 if (enabled && worldState.objectHealth.get(object.id)?.current === 0) worldState.objectHealth.delete(object.id);
                 if (action.persist === true) persistMechanicsObjectState(world, object.id, enabled);
                 if (wasEnabled !== enabled && !context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
@@ -2692,12 +2701,29 @@
             }
             case 'setObjectHealth': {
                 const object = getMechanicsObjectTarget(world, action, context, true);
-                if (!isFiniteMechanicsNumber(action.health) || !isFiniteMechanicsNumber(action.maxHealth)) break;
+                if (!object) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Health needs an existing fixed or touched object.');
+                    break;
+                }
+                if (!isFiniteMechanicsNumber(action.health) || !isFiniteMechanicsNumber(action.maxHealth)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object health and maximum health must be finite numbers.');
+                    break;
+                }
                 const health = Number(action.health);
                 const maximum = Number(action.maxHealth);
-                if (!object || !Number.isSafeInteger(health) || !Number.isSafeInteger(maximum) ||
-                    maximum < 1 || maximum > 99999 || health < 0 || health > maximum) break;
-                if (!writeObjectHealth(worldState, object.id, health, maximum)) break;
+                if (!Number.isSafeInteger(health) || !Number.isSafeInteger(maximum) ||
+                    maximum < 1 || maximum > 99999 || health < 0 || health > maximum) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object health needs whole numbers from 0 to 99,999, with health no greater than maximum health.');
+                    break;
+                }
+                if (!writeObjectHealth(worldState, object.id, health, maximum)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object health could not be stored for this map object.');
+                    break;
+                }
                 context.healthObjectId = object.id;
                 context.healthObjectName = object.name || object.displayName || object.appearanceType || null;
                 context.objectHealth = health;
@@ -2709,19 +2735,40 @@
             }
             case 'damageObject': {
                 const object = getMechanicsObjectTarget(world, action, context);
-                if (!isFiniteMechanicsNumber(action.amount) || !isFiniteMechanicsNumber(action.maxHealth)) break;
+                if (!object) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Damage Object needs an existing enabled fixed or touched object.');
+                    break;
+                }
+                if (!isFiniteMechanicsNumber(action.amount) || !isFiniteMechanicsNumber(action.maxHealth)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Damage amount and maximum health must be finite numbers.');
+                    break;
+                }
                 const amount = Number(action.amount);
                 const maximum = Number(action.maxHealth);
-                if (!object || !Number.isSafeInteger(amount) || amount < 1 || amount > 99999 ||
-                    !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 99999) break;
+                if (!Number.isSafeInteger(amount) || amount < 1 || amount > 99999 ||
+                    !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 99999) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Damage Object needs whole-number damage and maximum health from 1 to 99,999.');
+                    break;
+                }
                 let health = worldState.objectHealth.get(object.id);
                 if (!health) {
-                    writeObjectHealth(worldState, object.id, maximum, maximum);
+                    if (!writeObjectHealth(worldState, object.id, maximum, maximum)) {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'Object health could not be initialized for this map object.');
+                        break;
+                    }
                     health = worldState.objectHealth.get(object.id);
                 }
                 if (!health || health.current <= 0) break;
                 const nextHealth = Math.max(0, health.current - amount);
-                writeObjectHealth(worldState, object.id, nextHealth, health.maximum);
+                if (!writeObjectHealth(worldState, object.id, nextHealth, health.maximum)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object health could not be updated for this map object.');
+                    break;
+                }
                 context.healthObjectId = object.id;
                 context.healthObjectName = object.name || object.displayName || object.appearanceType || null;
                 context.objectHealth = nextHealth;

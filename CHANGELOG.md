@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Imported object enable, health, and damage actions now report invalid targets, states, and health values instead of silently skipping.
 - Imported inventory actions now report invalid Player Lists, item names, slots, Player targets, and missing route-validation context instead of silently skipping.
 - Imported Branch on Player Count actions now report invalid Player variables, filter conditions, and count comparisons instead of silently routing as no-match.
 - Play, Test, and Stop resets now pass the active world into Mechanics cleanup, so hosted rooms publish cleared Trigger Enabled overrides immediately after Game Ends.
