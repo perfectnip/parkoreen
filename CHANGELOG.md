@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Set Object Enabled now reports when an opted-in solo object-state save cannot be written, while leaving Test and hosted runs temporary.
 - Imported List and Player List branches now explain missing touched/triggering player context or unavailable List state instead of stopping without a Mechanics error.
 - Imported sound, Event-link, message, variable-panel, dialogue, choice, and menu actions now report unsupported names or malformed presentation data in Mechanics history.
 - Invalid imported Start Timer and Stop Timer actions now report their name, delay, repeat, Event-link, and timer-capacity errors in Mechanics history.

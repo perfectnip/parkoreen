@@ -2723,7 +2723,14 @@
                 const wasEnabled = object?._mechanicsEnabled !== false;
                 if (!world?.setMechanicsObjectEnabled?.(object.id, enabled)) break;
                 if (enabled && worldState.objectHealth.get(object.id)?.current === 0) worldState.objectHealth.delete(object.id);
-                if (action.persist === true) persistMechanicsObjectState(world, object.id, enabled);
+                if (action.persist === true && isMechanicsObjectPersistenceAvailable(world)) {
+                    const previousSavedState = ensurePersistentMechanicsLoaded(world, worldState).objects[object.id];
+                    const persisted = persistMechanicsObjectState(world, object.id, enabled);
+                    if (!persisted && previousSavedState !== enabled) {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'This object changed for the current session, but its browser-local save could not be written.');
+                    }
+                }
                 if (wasEnabled !== enabled && !context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                 const engine = window.engine;
                 if (engine?.world === world) {
