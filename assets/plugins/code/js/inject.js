@@ -2198,29 +2198,56 @@
         switch (action.type) {
             case 'setVariable': {
                 const variable = getVariable(world, action.variableId);
-                if (variable && variable.variableType !== 'list' && isValidVariableValue(variable, action.value)) {
-                    const nextValue = normalizeVariableValue(variable, action.value);
-                    for (const playerId of getVariableTargetIds(variable, action, player, context)) {
-                        const targetPlayer = playerId ? { id: playerId } : player;
-                        setVariableValue(world, variable, nextValue, targetPlayer, { ...context, targetPlayerId: playerId || context.targetPlayerId });
-                    }
+                if (!variable || variable.variableType === 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Variable requires an enabled single-value variable.');
+                    break;
+                }
+                if (!isValidVariableValue(variable, action.value)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Variable has a value that does not match the selected variable type.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Variable has an unsupported Player target.');
+                    break;
+                }
+                const nextValue = normalizeVariableValue(variable, action.value);
+                for (const playerId of getVariableTargetIds(variable, action, player, context)) {
+                    const targetPlayer = playerId ? { id: playerId } : player;
+                    setVariableValue(world, variable, nextValue, targetPlayer, { ...context, targetPlayerId: playerId || context.targetPlayerId });
                 }
                 break;
             }
             case 'addVariable': {
                 const variable = getVariable(world, action.variableId);
-                if (variable && ['integer', 'float'].includes(variable.valueType)) {
-                    const amount = Number(action.amount);
-                    if (isFiniteMechanicsNumber(action.amount) && (variable.valueType !== 'integer' || Number.isInteger(amount))) {
-                        for (const playerId of getVariableTargetIds(variable, action, player, context)) {
-                            const targetPlayer = playerId ? { id: playerId } : player;
-                            const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
-                            const current = Number(getVariableValue(world, variable, targetPlayer, targetContext)) || 0;
-                            const nextValue = current + amount;
-                            if (Number.isFinite(nextValue) && (variable.valueType !== 'integer' || Number.isInteger(nextValue))) {
-                                setVariableValue(world, variable, nextValue, targetPlayer, targetContext);
-                            }
-                        }
+                if (!variable || variable.variableType === 'list' || !['integer', 'float'].includes(variable.valueType)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Add to Number Variable requires an enabled integer or float variable.');
+                    break;
+                }
+                const amount = Number(action.amount);
+                if (!isFiniteMechanicsNumber(action.amount) || (variable.valueType === 'integer' && !Number.isInteger(amount))) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Add to Number Variable needs a finite amount matching the variable type.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Add to Number Variable has an unsupported Player target.');
+                    break;
+                }
+                for (const playerId of getVariableTargetIds(variable, action, player, context)) {
+                    const targetPlayer = playerId ? { id: playerId } : player;
+                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
+                    const current = Number(getVariableValue(world, variable, targetPlayer, targetContext)) || 0;
+                    const nextValue = current + amount;
+                    if (Number.isFinite(nextValue) && (variable.valueType !== 'integer' || Number.isInteger(nextValue))) {
+                        setVariableValue(world, variable, nextValue, targetPlayer, targetContext);
+                    } else {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'Adding this amount would produce an invalid Number Variable value.');
                     }
                 }
                 break;
@@ -2229,7 +2256,7 @@
                 const variable = getVariable(world, action.variableId);
                 const operation = action.operation;
                 const operand = Number(action.operand);
-                if (!variable || !['integer', 'float'].includes(variable.valueType)) {
+                if (!variable || variable.variableType === 'list' || !['integer', 'float'].includes(variable.valueType)) {
                     reportMechanicsRuntimeError(world, event, actionSource, 'Calculation requires an integer or float variable.');
                     break;
                 }
@@ -2241,6 +2268,11 @@
                 }
                 if (operation === 'divide' && operand === 0) {
                     reportMechanicsRuntimeError(world, event, actionSource, 'A number variable cannot be divided by zero.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Calculate Number Variable has an unsupported Player target.');
                     break;
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
@@ -2265,12 +2297,20 @@
             }
             case 'toggleVariable': {
                 const variable = getVariable(world, action.variableId);
-                if (variable?.valueType === 'boolean') {
-                    for (const playerId of getVariableTargetIds(variable, action, player, context)) {
-                        const targetPlayer = playerId ? { id: playerId } : player;
-                        const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
-                        setVariableValue(world, variable, !getVariableValue(world, variable, targetPlayer, targetContext), targetPlayer, targetContext);
-                    }
+                if (variable?.valueType !== 'boolean' || variable.variableType === 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Toggle Boolean Variable requires an enabled boolean variable.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched', 'all'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Toggle Boolean Variable has an unsupported Player target.');
+                    break;
+                }
+                for (const playerId of getVariableTargetIds(variable, action, player, context)) {
+                    const targetPlayer = playerId ? { id: playerId } : player;
+                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
+                    setVariableValue(world, variable, !getVariableValue(world, variable, targetPlayer, targetContext), targetPlayer, targetContext);
                 }
                 break;
             }
@@ -2469,6 +2509,29 @@
             }
             case 'branchVariable': {
                 const variable = getVariable(world, action.variableId);
+                if (!variable || variable.variableType === 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Variable requires an enabled single-value variable.');
+                    break;
+                }
+                const operator = action.operator || 'equals';
+                const allowedOperators = ['equals', 'notEquals', 'truthy', 'falsy'];
+                if (['integer', 'float'].includes(variable.valueType)) allowedOperators.push('greaterThan', 'lessThan');
+                if (!allowedOperators.includes(operator)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Variable has an unsupported comparison for this variable type.');
+                    break;
+                }
+                if (!['truthy', 'falsy'].includes(operator) && !isValidVariableValue(variable, action.value)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Variable has a comparison value that does not match the selected variable type.');
+                    break;
+                }
+                if (variable.scope === 'player' && ![undefined, 'triggering', 'touched'].includes(action.playerTarget)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Variable has an unsupported Player target.');
+                    break;
+                }
                 let conditionPlayer = player;
                 if (variable?.scope === 'player' && action.playerTarget === 'touched') {
                     if (!context.touchedPlayerId) break;

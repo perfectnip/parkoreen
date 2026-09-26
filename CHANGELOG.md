@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Imported Set, Add, Calculate, Toggle, and Branch Variable actions now reject mismatched values, types, comparisons, and Player targets with rate-limited author diagnostics.
 - Malformed imported List actions now report invalid typed items and unsupported Player List targets instead of silently using the triggering player.
 - Add List Item now reports a rate-limited author diagnostic when the List has reached its item limit.
 - Declarative Add List Item now commits through the shared persistence and multiplayer synchronization path.
