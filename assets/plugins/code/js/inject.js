@@ -2456,13 +2456,23 @@
                     break;
                 }
                 const playerId = getVariableTargetIds(variable, action, player, context)[0];
-                if (variable.scope === 'player' && !playerId) break;
+                if (variable.scope === 'player' && !playerId) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        action.playerTarget === 'touched'
+                            ? 'Branch on List Item needs a touched player.'
+                            : 'Branch on List Item needs an active triggering player.');
+                    break;
+                }
                 const targetPlayer = playerId ? { id: playerId } : player;
                 const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId, player: targetPlayer };
                 const items = variable.scope === 'player'
                     ? getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext)
                     : worldState.lists.get(variable.id);
-                if (!Array.isArray(items)) break;
+                if (!Array.isArray(items)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on List Item could not read the selected List state.');
+                    break;
+                }
                 const contains = items.some(candidate => candidate.valueType === item.valueType && Object.is(candidate.value, item.value));
                 const eventId = contains ? action.trueEventId : action.falseEventId;
                 if (eventId && typeof runEvent === 'function') return runEvent(eventId);
@@ -2485,11 +2495,21 @@
                     break;
                 }
                 const playerId = getVariableTargetIds(variable, action, player, context)[0];
-                if (!playerId) break;
+                if (!playerId) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        action.playerTarget === 'touched'
+                            ? 'Branch on Equipped Item needs a touched player.'
+                            : 'Branch on Equipped Item needs an active triggering player.');
+                    break;
+                }
                 const targetPlayer = { id: playerId };
                 const targetContext = { ...context, targetPlayerId: playerId, player: targetPlayer };
                 const items = getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext);
-                if (!Array.isArray(items)) break;
+                if (!Array.isArray(items)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Equipped Item could not read the selected player List.');
+                    break;
+                }
                 const equipped = items.some(candidate => {
                     const parsed = parseMechanicsInventoryItem(candidate);
                     return parsed?.name === itemName && parsed.slot === slot && parsed.equipped;
@@ -2588,7 +2608,11 @@
                 }
                 let conditionPlayer = player;
                 if (variable?.scope === 'player' && action.playerTarget === 'touched') {
-                    if (!context.touchedPlayerId) break;
+                    if (!context.touchedPlayerId) {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'Branch on Variable targeting the touched player needs a touched player.');
+                        break;
+                    }
                     conditionPlayer = { id: context.touchedPlayerId };
                 }
                 const matches = evaluateVariableCondition(world, action.variableId, action.operator, action.value, conditionPlayer, context);
