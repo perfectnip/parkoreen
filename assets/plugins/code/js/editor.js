@@ -1518,14 +1518,28 @@
         }
 
         const renderEdge = ({ source, target, label }) => {
-            const startX = source.x + nodeWidth;
             const startY = source.y + nodeHeight / 2;
-            const endX = target.x;
             const endY = target.y + nodeHeight / 2;
-            const bend = Math.max(42, Math.abs(endX - startX) / 2);
-            const controlX = startX + bend;
-            const path = `M ${startX} ${startY} C ${controlX} ${startY}, ${controlX} ${endY}, ${endX} ${endY}`;
-            const labelX = (startX + endX) / 2;
+            let path;
+            let labelX;
+            if (source.x === target.x) {
+                // Route same-column Event calls around the cards instead of
+                // sending the edge back across their text and controls.
+                const startX = source.x + nodeWidth;
+                const endX = target.x + nodeWidth;
+                const outerX = startX + 48;
+                path = `M ${startX} ${startY} C ${outerX} ${startY}, ${outerX} ${endY}, ${endX} ${endY}`;
+                labelX = outerX + 4;
+            } else {
+                const direction = target.x > source.x ? 1 : -1;
+                const startX = source.x + (direction > 0 ? nodeWidth : 0);
+                const endX = target.x + (direction > 0 ? 0 : nodeWidth);
+                const bend = Math.max(42, Math.abs(endX - startX) / 2);
+                const controlStartX = startX + direction * bend;
+                const controlEndX = endX - direction * bend;
+                path = `M ${startX} ${startY} C ${controlStartX} ${startY}, ${controlEndX} ${endY}, ${endX} ${endY}`;
+                labelX = (startX + endX) / 2;
+            }
             const labelY = (startY + endY) / 2 - 6;
             return `<path class="mechanics-flow-edge" d="${path}" marker-end="url(#mechanics-flow-arrow)"/><text class="mechanics-flow-edge-label" x="${labelX}" y="${labelY}">${escapeHtml(label)}</text>`;
         };

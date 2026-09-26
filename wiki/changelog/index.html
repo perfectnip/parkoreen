@@ -34,6 +34,7 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Flow map edge direction</strong>: links now curve according to their source and target columns, including Event-to-Trigger state changes; same-column Event routes pass around the cards.</li>
       <li><strong>Trigger state navigation</strong>: Event cards and the Flow map link to Triggers targeted by Set Trigger Enabled, while Trigger cards link back to those Events; link labels show whether the action enables or disables the Trigger.</li>
       <li><strong>Variable navigation from blocks</strong>: trigger and Event cards link directly to referenced Variables, and Variable cards link back to their consuming triggers and Events, including List and inventory actions.</li>
       <li><strong>Flow link consistency</strong>: the full Mechanics Flow map, block cards, reachability checks, synchronous path warnings, and timer-cycle analysis now read Event routes from the same action-link catalog while keeping delayed routes distinct. Inventory consumption links are labeled by their used and missing-item outcomes.</li>

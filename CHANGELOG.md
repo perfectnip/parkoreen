@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Mechanics Flow map now routes Event-to-Trigger links backward with the arrow pointing to the target, and routes same-column Event links around cards.
 - Mechanics cards and Flow map now link Events that set a Trigger's enabled state, with labels for enable and disable actions.
 - Mechanics block cards link to their connected Events and referenced Variables, while Variable cards link back to the triggers and Events that use them.
 - Mechanics Flow map, block-card links, reachability checks, synchronous path warnings, and timer-cycle analysis now share one Event-route catalog while keeping delayed timer and animation paths distinct.
