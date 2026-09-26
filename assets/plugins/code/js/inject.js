@@ -2784,7 +2784,11 @@
                 break;
             }
             case 'setTilemapCellBehavior': {
-                if (!MECHANICS_TILEMAP_CELL_BEHAVIORS.has(action.collisionType) || typeof action.tilemapId !== 'string' || !action.tilemapId) break;
+                if (!MECHANICS_TILEMAP_CELL_BEHAVIORS.has(action.collisionType) || typeof action.tilemapId !== 'string' || !action.tilemapId) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Tilemap Cell Behavior needs a supported behavior and existing tilemap id.');
+                    break;
+                }
                 const gridSize = window.GRID_SIZE || 32;
                 const target = action.targetMode === 'touched'
                     ? getTilemapCellById(world, context.touchedObjectId)
@@ -2794,14 +2798,21 @@
                         Math.abs(Number(action.x)) <= 10000000 && Math.abs(Number(action.y)) <= 10000000
                         ? getTilemapCellAt(world, action.tilemapId, Number(action.x), Number(action.y))
                         : null;
-                if (!target || target.tilemap.id !== action.tilemapId) break;
+                if (!target || target.tilemap.id !== action.tilemapId) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Tilemap Cell Behavior needs an existing fixed or touched cell in the selected tilemap.');
+                    break;
+                }
                 setMechanicsTilemapCellBehavior(world, worldState, target, action.collisionType, context.authoritativeStateApplication === true);
                 break;
             }
             case 'setCameraFollowMode': {
-                if (['both', 'horizontal', 'vertical'].includes(action.mode)) {
-                    world._mechanicsCameraFollowMode = action.mode;
+                if (!['both', 'horizontal', 'vertical'].includes(action.mode)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Camera Follow Mode needs both, horizontal, or vertical mode.');
+                    break;
                 }
+                world._mechanicsCameraFollowMode = action.mode;
                 break;
             }
             case 'setCameraBounds': {
@@ -2809,13 +2820,23 @@
                     delete world._mechanicsCameraBounds;
                 } else if (action.mode === 'unbounded') {
                     world._mechanicsCameraBounds = { enabled: false };
-                } else if (action.mode === 'bounds' &&
-                    [action.x, action.y, action.width, action.height].every(isFiniteMechanicsNumber)) {
+                } else if (action.mode === 'bounds') {
+                    if (![action.x, action.y, action.width, action.height].every(isFiniteMechanicsNumber)) {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'Custom camera bounds need finite X, Y, width, and height values.');
+                        break;
+                    }
                     const [x, y, width, height] = [action.x, action.y, action.width, action.height].map(Number);
                     if (width > 0 && height > 0 && Math.abs(x) <= 10000000 && Math.abs(y) <= 10000000 &&
                         width <= 20000000 && height <= 20000000 && x + width <= 10000000 && y + height <= 10000000) {
                         world._mechanicsCameraBounds = { enabled: true, x, y, width, height };
+                    } else {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'Camera bounds must have positive dimensions and stay within ±10,000,000 map pixels.');
                     }
+                } else {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Camera Bounds needs Map Config, unbounded, or custom bounds mode.');
                 }
                 break;
             }
@@ -2890,7 +2911,11 @@
                 break;
             }
             case 'spawnObject': {
-                if (!player || !world?.addObject || typeof window.WorldObject !== 'function') break;
+                if (!player || !world?.addObject || typeof window.WorldObject !== 'function') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Spawn Object needs an active player and object creation support in this game view.');
+                    break;
+                }
                 const template = world.getObjectById?.(action.objectId);
                 const maxTotal = window.CODE_MAX_MECHANICS_SPAWNED_OBJECTS || 64;
                 const xOffset = Number(action.xOffset);
@@ -2900,17 +2925,33 @@
                 const lifetime = action.lifetime === undefined ? 0 : Number(action.lifetime);
                 if (!template || template._mechanicsSpawned || template.type === 'teleportal' || template.appearanceType === 'teleportal' ||
                     ['zone', 'button', 'checkpoint', 'spawnpoint', 'endpoint'].includes(template.appearanceType) ||
-                    ['checkpoint', 'spawnpoint', 'endpoint'].includes(template.actingType) ||
-                    !Number.isFinite(xOffset) || !Number.isFinite(yOffset) ||
+                    ['checkpoint', 'spawnpoint', 'endpoint'].includes(template.actingType)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Spawn Object needs an existing eligible map-object template.');
+                    break;
+                }
+                if (!Number.isFinite(xOffset) || !Number.isFinite(yOffset) ||
                     Math.abs(xOffset) > 10000000 || Math.abs(yOffset) > 10000000 ||
                     typeof tag !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(tag) ||
                     !Number.isInteger(maxInstances) || maxInstances < 1 || maxInstances > maxTotal ||
-                    !Number.isFinite(lifetime) || lifetime < 0 || lifetime > (window.CODE_MAX_MECHANICS_SPAWN_LIFETIME_SECONDS || 3600)) break;
+                    !Number.isFinite(lifetime) || lifetime < 0 || lifetime > (window.CODE_MAX_MECHANICS_SPAWN_LIFETIME_SECONDS || 3600)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Spawn Object needs bounded offsets, a valid 1–64 character tag, a positive instance limit, and a lifetime from 0 to 3,600 seconds.');
+                    break;
+                }
                 const spawned = (world.objects || []).filter(object => object?._mechanicsSpawned === true);
-                if (spawned.length >= maxTotal || spawned.filter(object => object._mechanicsSpawnTag === tag).length >= maxInstances) break;
+                if (spawned.length >= maxTotal || spawned.filter(object => object._mechanicsSpawnTag === tag).length >= maxInstances) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Spawn Object reached the map-wide or per-tag spawned-object limit.');
+                    break;
+                }
                 const x = player.x + xOffset;
                 const y = player.y + yOffset;
-                if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10000000 || Math.abs(y) > 10000000) break;
+                if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10000000 || Math.abs(y) > 10000000) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'The spawned object position must stay within ±10,000,000 map pixels.');
+                    break;
+                }
                 let id;
                 do {
                     id = `mspawn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -2926,7 +2967,11 @@
                 break;
             }
             case 'removeSpawnedObjects': {
-                if (typeof action.tag !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(action.tag)) break;
+                if (typeof action.tag !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(action.tag)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Remove Spawned Objects needs a tag containing 1 to 64 letters, numbers, underscores, or hyphens.');
+                    break;
+                }
                 let removed = false;
                 for (const object of [...(world?.objects || [])]) {
                     if (object?._mechanicsSpawned !== true || object._mechanicsSpawnTag !== action.tag) continue;
@@ -2938,12 +2983,30 @@
                 break;
             }
             case 'setObjectPosition': {
-                if (!isFiniteMechanicsNumber(action.x) || !isFiniteMechanicsNumber(action.y)) break;
+                if (!isFiniteMechanicsNumber(action.x) || !isFiniteMechanicsNumber(action.y)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Position needs finite X and Y coordinates.');
+                    break;
+                }
                 const x = Number(action.x);
                 const y = Number(action.y);
-                if (Math.abs(x) > 10000000 || Math.abs(y) > 10000000) break;
+                if (Math.abs(x) > 10000000 || Math.abs(y) > 10000000) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object coordinates must stay within ±10,000,000 map pixels.');
+                    break;
+                }
                 const object = world?.getObjectById?.(action.objectId);
-                if (!object || !world?.setMechanicsObjectPosition?.(object.id, x, y)) break;
+                if (!object) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Position needs an existing map object.');
+                    break;
+                }
+                if (typeof world?.setMechanicsObjectPosition !== 'function') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object movement is unavailable in this game view.');
+                    break;
+                }
+                if (!world.setMechanicsObjectPosition(object.id, x, y)) break;
                 worldState.objectMotions.delete(object.id);
                 if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                 break;
@@ -3076,12 +3139,29 @@
                     !isFiniteMechanicsNumber(action.duration) || !Number.isFinite(Number(action.duration)) ||
                     Number(action.duration) < 0.01 || Number(action.duration) > (window.CODE_MAX_OBJECT_MOVE_DURATION_SECONDS || 60) ||
                     !Array.isArray(window.CODE_OBJECT_MOTION_EASINGS) ||
-                    !window.CODE_OBJECT_MOTION_EASINGS.some(item => item.id === action.easing)) break;
+                    !window.CODE_OBJECT_MOTION_EASINGS.some(item => item.id === action.easing)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Move Object needs finite coordinates, a duration from 0.01 to 60 seconds, and a supported easing.');
+                    break;
+                }
                 const x = Number(action.x);
                 const y = Number(action.y);
-                if (Math.abs(x) > 10000000 || Math.abs(y) > 10000000) break;
+                if (Math.abs(x) > 10000000 || Math.abs(y) > 10000000) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object coordinates must stay within ±10,000,000 map pixels.');
+                    break;
+                }
                 const object = world?.getObjectById?.(action.objectId);
-                if (!object || !world?.setMechanicsObjectPosition) break;
+                if (!object) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Move Object needs an existing map object.');
+                    break;
+                }
+                if (typeof world?.setMechanicsObjectPosition !== 'function') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Object movement is unavailable in this game view.');
+                    break;
+                }
                 const motion = {
                     motionId: `motion-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
                     fromX: object.x,
@@ -3092,7 +3172,11 @@
                     durationMs: Math.round(Number(action.duration) * 1000),
                     easing: action.easing
                 };
-                if (!isValidObjectMotion(motion)) break;
+                if (!isValidObjectMotion(motion)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'The requested object movement could not be represented safely.');
+                    break;
+                }
                 world.setMechanicsObjectPosition(object.id, object.x, object.y, { moving: true });
                 worldState.objectMotions.set(object.id, motion);
                 if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
@@ -3103,13 +3187,26 @@
                 const checkpoint = world?.getObjectById?.(action.objectId);
                 if (engine?.world !== world || !engine.setPlayerCheckpoint?.(player, checkpoint, {
                     playEffects: engine.lastCheckpoint !== checkpoint
-                })) break;
+                })) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Checkpoint needs an existing checkpoint object during Play or Test.');
+                    break;
+                }
                 break;
             }
             case 'setTriggerEnabled': {
                 const triggerId = typeof action.triggerId === 'string' ? action.triggerId : '';
                 const trigger = getCodeData(world).triggers.find(candidate => candidate?.id === triggerId);
-                if (!trigger || typeof action.enabled !== 'boolean') break;
+                if (!trigger) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Trigger Enabled needs an existing trigger id.');
+                    break;
+                }
+                if (typeof action.enabled !== 'boolean') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Trigger Enabled needs an enabled or disabled state.');
+                    break;
+                }
                 const previousEnabled = isMechanicsTriggerEnabled(world, trigger);
                 worldState.triggerEnabled.set(triggerId, action.enabled);
                 if (previousEnabled !== action.enabled && !context.authoritativeStateApplication) {
@@ -3128,30 +3225,51 @@
                 clearWorldTimer(world, String(action.timerName || '').trim());
                 break;
             case 'teleportPlayer':
-                if (player && isFiniteMechanicsNumber(action.x) && isFiniteMechanicsNumber(action.y) &&
-                    Math.abs(Number(action.x)) <= (window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000) &&
-                    Math.abs(Number(action.y)) <= (window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000)) {
-                    const x = Number(action.x);
-                    const y = Number(action.y);
-                    player.x = x;
-                    player.y = y;
-                    player.vx = 0;
-                    player.vy = 0;
-                    player.isOnGround = false;
-                    player.canJump = true;
-                    player._mechanicsTeleportSerial = (player._mechanicsTeleportSerial || 0) + 1;
+                if (!isFiniteMechanicsNumber(action.x) || !isFiniteMechanicsNumber(action.y) ||
+                    Math.abs(Number(action.x)) > (window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000) ||
+                    Math.abs(Number(action.y)) > (window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Teleport Player needs finite coordinates within ±10,000,000 map pixels.');
+                    break;
                 }
+                if (!player) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Teleport Player needs an active player.');
+                    break;
+                }
+                const x = Number(action.x);
+                const y = Number(action.y);
+                player.x = x;
+                player.y = y;
+                player.vx = 0;
+                player.vy = 0;
+                player.isOnGround = false;
+                player.canJump = true;
+                player._mechanicsTeleportSerial = (player._mechanicsTeleportSerial || 0) + 1;
                 break;
             case 'teleportPlayerToObject': {
                 const object = world?.getObjectById?.(action.objectId);
-                if (!player || !object || object._mechanicsEnabled === false ||
+                if (!player) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Teleport Player to Object needs an active player.');
+                    break;
+                }
+                if (!object || object._mechanicsEnabled === false ||
                     !Number.isFinite(object.x) || !Number.isFinite(object.y) ||
                     !Number.isFinite(object.width) || object.width <= 0 ||
-                    !Number.isFinite(object.height) || object.height <= 0) break;
+                    !Number.isFinite(object.height) || object.height <= 0) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Teleport Player to Object needs an existing enabled object with a valid position and size.');
+                    break;
+                }
                 const x = object.x + (object.width - (Number(player.width) || 24)) / 2;
                 const y = object.y - (Number(player.height) || 24);
                 const maxCoordinate = window.CODE_MAX_PLAYER_TELEPORT_COORDINATE || 10000000;
-                if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > maxCoordinate || Math.abs(y) > maxCoordinate) break;
+                if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > maxCoordinate || Math.abs(y) > maxCoordinate) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'The object destination must stay within ±10,000,000 map pixels.');
+                    break;
+                }
                 player.x = x;
                 player.y = y;
                 player.vx = 0;
@@ -3214,18 +3332,31 @@
                 return EVENT_ACTION_STOP;
             }
             case 'setVelocity':
-                if (player && isFiniteMechanicsNumber(action.vx) && isFiniteMechanicsNumber(action.vy) &&
-                    Math.abs(Number(action.vx)) <= (window.CODE_MAX_PLAYER_VELOCITY || 10000) &&
-                    Math.abs(Number(action.vy)) <= (window.CODE_MAX_PLAYER_VELOCITY || 10000)) {
-                    const vx = Number(action.vx);
-                    const vy = Number(action.vy);
-                    player.vx = vx;
-                    player.vy = vy;
-                    if (player.vy < 0) player.isOnGround = false;
+                if (!isFiniteMechanicsNumber(action.vx) || !isFiniteMechanicsNumber(action.vy) ||
+                    Math.abs(Number(action.vx)) > (window.CODE_MAX_PLAYER_VELOCITY || 10000) ||
+                    Math.abs(Number(action.vy)) > (window.CODE_MAX_PLAYER_VELOCITY || 10000)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Player Velocity needs finite speeds within ±10,000 pixels per update.');
+                    break;
                 }
+                if (!player) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Player Velocity needs an active player.');
+                    break;
+                }
+                const vx = Number(action.vx);
+                const vy = Number(action.vy);
+                player.vx = vx;
+                player.vy = vy;
+                if (player.vy < 0) player.isOnGround = false;
                 break;
             case 'damagePlayer': {
-                if (!player || player.isDead || !isFiniteMechanicsNumber(action.amount)) break;
+                if (!isFiniteMechanicsNumber(action.amount) || Number(action.amount) < 0) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Player damage must be a finite, non-negative number.');
+                    break;
+                }
+                if (!player || player.isDead) break;
                 const amount = Math.max(0, Number(action.amount));
                 if (amount <= 0) break;
                 const damageSource = { actingType: 'mechanics', damageAmount: amount };
@@ -3240,7 +3371,16 @@
                 break;
             }
             case 'healPlayer': {
-                if (!player?.useHPSystem || !Number.isFinite(Number(player.maxHP)) || !isFiniteMechanicsNumber(action.amount)) break;
+                if (!isFiniteMechanicsNumber(action.amount) || Number(action.amount) < 0) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Player healing must be a finite, non-negative number.');
+                    break;
+                }
+                if (!player?.useHPSystem || !Number.isFinite(Number(player.maxHP))) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Heal Player requires an active player with the HP plugin enabled.');
+                    break;
+                }
                 const amount = Math.max(0, Number(action.amount));
                 player.hp = Math.min(Number(player.maxHP), Math.max(0, Number(player.hp) || 0) + amount);
                 break;
