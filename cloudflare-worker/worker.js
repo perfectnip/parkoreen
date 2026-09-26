@@ -1156,7 +1156,7 @@ class GameRoom {
                 color: p.playerColor
             })),
             mechanicsState: mechanicsRecord?.state || null,
-            mechanicsRevision: Number.isInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
+            mechanicsRevision: Number.isSafeInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
             mechanicsServerTimestamp: Date.now(),
             globalCoinIds: Array.isArray(room.globalCoinIds) ? room.globalCoinIds : []
         });
@@ -1213,7 +1213,7 @@ class GameRoom {
                 color: p.playerColor
             })),
             mechanicsState: mechanicsRecord?.state || null,
-            mechanicsRevision: Number.isInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
+            mechanicsRevision: Number.isSafeInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
             mechanicsServerTimestamp: Date.now(),
             globalCoinIds: Array.isArray(room.globalCoinIds) ? room.globalCoinIds : []
         });
@@ -1875,7 +1875,9 @@ class GameRoom {
                     ? previousMotion.startedAt
                     : serverTimestamp;
             }
-            const revision = (Number.isInteger(previous?.revision) ? previous.revision : 0) + 1;
+            const previousRevision = Number.isSafeInteger(previous?.revision) && previous.revision >= 0
+                ? previous.revision : 0;
+            const revision = previousRevision < Number.MAX_SAFE_INTEGER ? previousRevision + 1 : 1;
             await this.state.storage.put(`mechanics:${roomCode}`, JSON.stringify({ revision, updatedAt: serverTimestamp, state }));
             this.mechanicsTilemapCellOverrides = state.tilemapCells;
             this.refreshMechanicsContactLatches(roomCode);

@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Multiplayer Mechanics revision counters now require safe integers on both the Worker and client, so malformed stored revisions cannot corrupt state ordering.
 - Mechanics integer variables and List items now accept only safely representable integers, preventing Add, defaults, conditions, and save/load from silently rounding large values.
 - Imported Set, Add, Calculate, Toggle, and Branch Variable actions now reject mismatched values, types, comparisons, and Player targets with rate-limited author diagnostics.
 - Malformed imported List actions now report invalid typed items and unsupported Player List targets instead of silently using the triggering player.

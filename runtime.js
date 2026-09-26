@@ -793,7 +793,7 @@ class MultiplayerManager {
     }
 
     acceptMechanicsState(state, revision, serverTimestamp = null) {
-        if (!Number.isInteger(revision) || revision < 1 || revision <= this.mechanicsRevision ||
+        if (!Number.isSafeInteger(revision) || revision < 1 || revision <= this.mechanicsRevision ||
             !state || typeof state !== 'object' || Array.isArray(state)) return;
         this.mechanicsRevision = revision;
         this.mechanicsState = state;

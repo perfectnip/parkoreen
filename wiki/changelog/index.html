@@ -34,6 +34,7 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Mechanics revision validation</strong>: hosted Mechanics snapshots now accept and publish only safely representable revision counters, keeping ordering reliable if stored metadata is malformed.</li>
       <li><strong>Exact Mechanics integers</strong>: integer variables, List items, action inputs, and conditions now reject values outside JavaScript's safe integer range, so arithmetic and browser saves do not silently round large whole numbers.</li>
       <li><strong>Scalar action diagnostics</strong>: imported Set, Add, Calculate, Toggle, and Branch Variable actions now report missing or incompatible variables, invalid values or comparisons, and unsupported Player targets instead of silently skipping or targeting the triggering player.</li>
       <li><strong>List action diagnostics</strong>: malformed imported List actions now report invalid typed items and unsupported Player List targets; the runtime no longer silently changes an unknown target to the triggering player.</li>
