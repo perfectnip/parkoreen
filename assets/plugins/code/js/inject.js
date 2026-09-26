@@ -540,6 +540,14 @@
         );
     };
 
+    const reportMechanicsPersistenceFailure = (world, context, scope, name) => {
+        const diagnostic = context?.mechanicsActionDiagnostic;
+        if (!diagnostic) return;
+        const label = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : scope;
+        reportMechanicsRuntimeError(world, diagnostic.event || null, diagnostic.source || 'persistent value',
+            `The ${scope} “${label}” changed for this session, but its browser-local save could not be written.`);
+    };
+
     const reportTriggerTargetError = (world, trigger, message) => {
         const triggerState = getWorldTriggerState(world, trigger);
         if (triggerState.targetError === message) return;
@@ -638,7 +646,7 @@
         typeof variable?.campaignKey === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(variable.campaignKey)
             ? variable.campaignKey : '';
 
-    const persistMechanicsCampaignValue = (world, variable, value) => {
+    const persistMechanicsCampaignValue = (world, variable, value, context = {}) => {
         if (variable?.scope !== 'campaign' || window.engine?.state === 'testing' ||
             getMultiplayerManager()?.getRoomCode?.()) return false;
         const campaignKey = getMechanicsCampaignKey(variable);
@@ -662,7 +670,10 @@
             delete values[oldestKey];
         }
         const nextRecord = { values };
-        if (!window.ParkoreenLocalSave?.writeProfile?.('campaign', nextRecord)) return false;
+        if (!window.ParkoreenLocalSave?.writeProfile?.('campaign', nextRecord)) {
+            reportMechanicsPersistenceFailure(world, context, 'Campaign value', variable.name || campaignKey);
+            return false;
+        }
         worldState.persistedCampaign = nextRecord;
         worldState.persistedCampaignKey = window.ParkoreenLocalSave?.getProfileKey?.('campaign') || null;
         return true;
@@ -1300,14 +1311,17 @@
             if (isValidMechanicsList(definition, savedList)) cleanPlayerLists[definition.id] = normalizeMechanicsList(savedList);
         }
         const nextRecord = { map: record.map, player: record.player, objects: record.objects, lists: record.lists, playerLists: cleanPlayerLists };
-        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) return false;
+        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) {
+            reportMechanicsPersistenceFailure(world, context, 'Player List', variable.name || variable.id);
+            return false;
+        }
         worldState.persistedMechanics = nextRecord;
         worldState.persistedMechanicsKey = window.ParkoreenLocalSave?.getKey?.(world, 'mechanics') || null;
         return true;
     };
 
     const persistMechanicsVariableValue = (world, variable, value, player = null, context = {}) => {
-        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value);
+        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value, context);
         if (variable?.persist !== true || variable.variableType === 'list' || !isValidVariableValue(variable, value)) return false;
         if (window.engine?.state === 'testing') return false;
         if (variable.scope === 'player' && !isLocalPlayerTarget(player, context)) return false;
@@ -1337,14 +1351,18 @@
             lists: record.lists,
             playerLists: record.playerLists
         };
-        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) return false;
+        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) {
+            reportMechanicsPersistenceFailure(world, context,
+                bucketName === 'player' ? 'Player variable' : 'Map variable', variable.name || variable.id);
+            return false;
+        }
         worldState.persistedMechanics = nextRecord;
         worldState.persistedMechanicsKey = window.ParkoreenLocalSave?.getKey?.(world, 'mechanics') || null;
         return true;
     };
 
-    const persistMechanicsListValue = (world, variable, value) => {
-        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value);
+    const persistMechanicsListValue = (world, variable, value, context = {}) => {
+        if (variable?.scope === 'campaign') return persistMechanicsCampaignValue(world, variable, value, context);
         if (variable?.variableType !== 'list' || variable.persist !== true || !isValidMechanicsList(variable, value) ||
             window.engine?.state === 'testing' || getMultiplayerManager()?.getRoomCode?.()) return false;
         const worldState = getWorldState(world);
@@ -1360,7 +1378,10 @@
             if (isValidMechanicsList(definition, savedList)) cleanLists[definition.id] = normalizeMechanicsList(savedList);
         }
         const nextRecord = { map: record.map, player: record.player, objects: record.objects, lists: cleanLists, playerLists: record.playerLists };
-        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) return false;
+        if (!window.ParkoreenLocalSave?.write?.(world, 'mechanics', nextRecord)) {
+            reportMechanicsPersistenceFailure(world, context, 'Map List', variable.name || variable.id);
+            return false;
+        }
         worldState.persistedMechanics = nextRecord;
         worldState.persistedMechanicsKey = window.ParkoreenLocalSave?.getKey?.(world, 'mechanics') || null;
         return true;
@@ -1393,7 +1414,7 @@
         if (variable.scope === 'player') {
             persistMechanicsPlayerListValue(world, variable, normalized, context.player || null, context);
         } else {
-            persistMechanicsListValue(world, variable, normalized);
+            persistMechanicsListValue(world, variable, normalized, context);
         }
         if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
         return true;
@@ -2184,6 +2205,10 @@
         const actionType = typeof action?.type === 'string' ? action.type.slice(0, 64) : 'missing type';
         const actionSource = Number.isInteger(actionIndex) && actionIndex >= 0
             ? `action ${actionIndex + 1} (${actionType})` : `action (${actionType})`;
+        const actionPersistenceContext = {
+            ...context,
+            mechanicsActionDiagnostic: { event, source: actionSource }
+        };
         const supportedActions = window.CODE_EVENT_ACTION_TYPES;
         if (!action || typeof action !== 'object' || Array.isArray(action)) {
             reportMechanicsRuntimeError(world, event, actionSource,
@@ -2238,7 +2263,8 @@
                 const nextValue = normalizeVariableValue(variable, action.value);
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
-                    setVariableValue(world, variable, nextValue, targetPlayer, { ...context, targetPlayerId: playerId || context.targetPlayerId });
+                    setVariableValue(world, variable, nextValue, targetPlayer,
+                        { ...actionPersistenceContext, targetPlayerId: playerId || context.targetPlayerId });
                 }
                 break;
             }
@@ -2262,7 +2288,7 @@
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
-                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
+                    const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId || context.targetPlayerId };
                     const current = Number(getVariableValue(world, variable, targetPlayer, targetContext)) || 0;
                     const nextValue = current + amount;
                     if (Number.isFinite(nextValue) && (variable.valueType !== 'integer' || Number.isSafeInteger(nextValue))) {
@@ -2299,7 +2325,7 @@
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
-                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
+                    const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId || context.targetPlayerId };
                     const current = Number(getVariableValue(world, variable, targetPlayer, targetContext));
                     const base = Number.isFinite(current) ? current : 0;
                     const nextValue = operation === 'add' ? base + operand
@@ -2331,7 +2357,7 @@
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
-                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId };
+                    const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId || context.targetPlayerId };
                     setVariableValue(world, variable, !getVariableValue(world, variable, targetPlayer, targetContext), targetPlayer, targetContext);
                 }
                 break;
@@ -2358,7 +2384,7 @@
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = playerId ? { id: playerId } : player;
-                    const targetContext = { ...context, targetPlayerId: playerId || context.targetPlayerId, player: targetPlayer };
+                    const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId || context.targetPlayerId, player: targetPlayer };
                     const items = variable.scope === 'player'
                         ? getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext)
                         : worldState.lists.get(variable.id);
@@ -2407,7 +2433,7 @@
                 }
                 for (const playerId of getVariableTargetIds(variable, action, player, context)) {
                     const targetPlayer = { id: playerId };
-                    const targetContext = { ...context, targetPlayerId: playerId, player: targetPlayer };
+                    const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId, player: targetPlayer };
                     const items = getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext);
                     if (!Array.isArray(items)) continue;
                     let matched = false;
@@ -2503,7 +2529,7 @@
                     break;
                 }
                 const targetPlayer = { id: playerId };
-                const targetContext = { ...context, targetPlayerId: playerId, player: targetPlayer };
+                const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId, player: targetPlayer };
                 const items = getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext);
                 if (!Array.isArray(items)) {
                     reportMechanicsRuntimeError(world, event, actionSource,
@@ -2557,7 +2583,7 @@
                     break;
                 }
                 const targetPlayer = { id: playerId };
-                const targetContext = { ...context, targetPlayerId: playerId, player: targetPlayer };
+                const targetContext = { ...actionPersistenceContext, targetPlayerId: playerId, player: targetPlayer };
                 const items = getMechanicsPlayerListValue(world, variable, targetPlayer, targetContext);
                 if (!Array.isArray(items)) break;
                 const itemIndex = items.findIndex(candidate => {
