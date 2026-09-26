@@ -3415,10 +3415,13 @@
             }
             case 'playSound': {
                 const soundName = action.soundName;
-                if (Array.isArray(window.CODE_CORE_SOUND_NAMES) && window.CODE_CORE_SOUND_NAMES.includes(soundName)) {
-                    const audioManager = context.audioManager || window.engine?.audioManager;
-                    audioManager?.play?.(soundName);
+                if (!Array.isArray(window.CODE_CORE_SOUND_NAMES) || !window.CODE_CORE_SOUND_NAMES.includes(soundName)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Play Sound needs a supported built-in sound name.');
+                    break;
                 }
+                const audioManager = context.audioManager || window.engine?.audioManager;
+                audioManager?.play?.(soundName);
                 break;
             }
             case 'playPluginSound': {
@@ -3427,11 +3430,18 @@
                 const plugin = manager?.plugins?.get(pluginId);
                 const soundName = action.soundName;
                 const volume = action.volume === undefined ? 1 : Number(action.volume);
-                if (plugin && manager.isEnabled?.(pluginId) &&
-                    plugin.sounds && typeof soundName === 'string' && Object.hasOwn(plugin.sounds, soundName) &&
-                    Number.isFinite(volume) && volume >= 0 && volume <= 1) {
-                    manager.playSound(pluginId, soundName, volume);
+                if (!plugin || !manager.isEnabled?.(pluginId) || !plugin.sounds ||
+                    typeof soundName !== 'string' || !Object.hasOwn(plugin.sounds, soundName)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Play Plugin Sound needs a sound declared by an enabled plugin.');
+                    break;
                 }
+                if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Plugin sound volume must be between 0 and 1.');
+                    break;
+                }
+                manager.playSound(pluginId, soundName, volume);
                 break;
             }
             case 'stopPluginSound': {
@@ -3439,51 +3449,105 @@
                 const pluginId = action.pluginId;
                 const plugin = manager?.plugins?.get(pluginId);
                 const soundName = action.soundName;
-                if (plugin && manager.isEnabled?.(pluginId) && plugin.sounds &&
-                    typeof soundName === 'string' && Object.hasOwn(plugin.sounds, soundName)) {
-                    manager.stopSound(pluginId, soundName);
+                if (!plugin || !manager.isEnabled?.(pluginId) || !plugin.sounds ||
+                    typeof soundName !== 'string' || !Object.hasOwn(plugin.sounds, soundName)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Stop Plugin Sound needs a sound declared by an enabled plugin.');
+                    break;
                 }
+                manager.stopSound(pluginId, soundName);
                 break;
             }
-            case 'runEvent':
-                if (action.eventId && typeof runEvent === 'function') return runEvent(action.eventId);
-                break;
-            case 'showMessage':
+            case 'runEvent': {
+                const target = typeof action.eventId === 'string'
+                    ? getCodeData(world).events.find(candidate => candidate?.id === action.eventId)
+                    : null;
+                if (!target || target.enabled === false) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Run Event needs an existing enabled Event.');
+                    break;
+                }
+                if (typeof runEvent !== 'function') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Run Event cannot continue from this event context.');
+                    break;
+                }
+                return runEvent(action.eventId);
+            }
+            case 'showMessage': {
+                if (typeof action.text !== 'string' || !action.text.trim()) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Message needs non-empty text.');
+                    break;
+                }
                 if (action.duration !== undefined && action.duration !== null &&
-                    (!isFiniteMechanicsNumber(action.duration) || Number(action.duration) < 0)) break;
+                    (!isFiniteMechanicsNumber(action.duration) || Number(action.duration) < 0)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Message duration must be a finite, non-negative number.');
+                    break;
+                }
                 showMechanicsMessage(action.text, action.duration);
                 break;
+            }
             case 'showList': {
                 const variable = getVariable(world, action.variableId);
                 const title = typeof action.title === 'string' ? action.title.trim() : '';
-                if (variable?.variableType === 'list' && title && title.length <= 64) {
-                    showMechanicsListPanel(world, variable.id, title, player);
+                if (variable?.variableType !== 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show List Panel needs an existing enabled List variable.');
+                    break;
                 }
+                if (!title || title.length > 64) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show List Panel needs a title containing 1 to 64 characters.');
+                    break;
+                }
+                showMechanicsListPanel(world, variable.id, title, player);
                 break;
             }
             case 'showVariablePanel': {
                 const variable = getVariable(world, action.variableId);
                 const title = typeof action.title === 'string' ? action.title.trim() : '';
-                if (variable && variable.variableType !== 'list' && title && title.length <= 64) {
-                    showMechanicsScalarPanel(world, variable.id, title, player);
+                if (!variable || variable.variableType === 'list') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Variable Panel needs an existing enabled scalar variable.');
+                    break;
                 }
+                if (!title || title.length > 64) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Variable Panel needs a title containing 1 to 64 characters.');
+                    break;
+                }
+                showMechanicsScalarPanel(world, variable.id, title, player);
                 break;
             }
             case 'showDialogue': {
                 const dialogue = showMechanicsDialogue(action.speaker, action.pages, player);
-                if (!dialogue) break;
+                if (!dialogue) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Dialogue could not open; check its pages, speaker, active player, and dialogue queue limit.');
+                    break;
+                }
                 return { type: EVENT_ACTION_YIELD, dialogue };
             }
             case 'showChoice': {
                 const onChoice = typeof runEvent?.forChoice === 'function' ? runEvent.forChoice : runEvent;
                 const dialogue = showMechanicsChoice(action.speaker, action.prompt, action.choices, player, world, onChoice);
-                if (!dialogue) break;
+                if (!dialogue) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Choices could not open; check its prompt, unique option labels, enabled Event links, player, and queue limit.');
+                    break;
+                }
                 return { type: EVENT_ACTION_YIELD, dialogue };
             }
             case 'showMenu': {
                 const onChoice = typeof runEvent?.forChoice === 'function' ? runEvent.forChoice : runEvent;
                 const dialogue = showMechanicsMenu(action.title, action.choices, action.cancelEventId, action.pauseWorld, player, world, onChoice);
-                if (!dialogue) break;
+                if (!dialogue) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Show Menu could not open; check its title, unique options, enabled Event links, cancel route, player, and queue limit.');
+                    break;
+                }
                 return { type: EVENT_ACTION_YIELD, dialogue };
             }
             default:

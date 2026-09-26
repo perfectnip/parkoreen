@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Imported sound, Event-link, message, variable-panel, dialogue, choice, and menu actions now report unsupported names or malformed presentation data in Mechanics history.
 - Invalid imported Start Timer and Stop Timer actions now report their name, delay, repeat, Event-link, and timer-capacity errors in Mechanics history.
 - Imported tilemap, camera, object movement/spawn, checkpoint, trigger, teleport, velocity, and player-health actions now report malformed values or missing targets in Mechanics history.
 - Imported object enable, health, and damage actions now report invalid targets, states, and health values instead of silently skipping.
