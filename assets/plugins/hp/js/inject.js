@@ -37,7 +37,7 @@
     const GRID_SIZE = 32;
     
     const _safeBox = { x: 0, y: 0, width: 0, height: 0 };
-    function isPositionSafe(x, y, playerWidth, playerHeight) {
+    function isPositionSafe(x, y, playerWidth, playerHeight, player) {
         const margin = 4;
         _safeBox.x = x - margin; _safeBox.y = y - margin;
         _safeBox.width = playerWidth + margin * 2; _safeBox.height = playerHeight + margin * 2;
@@ -56,9 +56,41 @@
         const gx1 = x + playerWidth * 0.25, gx2 = x + playerWidth * 0.75;
         const groundNearby = world.queryNear ? world.queryNear(x, groundY - 4, playerWidth, 12) : world.objects;
         let hasGround = false;
+        const groundTouchbox = player?.groundTouchbox;
+        const groundBox = {
+            x: x + (groundTouchbox?.x || 0),
+            y: y + (groundTouchbox?.y ?? playerHeight - 24),
+            width: groundTouchbox?.width || playerWidth,
+            height: groundTouchbox?.height || 24
+        };
         for (let i = 0; i < groundNearby.length; i++) {
             const obj = groundNearby[i];
             if (!obj.collision || obj.actingType === 'spike') continue;
+            if (obj.collisionShape === 'circle' && typeof player?.getCircleVerticalContact === 'function') {
+                const surfaceY = player.getCircleVerticalContact(obj, groundBox, 1);
+                if (surfaceY !== null && Math.abs(surfaceY - groundY) <= 8) {
+                    hasGround = true;
+                    break;
+                }
+                continue;
+            }
+            if (obj.collisionShape === 'capsule' && typeof player?.getCapsuleVerticalContact === 'function') {
+                const surfaceY = player.getCapsuleVerticalContact(obj, groundBox, 1);
+                if (surfaceY !== null && Math.abs(surfaceY - groundY) <= 8) {
+                    hasGround = true;
+                    break;
+                }
+                continue;
+            }
+            if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape) &&
+                typeof player?.getSlopeSurfaceY === 'function') {
+                const surfaceY = player.getSlopeSurfaceY(obj, groundBox.x + groundBox.width / 2);
+                if (surfaceY !== null && Math.abs(surfaceY - groundY) <= 8) {
+                    hasGround = true;
+                    break;
+                }
+                continue;
+            }
             if (groundY >= obj.y && groundY <= obj.y + 8 &&
                 ((gx1 >= obj.x && gx1 <= obj.x + obj.width) ||
                  (gx2 >= obj.x && gx2 <= obj.x + obj.width))) {
@@ -124,7 +156,7 @@
             }
             
             // Only record if position is safe (not near spikes)
-            if (isPositionSafe(alignedX, alignedY, player.width, player.height)) {
+            if (isPositionSafe(alignedX, alignedY, player.width, player.height, player)) {
                 player.safeGroundHistory.push({
                     x: alignedX,
                     y: alignedY,
@@ -178,7 +210,7 @@
             const safeGround = player.safeGroundHistory[i];
             
             // Verify this position is still safe
-            if (isPositionSafe(safeGround.x, safeGround.y, player.width, player.height)) {
+            if (isPositionSafe(safeGround.x, safeGround.y, player.width, player.height, player)) {
                 player.x = safeGround.x;
                 player.y = safeGround.y;
                 player.vx = 0;

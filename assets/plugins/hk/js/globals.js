@@ -18,10 +18,18 @@ const HK_DEFAULTS = {
     nailSpeed: 'base', // 'base' (0.41s) or 'quickSlash' (0.25s)
     attackRange: 38,
     pogoBouncePower: 1.2, // Fraction of normal jump (higher than normal jump for satisfying bounce)
-    monarchWingJumpPower: 0.9, // Fraction of normal jump
-    // Camera smoothness - HK style: slow horizontal, slightly responsive vertical
-    defaultCameraLerpX: 0.04, // Very smooth horizontal (tiny value)
-    defaultCameraLerpY: 0.15  // Slightly above default vertical
+    monarchWingJumpPower: 0.85, // Fraction of normal jump
+    slashEffects: true,
+    impactEffects: true,
+    cameraShakeEffects: true,
+    impactShakeIntensity: 7,
+    landingShakeIntensity: 2,
+    dashTrailEffects: true,
+    abilityAuraEffects: true,
+    nailEffectColor: '#e9fbff',
+    dashEffectColor: '#9cecff',
+    chargeEffectColor: '#9cecff',
+    healEffectColor: '#79f2cf'
 };
 
 // Player HK state (will be attached to player objects)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Current — Parkoreen Wiki</title>
+  <title>Current — Parkoreen Guide</title>
   <link rel="stylesheet" href="../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -11,46 +11,29 @@
   <div class="topbar">
     <a class="topbar-logo" href="../../">Parkoreen</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-logo topbar-wiki" href="../">Wiki</a>
+    <a class="topbar-logo topbar-wiki" href="../">Guide</a>
     <span class="topbar-sep">/</span>
     <span class="topbar-crumb">Current</span>
     <a class="topbar-home" href="../..">← Parkoreen</a>
     <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
   </div>
   <div class="page-wrap">
-    <a class="back-link" href="..">← Wiki Home</a>
+    <a class="back-link" href="..">← Guide Home</a>
     <div class="page-header">
       <span class="version-badge">Current</span>
       <h1>Parkoreen — Current Version</h1>
-      <p class="subtitle">Complete documentation for the latest version of Parkoreen (v0.4-Indev), including all features, objects, and settings.</p>
+      <p class="subtitle">A reference for the current Parkoreen build, including its game editor, Mechanics system, plugins, and device-adaptive controls.</p>
     </div>
 
-    <h2>What's new in Current</h2>
+    <h2>Current engine features</h2>
     <ul>
-      <li>Saw blade multi-select now exposes <strong>Width</strong>, <strong>Height</strong>, and <strong>Damage Amount</strong> in the bulk edit popup, alongside Spin Direction and Spin Speed</li>
-      <li>Mechanics editor: the <strong>Action</strong> block type has been renamed to <strong>Event</strong>; existing maps are auto-migrated. Trigger linking field is now <code>eventId</code></li>
-      <li>Mechanics editor: fixed a crash when picking the <strong>Player Action Input</strong> trigger type so its sub-options render correctly</li>
-      <li>Hosting / editing a map no longer fails to load due to a syntax error in <code>host.html</code></li>
-      <li>Dashboard navigation now detects iframes and uses <code>location.href</code> instead of opening new tabs, avoiding popup blocks</li>
-      <li>Coins — collectable currency with global/player scope</li>
-      <li>Bouncers — spring pads that launch the player in any direction</li>
-      <li>Coins and bouncers now use dedicated SVG sprites; bouncer rotate now syncs launch/appearance direction</li>
-      <li>Add Type (<code>Add</code> / <code>Replace</code> / <code>Overlap</code>) now works for all add tools, including teleportal, coin, text, zone, spinner, and button</li>
-      <li>Coin move/duplicate snapping now aligns to the center of a grid block</li>
-      <li>Coin floating animation timing now varies per coin (phase/speed), so coins flow differently</li>
-      <li>Move and Duplicate actions now also trigger tile placement sound feedback</li>
-      <li>Collected coins now disappear immediately on pickup</li>
-      <li>HK plugin improvements: wall jumps now match normal jump height, super dash wall-hit freezes the player briefly, and Mantis Claw ignores teleportal/coin/bouncer surfaces.</li>
-      <li>End point now only appears gray when a coin requirement exists and is unmet.</li>
-      <li>Sign-in now shows a clear error message when username or password is incorrect</li>
-      <li>Admin chat command <strong>/title [player] [text]</strong> shows large centered text (supports <code>username</code>, <code>@s</code>, <code>@a</code>, <code>@p</code>, <code>@r</code>)</li>
-      <li>All-spike touchbox mode</li>
-      <li>Saw blades (spinners) — rotating circular hazards</li>
-      <li>Buttons — interaction/pressure-plate triggers</li>
-      <li>Block textures (solid, brick, …)</li>
-      <li>Multi-select tool for bulk editing</li>
-      <li>Text objects — in-world text labels with full font/alignment control</li>
-      <li>Plugin framework (HK, HP, Code plugins)</li>
+      <li><strong>Mechanics editor:</strong> reusable Events, conditions, typed map and per-player variables and Lists, timers, dialogue, menus, inventory flows, checkpoints, object health and movement, temporary object spawning, and room-specific gravity, jump force, speed, acceleration, air control, and terminal fall settings. Templates include Tag, Hide and Seek, Timed Round, and platformer/RPG building blocks.</li>
+      <li><strong>Triggers:</strong> game and room lifecycle, zone and object contact, tilemap contact, buttons, player input, jumps, landings, health changes, attacks, variables, player stats, and timed repetition.</li>
+      <li><strong>2D world:</strong> named parallax draw layers, sparse native tilemaps with custom atlases, one-way ramps, hazards and polygon collision, camera bounds and follow modes, saved-map transitions, and portable Object Stamps.</li>
+      <li><strong>Hollow Knight plugin:</strong> directional nail attacks, pogo from solid surfaces and tilemaps, Soul, Focus, Monarch Wings, Mantis Claw, dash abilities, and configurable slash, impact, damage, landing, healing, trail, and camera effects.</li>
+      <li><strong>Mobile and desktop:</strong> editor tools, game controls, settings, and HUD adapt to device capabilities. Hybrid devices can switch between touch and keyboard/mouse input automatically.</li>
+      <li><strong>Plugin development:</strong> the Guide includes the trusted API v1 workflow, starter, local preview, validator, and package tools. Community plugin installation remains unavailable until isolation and permissions are implemented.</li>
+      <li><strong>Persistence:</strong> maps save locally in the browser and can be exported; saves do not automatically sync across devices.</li>
     </ul>
 
     <h2>Topics</h2>
@@ -64,6 +47,11 @@
         <span class="nav-card-icon">🖊</span>
         <span class="nav-card-title">Editor</span>
         <span class="nav-card-desc">Tools, multi-select, shortcuts</span>
+      </a>
+      <a class="nav-card" href="mechanics/">
+        <span class="nav-card-icon">🧩</span>
+        <span class="nav-card-title">Mechanics</span>
+        <span class="nav-card-desc">Triggers, Events, variables, game modes</span>
       </a>
       <a class="nav-card" href="editor/toolbar/">
         <span class="nav-card-icon">📦</span>

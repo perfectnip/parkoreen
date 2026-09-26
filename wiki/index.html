@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Parkoreen Wiki</title>
+  <title>Parkoreen Guide</title>
   <link rel="stylesheet" href="wiki.css">
   <style>
     .hero { background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-alt) 100%); padding: 60px 24px 48px; text-align: center; border-bottom: 1px solid var(--border); }
@@ -35,19 +35,19 @@
   <div class="topbar">
     <a class="topbar-logo" href="../">Parkoreen</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-logo topbar-wiki" href="./">Wiki</a>
+    <a class="topbar-logo topbar-wiki" href="./">Guide</a>
     <a class="topbar-home" href="../">← Parkoreen</a>
     <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'☾ Dark':'☀ Light';})()">☀ Light</button>
   </div>
 
   <div class="hero">
-    <h1>📖 Parkoreen Wiki</h1>
+    <h1>📖 Parkoreen Guide</h1>
     <p>Complete reference for the Parkoreen map editor and game engine — objects, physics, map config, editor tools, and more.</p>
   </div>
 
   <div class="main">
     <div class="ix-note">
-      Each version article documents the <strong>complete feature set</strong> for that version — not just what changed. For release notes and history, see the <a href="changelog/">Changelog</a> (wiki).
+      Each version article documents the <strong>complete feature set</strong> for that version — not just what changed. For release notes and history, see the <a href="changelog/">Changelog</a>. This is Parkoreen’s maintained Guide; players cannot edit these pages, and updates ship with the game.
     </div>
 
     <div class="section-title">Changelog</div>
@@ -63,7 +63,7 @@
     <div class="version-grid">
       <a href="current/" class="version-card current">
         <div class="ver">Current</div>
-        <div class="desc">v0.4-Indev — coins, bouncers, buttons, saw blades, plugins, all-spike…</div>
+        <div class="desc">Current game editor, Mechanics system, plugins, tilemaps, and adaptive controls.</div>
         <span class="badge">✦ Latest</span>
       </a>
       <a href="v0.4/" class="version-card">

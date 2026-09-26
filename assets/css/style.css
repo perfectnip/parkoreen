@@ -1176,6 +1176,81 @@ a:hover {
     pointer-events: auto;
 }
 
+.layer-panel-add-buttons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.draw-layer-definitions {
+    display: grid;
+    gap: 6px;
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--surface-light);
+}
+
+.draw-layer-definitions-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.draw-layer-definitions-title span,
+.draw-layer-definition-position {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 400;
+}
+
+.draw-layer-definition {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    min-height: 34px;
+    padding: 3px 6px;
+    border-radius: var(--border-radius);
+    background: var(--surface);
+}
+
+.draw-layer-definition-name {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+}
+
+.draw-layer-definition-position {
+    white-space: nowrap;
+}
+
+.layer-depth-select {
+    max-width: 132px;
+    min-width: 96px;
+    min-height: 36px;
+    padding: 4px 6px;
+    border: 1px solid var(--surface-light);
+    border-radius: var(--border-radius);
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+}
+
+.layer-overlay-label {
+    padding: 4px 6px;
+    border-radius: var(--border-radius);
+    background: var(--bg-dark);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
 .layer-item {
     display: flex;
     align-items: center;
@@ -2117,6 +2192,26 @@ a:hover {
     border-color: rgba(233, 30, 99, 0.8);
 }
 
+.touch-btn.touch-plugin-control {
+    width: min(80px, 12vw);
+    min-width: 56px;
+    padding: 6px;
+    background: rgba(92, 74, 160, 0.85);
+    border-color: rgba(183, 166, 255, 0.9);
+    font-size: 11px;
+    line-height: 1.15;
+}
+
+.touch-plugin-control-label {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow-wrap: anywhere;
+    text-align: center;
+    pointer-events: none;
+}
+
 /* Landscape orientation - compact layout */
 @media (orientation: landscape) and (max-height: 500px) {
     .touch-buttons-right {
@@ -2228,6 +2323,162 @@ a:hover {
 
 .hud-btn:hover {
     background: rgba(0, 0, 0, 0.7);
+}
+
+/* Device-selected layouts; viewport media queries still handle orientation. */
+body.device-desktop .touch-controls {
+    display: none !important;
+}
+
+body.device-mobile .toolbar {
+    gap: 2px;
+    max-width: calc(100vw - 16px);
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+body.device-mobile .toolbar:not(.selection-toolbar):not(.selection-mouse-toolbar) {
+    top: max(8px, env(safe-area-inset-top, 0px));
+    bottom: auto;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+body.device-mobile .toolbar:not(.selection-toolbar):not(.selection-mouse-toolbar)::-webkit-scrollbar,
+body.device-mobile .selection-toolbar::-webkit-scrollbar,
+body.device-mobile .selection-mouse-toolbar::-webkit-scrollbar {
+    display: none;
+}
+
+body.device-mobile .selection-toolbar,
+body.device-mobile .selection-mouse-toolbar {
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    bottom: auto;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    transform: none;
+}
+
+body.device-mobile .selection-mouse-toolbar {
+    top: calc(env(safe-area-inset-top, 0px) + 120px);
+}
+
+body.device-mobile .toolbar-btn {
+    min-width: 48px;
+    min-height: 48px;
+    padding: 6px;
+    flex: 0 0 auto;
+}
+
+body.device-mobile .hud-btn {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+body.device-mobile #room-code-display {
+    top: 68px !important;
+    padding: 8px 12px !important;
+    font-size: 1rem !important;
+    letter-spacing: 3px !important;
+}
+
+body.device-mobile .settings-panel,
+body.device-mobile .config-panel,
+body.device-mobile .layers-panel {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+}
+
+body.device-mobile .settings-container {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(96px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+body.device-mobile .settings-back {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top, 0px));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    min-width: 48px;
+    min-height: 48px;
+    z-index: var(--z-modal);
+}
+
+body.device-mobile .settings-card {
+    width: min(100%, 600px);
+    box-sizing: border-box;
+    margin: max(56px, calc(env(safe-area-inset-top, 0px) + 48px)) auto 0;
+    padding: 20px;
+}
+
+body.device-mobile .settings-row {
+    min-height: 48px;
+    gap: 12px;
+}
+
+body.device-mobile .settings-volume {
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+body.device-mobile .settings-volume input[type="range"] {
+    width: min(38vw, 180px);
+    min-height: 44px;
+}
+
+body.device-mobile .settings-container button:not(.settings-back),
+body.device-mobile .settings-container select,
+body.device-mobile .settings-container input:not([type="range"]) {
+    min-height: 44px;
+    font-size: 16px;
+}
+
+body.device-mobile .dashboard-menu-row {
+    min-height: 52px;
+}
+
+body.device-mobile .page-header .btn {
+    min-height: 48px;
+}
+
+body.device-mobile .dashboard-menu-panel {
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+}
+
+body.device-mobile .map-card-actions .btn {
+    min-height: 48px;
+}
+
+body.device-mobile .touch-joystick-container {
+    left: max(16px, env(safe-area-inset-left, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
+body.device-mobile .touch-buttons-right {
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+
+body.device-mobile .modal,
+body.device-mobile .object-edit-panel {
+    width: calc(100vw - 32px);
+    max-width: 560px;
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+}
+
+body.device-mobile input,
+body.device-mobile select,
+body.device-mobile textarea {
+    font-size: 16px;
 }
 
 /* HUD three-dots menu */

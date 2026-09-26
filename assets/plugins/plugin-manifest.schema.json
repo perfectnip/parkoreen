@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parkoreen.com/schemas/plugin-manifest-v1.json",
+  "title": "Parkoreen Plugin Manifest API v1",
+  "type": "object",
+  "not": { "required": ["permissions"] },
+  "required": ["id", "apiVersion", "name", "version", "description", "author", "scripts", "config"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "apiVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
+    "description": { "type": "string", "minLength": 1 },
+    "author": { "type": "string", "minLength": 1 },
+    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "icon": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "coverHeight": { "type": "number", "minimum": 1, "maximum": 600 },
+    "beta": { "type": "boolean" },
+    "hideInPluginLibrary": { "type": "boolean" },
+    "features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9_-]{0,63}$" }
+    },
+    "cover": { "$ref": "#/$defs/assetPath" },
+    "assets": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/assetPath" }
+    },
+    "scripts": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["skulpt", "skulptStdlib", "pythonCompiler", "globals", "inject", "script", "editor", "editorUi"] },
+      "additionalProperties": { "$ref": "#/$defs/scriptPath" }
+    },
+    "sounds": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/assetPath" },
+          { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/assetPath" } }
+        ]
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/configField" }
+    },
+    "controls": {
+      "type": "object",
+      "description": "Plugin-owned controls share player.input across all registered plugins. Choose globally unique ids. Parkoreen movement ids are reserved; attack, heal, dash, and superDash are reserved for supported built-in actions.",
+      "propertyNames": {
+        "allOf": [
+          { "pattern": "^[a-z][A-Za-z0-9_-]{0,63}$" },
+          { "not": { "enum": ["left", "right", "up", "down", "jump", "shift", "space"] } }
+        ]
+      },
+      "additionalProperties": { "$ref": "#/$defs/control" }
+    },
+    "editorFeatures": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][A-Za-z0-9_-]{0,63}$" },
+      "additionalProperties": { "type": "boolean" }
+    },
+    "worldObjectGuards": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/worldObjectGuard" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "control": {
+      "type": "object",
+      "required": ["key", "label"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "worldObjectGuard": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+        "actingType": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+        "appearanceType": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+        "section": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" }
+      },
+      "anyOf": [
+        { "required": ["type"] },
+        { "required": ["actingType"] },
+        { "required": ["appearanceType"] }
+      ],
+      "additionalProperties": false
+    },
+    "assetPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*:)[A-Za-z0-9._/-]+$"
+    },
+    "scriptPath": {
+      "allOf": [
+        { "$ref": "#/$defs/assetPath" },
+        { "pattern": "\\.[jJ][sS]$" }
+      ]
+    },
+    "configField": {
+      "type": "object",
+      "required": ["type", "default"],
+      "properties": {
+        "type": { "enum": ["boolean", "number", "select", "string"] },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "default": {},
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "showIf": { "type": "string" },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "properties": {
+              "value": { "type": ["string", "number", "boolean"] },
+              "label": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "boolean" } } }, "then": { "properties": { "default": { "type": "boolean" } } } },
+        { "if": { "properties": { "type": { "const": "number" } } }, "then": { "properties": { "default": { "type": "number" } } } },
+        { "if": { "properties": { "type": { "const": "string" } } }, "then": { "properties": { "default": { "type": "string" } } } },
+        { "if": { "properties": { "type": { "const": "select" } } }, "then": { "required": ["options"] } }
+      ],
+      "additionalProperties": true
+    }
+  }
+}

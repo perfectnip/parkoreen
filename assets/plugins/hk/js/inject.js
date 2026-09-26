@@ -4,7 +4,35 @@
  */
 
 (function(ctx) {
-    const { pluginManager, pluginId, world, hooks, sounds } = ctx;
+    const { api, pluginManager, pluginId, world, hooks, sounds } = ctx;
+    // Keep plugin-controlled movement aligned with GameEngine.updatePhysics.
+    const HK_CORE_DEFAULT_GRAVITY = 0.71;
+    const HK_CORE_DEFAULT_JUMP_FORCE = -13.2;
+    const HK_CORE_DEFAULT_TERMINAL_FALL_SPEED = 16;
+    const HK_CORE_MAX_TERMINAL_FALL_SPEED = 100;
+
+    function getWorldGravity() {
+        const gravity = Number.isFinite(world?._mechanicsGravity) ? world._mechanicsGravity : world?.gravity;
+        return Number.isFinite(gravity) && gravity >= 0
+            ? gravity
+            : HK_CORE_DEFAULT_GRAVITY;
+    }
+
+    function getWorldTerminalFallSpeed(gravity = getWorldGravity()) {
+        const terminalFallSpeed = Number.isFinite(world?._mechanicsTerminalFallSpeed)
+            ? world._mechanicsTerminalFallSpeed : world?.terminalFallSpeed;
+        return Number.isFinite(terminalFallSpeed) &&
+            terminalFallSpeed > 0 && terminalFallSpeed <= HK_CORE_MAX_TERMINAL_FALL_SPEED
+            ? terminalFallSpeed
+            : HK_CORE_DEFAULT_TERMINAL_FALL_SPEED * (gravity / HK_CORE_DEFAULT_GRAVITY);
+    }
+
+    function getWorldJumpForce() {
+        const jumpForce = Number.isFinite(world?._mechanicsJumpForce) ? world._mechanicsJumpForce : world?.jumpForce;
+        return Number.isFinite(jumpForce) && jumpForce < 0
+            ? jumpForce
+            : HK_CORE_DEFAULT_JUMP_FORCE;
+    }
     
     // Load soul container SVG images
     const soulEmptyImg = new Image();
@@ -16,6 +44,32 @@
     // Helper to get current config (reads dynamically so changes are reflected)
     function getConfig() {
         return world?.plugins?.hk || HK_DEFAULTS;
+    }
+
+    function effectEnabled(key) {
+        return getConfig()[key] !== false;
+    }
+
+    function getEffectColor(key, fallback) {
+        const color = getConfig()[key];
+        return typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color) ? color : fallback;
+    }
+
+    function triggerCameraShake(player, intensity, duration = 170) {
+        if (!player || !effectEnabled('cameraShakeEffects')) return;
+        const amount = Number(intensity);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        const now = Date.now();
+        const current = player._hkCameraShake;
+        if (current && now - current.startedAt < current.duration) {
+            const remaining = current.intensity * (1 - Math.max(0, now - current.startedAt) / current.duration);
+            if (remaining > amount * 0.8) return;
+        }
+        player._hkCameraShake = {
+            startedAt: now,
+            duration: Math.max(60, Math.min(500, Number(duration) || 170)),
+            intensity: Math.min(24, amount)
+        };
     }
     
     // ============================================
@@ -48,6 +102,8 @@
         player.dashCooldown = 0;
         player.dashDirection = 1;
         player.dashTrail = []; // Trail of recent positions for dash effect
+        player.superDashTrail = [];
+        player._lastSuperDashTrailTime = 0;
         
         // Super Dash
         player.hasSuperDash = config.superDash || false;
@@ -63,6 +119,11 @@
         // Heal
         player.isHealing = false;
         player.healStartTime = 0;
+        player._healImpact = null;
+        player._soulGainEffects = [];
+        player._hkDamageFlash = null;
+        player._hkObservedHp = Number.isFinite(player.hp) ? player.hp : null;
+        player._hkDamageSource = null;
         
         // Mantis Claw (wall cling + wall jump)
         player.hasMantisClaw = config.mantisClaw || false;
@@ -87,6 +148,11 @@
         player._pogoJumping = false;
         player._hitUpward = false;
         player._attackHitThisSwing = false;
+        player._mechanicsAttackHitObjects = new Set();
+        player._nailImpact = null;
+        player._pogoBounceImpact = null;
+        player._landingImpact = null;
+        player._hkCameraShake = null;
 
         return data;
     }, pluginId, 5); // Run before HP plugin
@@ -115,6 +181,26 @@
         const { player, world, audioManager } = data;
         const now = Date.now();
         const config = getConfig();
+
+        // Start the hurt effect only after HP actually falls. The damage hook
+        // runs before the HP plugin, so observing the next update avoids
+        // flashing for invincibility or damage canceled by another hook.
+        const currentHp = Number(player.hp);
+        if (Number.isFinite(currentHp)) {
+            if (Number.isFinite(player._hkObservedHp) && currentHp < player._hkObservedHp) {
+                const source = player._hkDamageSource;
+                const playerX = player.x + player.width / 2;
+                const playerY = player.y + player.height / 2;
+                let directionX = Number.isFinite(source?.x) ? playerX - source.x : player.facingDirection;
+                let directionY = Number.isFinite(source?.y) ? playerY - source.y : 0;
+                const directionLength = Math.hypot(directionX, directionY) || 1;
+                directionX /= directionLength;
+                directionY /= directionLength;
+                player._hkDamageFlash = { time: now, directionX, directionY };
+            }
+            player._hkObservedHp = currentHp;
+            player._hkDamageSource = null;
+        }
         
         // Sync abilities from config (allows dynamic enable/disable)
         player.hasMonarchWing = config.monarchWing || false;
@@ -187,7 +273,7 @@
         // Handle wall bounce (horizontal push after wall jump)
         if (player.isWallBouncing) {
             if (now < player.wallBounceEndTime) {
-                const playerSpeed = world?.playerSpeed ?? 5;
+                const playerSpeed = Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : (world?.playerSpeed ?? 5);
                 
                 // Horizontal push only happens during the first half of the bounce
                 // Use reduced speed (30% of player speed) for gentler wall repel
@@ -196,13 +282,10 @@
                 }
                 // After midpoint, player regains horizontal control (vx handled by normal physics)
                 
-                // Normal gravity applies during bounce (0.5 is the default from game.js)
-                const DEFAULT_GRAVITY = 0.5;
-                const worldGravity = world?.gravity ?? DEFAULT_GRAVITY;
+                // Apply the same gravity and terminal speed as core physics.
+                const worldGravity = getWorldGravity();
                 player.vy += worldGravity;
-                
-                // Cap fall speed (same formula as main physics)
-                const maxFallSpeed = 20 * (worldGravity / DEFAULT_GRAVITY);
+                const maxFallSpeed = getWorldTerminalFallSpeed(worldGravity);
                 if (player.vy > maxFallSpeed) player.vy = maxFallSpeed;
                 
                 data.skipPhysics = true;
@@ -214,10 +297,9 @@
         
         // Handle wall cling physics - use skipPhysics to control fall speed
         if (player.isWallClinging) {
-            const DEFAULT_GRAVITY_CLING = 0.5;
-            const worldGravity = world?.gravity ?? DEFAULT_GRAVITY_CLING;
-            const worldJumpForce = world?.jumpForce ?? -11;
-            const playerSpeed = world?.playerSpeed ?? 5;
+            const worldGravity = getWorldGravity();
+            const worldJumpForce = getWorldJumpForce();
+            const playerSpeed = Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : (world?.playerSpeed ?? 5);
             
             // Check for wall jump input
             if (player.input?.jump && player._wallJumpReady !== false) {
@@ -281,38 +363,144 @@
             player.attackDirection = direction;
             player.attackStartTime = now;
             player._attackHitThisSwing = false; // Reset hit flag for new attack
+            player._mechanicsAttackHitObjects = new Set();
         }
         
         if (player.isAttacking && !player._attackHitThisSwing) {
             const hitbox = getAttackHitbox(player, player.attackDirection);
-            const worldJumpForce = world?.jumpForce ?? -11;
-            
-            const atkNearby = world.queryNear ? world.queryNear(hitbox.x, hitbox.y, hitbox.width, hitbox.height) : world.objects;
+            const worldJumpForce = getWorldJumpForce();
+
+            // queryNear is a broadphase, so a down-slash must search the full
+            // feet sweep as well as the nail hitbox. Otherwise a thin platform
+            // can be crossed during the next physics step without entering
+            // the attack hitbox's 90 px range.
+            const groundTouchbox = player.getGroundTouchbox?.();
+            const playerFeet = groundTouchbox && Number.isFinite(groundTouchbox.y) && Number.isFinite(groundTouchbox.height)
+                ? groundTouchbox.y + groundTouchbox.height
+                : player.y + player.height;
+            const gravity = getWorldGravity();
+            const terminalFallSpeed = getWorldTerminalFallSpeed(gravity);
+            const nextFallSpeed = Math.min(Math.max(0, Number(player.vy) || 0) + gravity, terminalFallSpeed);
+            const nextFallStep = Math.max(0, nextFallSpeed);
+            const pogoContactTolerance = Math.min(102, nextFallStep + 2);
+            const pogoQueryHeight = player.attackDirection === 'down'
+                ? Math.max(hitbox.height, playerFeet + nextFallStep + pogoContactTolerance - hitbox.y)
+                : hitbox.height;
+            // Mechanics hit hooks can synchronously run events that query the
+            // world again. queryNear() may return the spatial hash's reusable
+            // result buffer, so keep a stable snapshot while dispatching hooks
+            // or nested queries can replace the remaining attack candidates.
+            const atkNearby = world.queryNear
+                ? world.queryNear(hitbox.x, hitbox.y, hitbox.width, pogoQueryHeight).slice()
+                : [...world.objects];
             for (let i = 0; i < atkNearby.length; i++) {
                 const obj = atkNearby[i];
-                const isHittable = obj.actingType === 'soulStatus' || (obj.actingType === 'spike' && obj.collision !== false);
+                const isAvailable = obj._mechanicsEnabled !== false && obj._collected !== true;
+                const isSoulTarget = isAvailable && (obj.actingType === 'soulStatus' || obj.actingType === 'soulStatue' ||
+                    obj.appearanceType === 'soulStatue' || obj.type === 'soulStatus');
+                const pogoSurfaceTop = getPogoSurfaceTop(obj, player);
+                // getGroundTouchbox() returns world-space coordinates; do not
+                // add player.y a second time when deriving the feet position.
+                // The attack hook runs before gravity and collision resolution.
+                const pogoNailOverlapsSurfaceX = Number.isFinite(obj.x) && Number.isFinite(obj.width) && obj.width > 0 &&
+                    hitbox.x < obj.x + obj.width && hitbox.x + hitbox.width > obj.x;
+                const isSolidPogoSurface = player.attackDirection === 'down' &&
+                    isAvailable && Boolean(obj.collision) && pogoNailOverlapsSurfaceX && obj.type === 'block' &&
+                    obj.appearanceType === 'ground' && obj.actingType === 'ground' &&
+                    Number.isFinite(player.vy) && player.vy >= 0 &&
+                    Number.isFinite(pogoSurfaceTop) && Number.isFinite(playerFeet) &&
+                    player.y < pogoSurfaceTop && playerFeet <= pogoSurfaceTop + pogoContactTolerance;
+                const sweptPogoContact = isSolidPogoSurface &&
+                    playerFeet <= pogoSurfaceTop + pogoContactTolerance &&
+                    playerFeet + nextFallStep >= pogoSurfaceTop;
+                const isHittable = isSoulTarget || isSolidPogoSurface ||
+                    (isAvailable && obj.actingType === 'spike' && obj.collision !== false);
+                const nailOverlapsObject = isAvailable && colliderIntersectsBox(player, hitbox, obj);
+                // A solid platform only counts when the feet sweep reaches its
+                // surface. The down-slash hitbox is deliberately long for
+                // enemies/statues; using that overlap for platforms pogoes
+                // while the player is still far above the floor.
+                const attackHitsObject = isSolidPogoSurface ? sweptPogoContact : nailOverlapsObject;
+                if (attackHitsObject && obj.id && player._mechanicsAttackHitObjects instanceof Set &&
+                    !player._mechanicsAttackHitObjects.has(obj.id) && player._mechanicsAttackHitObjects.size < 64) {
+                    player._mechanicsAttackHitObjects.add(obj.id);
+                    pluginManager.executeHook('player.attack.hit', {
+                        player,
+                        world,
+                        object: obj,
+                        direction: player.attackDirection
+                    });
+                }
                 if (!isHittable) continue;
                 
-                if (boxIntersects(hitbox, obj)) {
+                if (attackHitsObject) {
+                    // The hook runs before physics. The projected feet sweep
+                    // identifies the platform this frame would land on; move
+                    // the player to that contact plane before the rebound so
+                    // the skipped fall step is not converted into an early
+                    // midair bounce. This also removes bounded overlap before
+                    // the upward collision pass can treat the platform as a
+                    // ceiling and clear the rebound velocity.
+                    if (isSolidPogoSurface) {
+                        const contactOffset = pogoSurfaceTop - playerFeet;
+                        if (Math.abs(contactOffset) <= pogoContactTolerance) player.y += contactOffset;
+                    }
                     player._attackHitThisSwing = true;
+                    const impactShake = Number(config.impactShakeIntensity ?? HK_DEFAULTS.impactShakeIntensity);
+                    triggerCameraShake(player, impactShake * (player.attackDirection === 'down' ? 1 : 0.7), 170);
+                    player._nailImpact = {
+                        x: hitbox.x + hitbox.width / 2,
+                        y: player.attackDirection === 'down'
+                            ? (Number.isFinite(pogoSurfaceTop) ? pogoSurfaceTop : obj.y)
+                            : hitbox.y + hitbox.height / 2,
+                        direction: player.attackDirection,
+                        time: now
+                    };
                     
                     // Soul Statue - hit sound now, soul + getSoul sound 0.5s later
-                    if (obj.actingType === 'soulStatus') {
+                    if (isSoulTarget) {
                         pluginManager.playSound(pluginId, 'hitSoulStatus');
-                        setTimeout(() => {
-                            player.soul = Math.min(player.maxSoul, player.soul + 16.5);
+                        let soulRewardTimer;
+                        const disposeSoulRewardTimer = api.onCleanup(() => clearTimeout(soulRewardTimer));
+                        soulRewardTimer = setTimeout(() => {
+                            disposeSoulRewardTimer();
+                            const previousSoul = Number(player.soul) || 0;
+                            const nextSoul = Math.min(Number(player.maxSoul), previousSoul + 16.5);
+                            if (!Number.isFinite(nextSoul) || nextSoul <= previousSoul) return;
+                            player.soul = nextSoul;
+                            if (Number.isFinite(obj.x) && Number.isFinite(obj.y)) {
+                                player._soulGainEffects ||= [];
+                                player._soulGainEffects.push({
+                                    x: obj.x + (Number(obj.width) || 0) / 2,
+                                    y: obj.y + (Number(obj.height) || 0) / 2,
+                                    time: Date.now()
+                                });
+                                if (player._soulGainEffects.length > 8) player._soulGainEffects.shift();
+                            }
                             pluginManager.playSound(pluginId, 'getSoul');
                         }, 500);
                     }
                     
                     // Bounce based on attack direction
                     if (player.attackDirection === 'down') {
-                        const pogoMultiplier = HK_DEFAULTS.pogoBouncePower || 1.2;
+                        player._pogoBounceImpact = {
+                            x: player._nailImpact.x,
+                            y: player._nailImpact.y,
+                            time: now
+                        };
+                        const configuredPogoPower = config.pogoBouncePower;
+                        const pogoMultiplier = Number.isFinite(configuredPogoPower)
+                            ? Math.max(0.5, Math.min(2, configuredPogoPower))
+                            : HK_DEFAULTS.pogoBouncePower;
                         player.vy = worldJumpForce * pogoMultiplier;
                         player.monarchWingsUsed = 0;
                         player._pogoJumping = true;
                         player.isOnGround = false;
                         player.canJump = false;
+                        // Preserve the bounce velocity for this simulation step.
+                        // Normal player physics applies gravity and jump handling
+                        // immediately after this hook and can otherwise cancel it.
+                        data.skipPhysics = true;
                     } else if (player.attackDirection === 'up') {
                         player.vy = 2;
                         player._hitUpward = true;
@@ -358,18 +546,20 @@
                 player.isDashing = false;
                 player.dashCooldown = now + 400;
             } else {
-                // Add trail position every 25ms (not every frame) - max 6 positions
-                const lastTrail = player.dashTrail[player.dashTrail.length - 1];
-                if (!lastTrail || now - lastTrail.time >= 25) {
-                    // Limit to 6 trail positions max
-                    if (player.dashTrail.length >= 6) {
-                        player.dashTrail.shift();
+                if (effectEnabled('dashTrailEffects')) {
+                    // Add trail position every 25ms (not every frame) - max 6 positions
+                    const lastTrail = player.dashTrail[player.dashTrail.length - 1];
+                    if (!lastTrail || now - lastTrail.time >= 25) {
+                        // Limit to 6 trail positions max
+                        if (player.dashTrail.length >= 6) {
+                            player.dashTrail.shift();
+                        }
+                        player.dashTrail.push({
+                            x: player.x,
+                            y: player.y,
+                            time: now
+                        });
                     }
-                    player.dashTrail.push({
-                        x: player.x,
-                        y: player.y,
-                        time: now
-                    });
                 }
                 
                 player.vx = player.dashDirection * 12;
@@ -428,6 +618,13 @@
         }
         
         if (player.isSuperDashing) {
+            if (effectEnabled('dashTrailEffects') && now - player._lastSuperDashTrailTime >= 18) {
+                player._lastSuperDashTrailTime = now;
+                player.superDashTrail.push({ x: player.x, y: player.y, time: now });
+                if (player.superDashTrail.length > 10) player.superDashTrail.shift();
+            } else if (!effectEnabled('dashTrailEffects')) {
+                player.superDashTrail.length = 0;
+            }
             player.vx = player.superDashDirection * 20;
             player.vy = 0;
             
@@ -442,6 +639,10 @@
             
             data.skipPhysics = true;
             return data;
+        }
+
+        while (player.superDashTrail?.length && now - player.superDashTrail[0].time > 220) {
+            player.superDashTrail.shift();
         }
         
         // ===== HEAL =====
@@ -467,8 +668,16 @@
                 pluginManager.stopSound(pluginId, 'healCharging');
             } else if (now - player.healStartTime >= 900) {
                 // Complete!
+                const previousHp = Number(player.hp) || 0;
                 player.soul -= 33;
                 player.hp = Math.min(player.maxHP, player.hp + 1);
+                if (player.hp > previousHp) {
+                    player._healImpact = {
+                        x: player.x + player.width / 2,
+                        y: player.y + player.height / 2,
+                        time: now
+                    };
+                }
                 player.isHealing = false;
                 pluginManager.playSound(pluginId, 'healComplete');
             }
@@ -499,19 +708,24 @@
     pluginManager.registerHook('player.jump', (data) => {
         const { player, canJump } = data;
         
-        const worldJumpForce = world?.jumpForce ?? -11;
+        const worldJumpForce = getWorldJumpForce();
         
         // MONARCH WING - Double jump when out of normal jumps
         // Requires: jump key was released since last jump/wall jump (fresh press)
         if (!canJump && player.hasMonarchWing && !player.isOnGround && 
             player.monarchWingsUsed < player.monarchWingAmount &&
             player._monarchWingReady) {
+            const configuredWingJumpPower = Number(getConfig().monarchWingJumpPower);
+            const wingJumpPower = Number.isFinite(configuredWingJumpPower) &&
+                configuredWingJumpPower >= 0.5 && configuredWingJumpPower <= 2
+                ? configuredWingJumpPower
+                : HK_DEFAULTS.monarchWingJumpPower;
             
             player.monarchWingsUsed++;
             player._monarchWingReady = false; // Must release jump again before next monarch wing
             
-            // Monarch wing is 85% of normal jump (no gravity scaling - consistent height)
-            player.vy = worldJumpForce * 0.85;
+            // Keep Monarch Wing relative to the map's normal jump force.
+            player.vy = worldJumpForce * wingJumpPower;
             
             pluginManager.playSound(pluginId, 'monarchWings');
             
@@ -529,6 +743,12 @@
         player.monarchWingsUsed = 0;
         player.isWallClinging = false;
         player.isWallBouncing = false;
+        player._landingImpact = {
+            x: player.x + player.width / 2,
+            y: player.y + player.height,
+            time: Date.now()
+        };
+        triggerCameraShake(player, Number(getConfig().landingShakeIntensity ?? HK_DEFAULTS.landingShakeIntensity), 130);
         return data;
     }, pluginId);
     
@@ -546,7 +766,12 @@
                 return data;
             }
         }
-        
+
+        player._hkDamageSource = {
+            x: Number.isFinite(source?.x) ? source.x + (Number(source.width) || 0) / 2 : null,
+            y: Number.isFinite(source?.y) ? source.y + (Number(source.height) || 0) / 2 : null
+        };
+
         return data;
     }, pluginId, 1); // Priority 1 - run before HP plugin
     
@@ -560,6 +785,16 @@
         player.isAttacking = false;
         player.isDashing = false;
         player.dashTrail = [];
+        player.superDashTrail = [];
+        player._nailImpact = null;
+        player._pogoBounceImpact = null;
+        player._landingImpact = null;
+        player._healImpact = null;
+        player._soulGainEffects = [];
+        player._hkDamageFlash = null;
+        player._hkObservedHp = Number.isFinite(player.hp) ? player.hp : null;
+        player._hkDamageSource = null;
+        player._hkCameraShake = null;
         player.isSuperDashing = false;
         player.superDashCharging = false;
         player._playedCharge2 = false;
@@ -583,13 +818,67 @@
     // ============================================
     // PLAYER EFFECTS RENDERING - Attack slash, dash trail, etc.
     // ============================================
+    pluginManager.registerHook('render.camera', (data) => {
+        const { player } = data;
+        const shake = player?._hkCameraShake;
+        if (!effectEnabled('cameraShakeEffects') || !shake) return data;
+
+        const age = Date.now() - shake.startedAt;
+        if (age >= shake.duration) {
+            player._hkCameraShake = null;
+            return data;
+        }
+
+        const progress = Math.max(0, age / shake.duration);
+        const envelope = (1 - progress) ** 2;
+        const phase = age / 1000;
+        const intensity = shake.intensity * envelope;
+        data.offsetX = (Number(data.offsetX) || 0) + Math.sin(phase * 91) * intensity;
+        data.offsetY = (Number(data.offsetY) || 0) + Math.cos(phase * 113) * intensity * 0.62;
+        return data;
+    }, pluginId);
+
     pluginManager.registerHook('render.player', (data) => {
         const { ctx, player, camera } = data;
+
+        // A short directional hit flash makes HP damage readable without
+        // tinting the shared canvas or changing invincibility behavior.
+        if (effectEnabled('impactEffects') && player._hkDamageFlash) {
+            const age = Date.now() - player._hkDamageFlash.time;
+            const duration = 210;
+            if (age >= duration) {
+                player._hkDamageFlash = null;
+            } else {
+                const progress = Math.max(0, age / duration);
+                const cx = player.x + player.width / 2 - camera.x;
+                const cy = player.y + player.height / 2 - camera.y;
+                const directionX = player._hkDamageFlash.directionX;
+                const directionY = player._hkDamageFlash.directionY;
+                const angle = Math.atan2(directionY, directionX);
+                ctx.save();
+                ctx.globalAlpha = (1 - progress) * 0.85;
+                ctx.strokeStyle = getEffectColor('nailEffectColor', '#e9fbff');
+                ctx.shadowColor = ctx.strokeStyle;
+                ctx.shadowBlur = 8 * (1 - progress);
+                ctx.lineWidth = 2 - progress;
+                ctx.strokeRect(cx - player.width / 2 - 2, cy - player.height / 2 - 2, player.width + 4, player.height + 4);
+                for (let i = 0; i < 6; i++) {
+                    const shardAngle = angle + (i - 2.5) * 0.42;
+                    const inner = 5 + progress * 7;
+                    const outer = 12 + progress * 15 + (i % 2) * 3;
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(shardAngle) * inner, cy + Math.sin(shardAngle) * inner);
+                    ctx.lineTo(cx + Math.cos(shardAngle) * outer, cy + Math.sin(shardAngle) * outer);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
         
         // Draw dash trail effect (optimized)
-        if (player.dashTrail && player.dashTrail.length > 0) {
+        if (effectEnabled('dashTrailEffects') && player.dashTrail && player.dashTrail.length > 0) {
             const now = Date.now();
-            const color = player.color || '#45B7D1';
+            const color = getEffectColor('dashEffectColor', player.color || '#45B7D1');
             
             ctx.save();
             ctx.fillStyle = color;
@@ -611,9 +900,111 @@
             
             ctx.restore();
         }
+
+        // Crystal Heart afterimages use a cool, luminous palette.
+        if (effectEnabled('dashTrailEffects') && player.superDashTrail?.length) {
+            const now = Date.now();
+            const color = getEffectColor('dashEffectColor', '#9cecff');
+            ctx.save();
+            for (const trail of player.superDashTrail) {
+                const age = now - trail.time;
+                if (age >= 220) continue;
+                ctx.globalAlpha = (1 - age / 220) * 0.32;
+                ctx.fillStyle = color;
+                ctx.fillRect(trail.x - camera.x, trail.y - camera.y, player.width, player.height);
+            }
+            ctx.restore();
+        }
+
+        // Charge glow and Focus aura add readable feedback before and during abilities.
+        if (effectEnabled('abilityAuraEffects') && (player.superDashCharging || player.isHealing)) {
+            const elapsed = player.superDashCharging
+                ? Date.now() - player.superDashChargeStart
+                : Date.now() - player.healStartTime;
+            const progress = player.superDashCharging
+                ? Math.min(elapsed / 800, 1)
+                : Math.min(elapsed / 900, 1);
+            const cx = player.x + player.width / 2 - camera.x;
+            const cy = player.y + player.height / 2 - camera.y;
+            const pulse = Math.sin(Date.now() / 75) * 2;
+            ctx.save();
+            ctx.globalAlpha = 0.25 + progress * 0.5;
+            ctx.strokeStyle = player.isHealing
+                ? getEffectColor('healEffectColor', '#79f2cf')
+                : getEffectColor('chargeEffectColor', '#9cecff');
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.max(player.width, player.height) * (0.65 + progress * 0.45) + pulse, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(progress, 0.18));
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // A completed Focus heal releases a brief pulse and radial motes.
+        if (player._healImpact) {
+            const age = Date.now() - player._healImpact.time;
+            const duration = 420;
+            if (age >= duration) {
+                player._healImpact = null;
+            } else if (effectEnabled('impactEffects')) {
+                const progress = Math.max(0, age / duration);
+                const cx = player._healImpact.x - camera.x;
+                const cy = player._healImpact.y - camera.y;
+                const radius = 7 + progress * 26;
+                const color = getEffectColor('healEffectColor', '#79f2cf');
+                ctx.save();
+                ctx.globalAlpha = (1 - progress) * 0.8;
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                ctx.stroke();
+                for (let i = 0; i < 8; i++) {
+                    const angle = (Math.PI * 2 * i / 8) - Math.PI / 2;
+                    const inner = radius * 0.45;
+                    const outer = radius + 5 + (i % 2) * 4;
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+                    ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+                    ctx.stroke();
+                    const moteRadius = outer + progress * 8;
+                    ctx.beginPath();
+                    ctx.arc(cx + Math.cos(angle) * moteRadius, cy + Math.sin(angle) * moteRadius, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // Soul released by a statue rises in small, fading motes.
+        if (effectEnabled('impactEffects') && Array.isArray(player._soulGainEffects)) {
+            const now = Date.now();
+            const duration = 620;
+            player._soulGainEffects = player._soulGainEffects.filter(effect => now - effect.time < duration);
+            if (player._soulGainEffects.length) {
+                const color = getEffectColor('healEffectColor', '#79f2cf');
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 8;
+                for (const effect of player._soulGainEffects) {
+                    const progress = Math.max(0, (now - effect.time) / duration);
+                    for (let i = 0; i < 5; i++) {
+                        const phase = i * 1.31 + progress * 4.5;
+                        const x = effect.x - camera.x + Math.sin(phase) * (3 + progress * 9);
+                        const y = effect.y - camera.y - progress * (18 + (i % 3) * 5) + Math.cos(phase * 1.7) * 2;
+                        ctx.globalAlpha = (1 - progress) * (0.55 + (i % 2) * 0.35);
+                        ctx.beginPath();
+                        ctx.arc(x, y, 1 + (i % 3) * 0.35, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+        }
         
         // Draw attack slash effect
-        if (player.isAttacking) {
+        if (effectEnabled('slashEffects') && player.isAttacking) {
             const hitbox = getAttackHitbox(player, player.attackDirection);
             const screenX = hitbox.x - camera.x;
             const screenY = hitbox.y - camera.y;
@@ -625,36 +1016,190 @@
             ctx.save();
             ctx.globalAlpha = 1 - progress * 0.5; // Fade out as attack progresses
             
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
+            const slashColor = getEffectColor('nailEffectColor', '#e9fbff');
+            ctx.strokeStyle = slashColor;
+            ctx.shadowColor = slashColor;
+            ctx.shadowBlur = 9 * (1 - progress);
+            ctx.lineWidth = 3 - progress;
+            let arcX;
+            let arcY;
+            let arcRadiusX;
+            let arcRadiusY;
+            let arcStart;
+            let arcEnd;
 
             if (player.attackDirection === 'up') {
-                const cx = screenX + hitbox.width / 2;
-                const cy = screenY + hitbox.height;
+                arcX = screenX + hitbox.width / 2;
+                arcY = screenY + hitbox.height;
+                arcRadiusX = hitbox.width / 2;
+                arcRadiusY = hitbox.height;
+                arcStart = Math.PI;
+                arcEnd = Math.PI * 2;
                 ctx.beginPath();
-                ctx.ellipse(cx, cy, hitbox.width / 2, hitbox.height, 0, Math.PI, Math.PI * 2);
+                ctx.ellipse(arcX, arcY, arcRadiusX, arcRadiusY, 0, arcStart, arcEnd);
                 ctx.stroke();
             } else if (player.attackDirection === 'down') {
-                const cx = screenX + hitbox.width / 2;
-                const cy = screenY;
+                arcX = screenX + hitbox.width / 2;
+                arcY = screenY;
+                arcRadiusX = hitbox.width / 2;
+                arcRadiusY = hitbox.height;
+                arcStart = 0;
+                arcEnd = Math.PI;
                 ctx.beginPath();
-                ctx.ellipse(cx, cy, hitbox.width / 2, hitbox.height, 0, 0, Math.PI);
+                ctx.ellipse(arcX, arcY, arcRadiusX, arcRadiusY, 0, arcStart, arcEnd);
                 ctx.stroke();
             } else if (player.facingDirection > 0) {
-                const cx = screenX;
-                const cy = screenY + hitbox.height / 2;
+                arcX = screenX;
+                arcY = screenY + hitbox.height / 2;
+                arcRadiusX = hitbox.width;
+                arcRadiusY = hitbox.height / 2;
+                arcStart = -Math.PI / 2;
+                arcEnd = Math.PI / 2;
                 ctx.beginPath();
-                ctx.ellipse(cx, cy, hitbox.width, hitbox.height / 2, 0, -Math.PI / 2, Math.PI / 2);
+                ctx.ellipse(arcX, arcY, arcRadiusX, arcRadiusY, 0, arcStart, arcEnd);
                 ctx.stroke();
             } else {
-                const cx = screenX + hitbox.width;
-                const cy = screenY + hitbox.height / 2;
+                arcX = screenX + hitbox.width;
+                arcY = screenY + hitbox.height / 2;
+                arcRadiusX = hitbox.width;
+                arcRadiusY = hitbox.height / 2;
+                arcStart = Math.PI / 2;
+                arcEnd = Math.PI * 1.5;
                 ctx.beginPath();
-                ctx.ellipse(cx, cy, hitbox.width, hitbox.height / 2, 0, Math.PI / 2, Math.PI * 3 / 2);
+                ctx.ellipse(arcX, arcY, arcRadiusX, arcRadiusY, 0, arcStart, arcEnd);
                 ctx.stroke();
             }
+
+            const tipAngle = arcStart + (arcEnd - arcStart) * progress;
+            const tipX = arcX + Math.cos(tipAngle) * arcRadiusX;
+            const tipY = arcY + Math.sin(tipAngle) * arcRadiusY;
+            ctx.globalAlpha = 0.95 - progress * 0.45;
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = slashColor;
+            ctx.shadowBlur = 12 * (1 - progress);
+            ctx.beginPath();
+            ctx.arc(tipX, tipY, 2.6 - progress * 1.1, 0, Math.PI * 2);
+            ctx.fill();
             
             ctx.restore();
+        }
+
+        // Nail impact sparks, with a wider horizontal burst for a pogo hit.
+        if (effectEnabled('impactEffects') && player._nailImpact) {
+            const age = Date.now() - player._nailImpact.time;
+            const duration = player._nailImpact.direction === 'down' ? 190 : 140;
+            if (age < duration) {
+                const progress = age / duration;
+                const cx = player._nailImpact.x - camera.x;
+                const cy = player._nailImpact.y - camera.y;
+                const radius = 4 + progress * 18;
+                ctx.save();
+                ctx.globalAlpha = 1 - progress;
+                ctx.strokeStyle = getEffectColor('nailEffectColor', '#e9fbff');
+                ctx.lineWidth = player._nailImpact.direction === 'down' ? 2.5 : 1.75;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, radius * (player._nailImpact.direction === 'down' ? 1.35 : 1), radius * 0.55, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI * 2 * i / 6) + (player._nailImpact.direction === 'down' ? -Math.PI / 2 : 0);
+                    const inner = radius * 0.35;
+                    const outer = radius + (i % 2 ? 3 : 7);
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+                    ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+                    ctx.stroke();
+                }
+                if (player._nailImpact.direction === 'down') {
+                    // Down-slash impacts kick bright nail shards sideways from
+                    // the contact point, making the pogo hit read separately
+                    // from the regular radial nail spark.
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 8; i++) {
+                        const side = i % 2 === 0 ? -1 : 1;
+                        const lane = Math.floor(i / 2);
+                        const spread = radius * (0.3 + lane * 0.18);
+                        const lift = (lane % 2 ? -1 : 1) * (2 + progress * 7);
+                        const shardLength = 4 + (1 - progress) * (lane % 2 ? 7 : 10);
+                        ctx.globalAlpha = (1 - progress) * (0.7 + (lane % 2) * 0.3);
+                        ctx.beginPath();
+                        ctx.moveTo(cx + side * spread, cy + lift);
+                        ctx.lineTo(cx + side * (spread + shardLength), cy + lift - (lane % 2 ? 3 : -2));
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            } else {
+                player._nailImpact = null;
+            }
+        }
+
+        // A short upward flare makes the bounce response distinct from the
+        // nail's contact sparks while keeping the effect entirely cosmetic.
+        if (effectEnabled('impactEffects') && player._pogoBounceImpact) {
+            const age = Date.now() - player._pogoBounceImpact.time;
+            const duration = 220;
+            if (age < duration) {
+                const progress = Math.max(0, age / duration);
+                const cx = player._pogoBounceImpact.x - camera.x;
+                const cy = player._pogoBounceImpact.y - camera.y;
+                const radius = 4 + progress * 22;
+                const color = getEffectColor('nailEffectColor', '#e9fbff');
+                ctx.save();
+                ctx.globalAlpha = (1 - progress) * 0.9;
+                ctx.strokeStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 10 * (1 - progress);
+                ctx.lineWidth = 2 - progress;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, radius, radius * 0.62, 0, Math.PI, Math.PI * 2);
+                ctx.stroke();
+                for (let i = 0; i < 7; i++) {
+                    const angle = Math.PI + Math.PI * i / 6;
+                    const inner = radius * 0.45;
+                    const outer = radius + (i % 2 ? 3 : 7);
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner * 0.62);
+                    ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * (outer * 0.62 + progress * 5));
+                    ctx.stroke();
+                }
+                ctx.restore();
+            } else {
+                player._pogoBounceImpact = null;
+            }
+        }
+
+        // A short dust plume makes landings feel weighty without changing physics.
+        if (effectEnabled('impactEffects') && player._landingImpact) {
+            const age = Date.now() - player._landingImpact.time;
+            const duration = 240;
+            if (age < duration) {
+                const progress = age / duration;
+                const cx = player._landingImpact.x - camera.x;
+                const cy = player._landingImpact.y - camera.y;
+                const puffSize = 2 + Math.sin(progress * Math.PI) * 4;
+                ctx.save();
+                ctx.globalAlpha = (1 - progress) * 0.65;
+                ctx.fillStyle = getEffectColor('nailEffectColor', '#e9fbff');
+                ctx.strokeStyle = ctx.fillStyle;
+                ctx.lineWidth = 1.25;
+                for (let i = 0; i < 5; i++) {
+                    const side = i < 2 ? -1 : i > 2 ? 1 : 0;
+                    const spread = side * (5 + progress * 13) + Math.sin(i * 2.1) * progress * 2;
+                    const lift = progress * (5 + (i % 3) * 3);
+                    const x = cx + spread;
+                    const y = cy - lift;
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, puffSize + (i % 2), Math.max(1, puffSize * 0.4), side * 0.12, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.moveTo(x - side * 2, y + 1);
+                    ctx.lineTo(x + side * 2, y - 1);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            } else {
+                player._landingImpact = null;
+            }
         }
         
         // Draw wall cling indicator
@@ -749,6 +1294,46 @@
     // ============================================
     
     const _atkBox = { x: 0, y: 0, width: 0, height: 0 };
+    function getPogoSurfaceTop(object, player) {
+        const y = Number(object?.y);
+        const height = Number(object?.height);
+        if (!Number.isFinite(y) || !Number.isFinite(height) || height <= 0) return null;
+        if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(object.collisionShape)) {
+            const box = player?.getGroundTouchbox?.();
+            if (!box) return null;
+            // Fully solid polygons use the player's expanded collider for
+            // normal landing resolution. Match that plane here, then convert
+            // its center coordinate back to the feet coordinate used by the
+            // projected pogo sweep. One-way polygons and authored ramps use
+            // their top surface directly, as they do in the physics resolver.
+            if (object.collisionShape === 'polygon' && object.polygonOneWay === false &&
+                typeof player.getPolygonAxisContact === 'function' && Number.isFinite(box.height)) {
+                const contactCenterY = player.getPolygonAxisContact(object, box, 'y', 1);
+                return Number.isFinite(contactCenterY) ? contactCenterY + box.height / 2 : null;
+            }
+            if (typeof player?.getSlopeSurfaceY !== 'function') return null;
+            return player.getSlopeSurfaceY(object, box.x + box.width / 2);
+        }
+        if (object.collisionShape === 'capsule') {
+            const box = player?.getGroundTouchbox?.();
+            return box && typeof player?.getCapsuleVerticalContact === 'function'
+                ? player.getCapsuleVerticalContact(object, box, 1) : null;
+        }
+        if (object.collisionShape !== 'circle') return y;
+        const width = Number(object.width);
+        if (!Number.isFinite(width) || width <= 0) return null;
+        const radius = Math.min(width, height) / 2;
+        const box = player?.getGroundTouchbox?.();
+        if (!box || !Number.isFinite(box.x) || !Number.isFinite(box.width) || box.width <= 0) return null;
+        const centerX = object.x + width / 2;
+        const centerY = y + height / 2;
+        const closestX = Math.max(box.x, Math.min(centerX, box.x + box.width));
+        const dx = centerX - closestX;
+        const reachSquared = radius * radius - dx * dx;
+        if (reachSquared < 0) return null;
+        return centerY - Math.sqrt(reachSquared);
+    }
+
     function getAttackHitbox(player, direction) {
         const attackLength = 90;
         const attackWidth = 26;
@@ -760,9 +1345,11 @@
             _atkBox.height = attackLength;
         } else if (direction === 'down') {
             _atkBox.x = player.x + (player.width - attackWidth) / 2;
-            _atkBox.y = player.y + player.height;
+            // A small overlap lets the nail register on the first frame of
+            // top contact, including the curved edge of circle colliders.
+            _atkBox.y = player.y + player.height - 2;
             _atkBox.width = attackWidth;
-            _atkBox.height = attackLength;
+            _atkBox.height = attackLength + 2;
         } else {
             _atkBox.x = player.facingDirection > 0 ? player.x + player.width : player.x - attackLength;
             _atkBox.y = player.y + (player.height - attackWidth) / 2;
@@ -777,6 +1364,12 @@
                a.x + a.width > b.x &&
                a.y < b.y + b.height &&
                a.y + a.height > b.y;
+    }
+
+    function colliderIntersectsBox(player, box, object) {
+        return typeof player?.collisionShapeIntersectsBox === 'function'
+            ? player.collisionShapeIntersectsBox(box, object)
+            : boxIntersects(box, object);
     }
     
     const _wallBox = { x: 0, y: 0, width: 0, height: 0 };
@@ -795,7 +1388,7 @@
             const obj = nearby[i];
             if (!obj.collision) continue;
             if (obj.actingType === 'text' || obj.actingType === 'teleportal' || obj.actingType === 'bouncer' || obj.appearanceType === 'coin') continue;
-            if (boxIntersects(_wallBox, obj)) return direction;
+            if (colliderIntersectsBox(player, _wallBox, obj)) return direction;
         }
         return 0;
     }
@@ -819,7 +1412,7 @@
             const obj = nearby[i];
             if (!obj.collision) continue;
             if (obj.actingType === 'text' || obj.actingType === 'teleportal') continue;
-            if (boxIntersects(_collBox, obj)) _collResult.push(obj);
+            if (colliderIntersectsBox(player, _collBox, obj)) _collResult.push(obj);
         }
         return _collResult;
     }
@@ -829,6 +1422,7 @@
         pluginManager.stopSound(pluginId, 'superdashFlying');
         
         if (reason === 'wall') {
+            triggerCameraShake(player, Number(getConfig().impactShakeIntensity ?? HK_DEFAULTS.impactShakeIntensity) * 1.25, 220);
             player.isSuperDashFrozen = true;
             player.superDashFreezeUntil = Date.now() + 1000;
             pluginManager.playSound(pluginId, 'superdashHitwallstop');

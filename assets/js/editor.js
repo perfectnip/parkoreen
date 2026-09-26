@@ -37,7 +37,25 @@ const PlacementMode = {
     SPAWN_END: 'spawn_end',
     TEXT: 'text',
     TELEPORTAL: 'teleportal',
-    BUTTON: 'button'
+    BUTTON: 'button',
+    OBJECT_STAMP: 'object_stamp',
+    TILEMAP: 'tilemap'
+};
+
+const OBJECT_STAMP_MAX_TRANSFER_BYTES = 2 * 1024 * 1024;
+const sanitizeObjectStampObjects = (objects) => {
+    const portalNames = new Set((Array.isArray(objects) ? objects : [])
+        .filter(object => object?.type === 'teleportal' && typeof object.teleportalName === 'string' && object.teleportalName)
+        .map(object => object.teleportalName));
+    return (Array.isArray(objects) ? objects : []).map(object => {
+        const snapshot = { ...object };
+        for (const key of ['sendTo', 'receiveFrom']) {
+            snapshot[key] = (Array.isArray(snapshot[key]) ? snapshot[key] : [])
+                .filter(connection => portalNames.has(typeof connection === 'string' ? connection : connection?.name))
+                .map(connection => typeof connection === 'string' ? connection : { ...connection });
+        }
+        return snapshot;
+    });
 };
 
 // ============================================
@@ -46,6 +64,9 @@ const PlacementMode = {
 const BLOCK_TEXTURES = [
     { id: 'solid', name: 'Solid', preview: null, pattern: null },
     { id: 'brick', name: 'Brick', preview: 'assets/svg/block-brick.svg', pattern: 'assets/svg/block-brick-pattern.svg' },
+    { id: 'stone', name: 'Stone', preview: 'assets/svg/block-stone-pattern.svg', pattern: 'assets/svg/block-stone-pattern.svg' },
+    { id: 'wood', name: 'Wood', preview: 'assets/svg/block-wood-pattern.svg', pattern: 'assets/svg/block-wood-pattern.svg' },
+    { id: 'moss', name: 'Moss', preview: 'assets/svg/block-moss-pattern.svg', pattern: 'assets/svg/block-moss-pattern.svg' }
 ];
 
 // ============================================
@@ -82,10 +103,11 @@ class Editor {
         this.engine = engine;
         this.world = engine.world;
         this.camera = engine.camera;
-        
+
         // Tool state
         this.currentTool = EditorTool.NONE;
         this.placementMode = PlacementMode.NONE;
+        this.objectStampPlacementId = null;
         this.isFlying = true; // Start with fly mode enabled by default
         this.isErasing = false;
         this.isPlacing = false; // Track if we're actively placing blocks (brush mode)
@@ -111,6 +133,17 @@ class Editor {
             color: '#787878',
             opacity: 1
         };
+        this.tilemapLayer = 1;
+        this.tilemapCellBehavior = 'solid';
+        this.tilemapCollisionShape = 'box';
+        this.tilemapCollisionPoints = WorldObject.DEFAULT_COLLISION_POLYGON.map(point => point.slice());
+        this.tilemapPolygonOneWay = false;
+        this.tilemapAnimation = 'none';
+        this.tilemapAnimationFrames = ['brick', 'stone', 'wood', 'moss', 'brick', 'stone', 'wood', 'moss'];
+        this.tilemapAtlasAnimationFrames = [0, 1, 2, 3, 4, 5, 6, 7];
+        this.tilemapAnimationFrameCount = 2;
+        this.tilemapAnimationFps = 4;
+        this.tilemapAtlasFrame = 0;
         
         // Koreen settings
         this.koreenSettings = {
@@ -640,6 +673,10 @@ class Editor {
             </button>
             <div class="toolbar-divider"></div>
             <span class="sel-count" id="sel-count">0 selected</span>
+            <button class="toolbar-btn" data-sel-cmd="save-stamp" title="Save selection as an Object Stamp" disabled>
+                <span class="material-symbols-outlined">bookmark_add</span>
+                <span class="toolbar-btn-label">Save Stamp</span>
+            </button>
             <div class="toolbar-divider"></div>
             <button class="toolbar-btn sel-done-btn" data-sel-cmd="done" title="Done (exit selection)">
                 <span class="material-symbols-outlined">check_circle</span>
@@ -935,6 +972,13 @@ class Editor {
                                 </div>
                                 <small style="color: #888; font-size: 11px;">Previously touched checkpoints</small>
                             </div>
+                            <div class="form-group">
+                                <label class="form-label" style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="checkbox" id="config-persist-checkpoints">
+                                    Remember the player's latest checkpoint
+                                </label>
+                                <small style="color: #888; font-size: 11px;">Saves in this browser under your account, or under this browser if signed out.</small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1057,6 +1101,39 @@ class Editor {
                             <span class="toggle-slider"></span>
                         </label>
                         </div>
+                    <div class="form-group" id="config-player-sprite-group">
+                        <label class="form-label">Character Sprite Sheet</label>
+                        <input type="file" id="config-player-sprite-file" accept="image/png,image/jpeg,image/webp" class="form-input">
+                        <small style="display:block; margin-top:6px; color:#888; font-size:11px; line-height:1.4;">Upload a PNG, JPEG, or WebP up to 1 MB. Idle, run, jump, and fall use separate rows; frames run left to right. Optionally configure Attack, Hurt, and Dash rows for plugins that use those player states. Sprites replace the colored player, while the player name and collision box stay in place.</small>
+                        <div style="display:flex; gap:8px; margin:10px 0;">
+                            <label style="font-size:11px; color:#888;">Frame W<input type="number" id="config-player-sprite-frame-width" class="form-input" min="1" max="4096" step="1" value="32" style="width:90px;"></label>
+                            <label style="font-size:11px; color:#888;">Frame H<input type="number" id="config-player-sprite-frame-height" class="form-input" min="1" max="4096" step="1" value="32" style="width:90px;"></label>
+                        </div>
+                        <div style="display:grid; grid-template-columns: repeat(4, minmax(48px, 1fr)); gap:6px; font-size:10px; color:#888; margin-bottom:4px;">
+                            <span>State</span><span>Row</span><span>Frames</span><span>FPS</span>
+                        </div>
+                        ${['idle', 'run', 'jump', 'fall'].map((state, index) => `
+                            <div style="display:grid; grid-template-columns: repeat(4, minmax(48px, 1fr)); gap:6px; align-items:center; margin-top:5px;">
+                                <span style="font-size:11px; color:#bbb; text-transform:capitalize;">${state}</span>
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-row" min="0" max="127" step="1" value="${index}" aria-label="${state} animation row">
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-frames" min="1" max="256" step="1" value="1" aria-label="${state} animation frames">
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-fps" min="1" max="30" step="1" value="8" aria-label="${state} animation speed">
+                            </div>
+                        `).join('')}
+                        ${[['attack', 'Attack'], ['hurt', 'Hurt'], ['dash', 'Dash']].map(([state, label], index) => `
+                            <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#bbb;margin-top:8px;">
+                                <input type="checkbox" id="config-player-sprite-${state}-enabled"> Configure ${label.toLowerCase()} animation
+                            </label>
+                            <div id="config-player-sprite-${state}-row" class="hidden" style="display:grid;grid-template-columns:repeat(4,minmax(48px,1fr));gap:6px;align-items:center;margin-top:5px;">
+                                <span style="font-size:11px;color:#bbb;">${state}</span>
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-row-index" min="0" max="127" step="1" value="${4 + index}" aria-label="${label} animation row">
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-frames" min="1" max="256" step="1" value="1" aria-label="${label} animation frames">
+                                <input type="number" class="form-input" id="config-player-sprite-${state}-fps" min="1" max="30" step="1" value="${state === 'attack' ? 12 : 8}" aria-label="${label} animation speed">
+                            </div>
+                        `).join('')}
+                        <div id="config-player-sprite-status" style="font-size:11px; color:#888; margin-top:7px;">No character sprite sheet selected.</div>
+                        <button type="button" class="btn btn-secondary" id="config-player-sprite-clear" style="margin-top:7px;">Clear Character Sprite</button>
+                    </div>
                     </div>
                 </div>
                 
@@ -1071,6 +1148,21 @@ class Editor {
                             <label class="form-label">Gravity</label>
                             <input type="number" class="form-input" id="config-gravity" min="0.1" step="0.1" value="0.71">
                             <small style="color: #888; font-size: 11px;">Default: 0.71 - Higher = faster fall</small>
+                    </div>
+                    <div class="form-group">
+                            <label class="form-label">Horizontal Acceleration</label>
+                            <input type="number" class="form-input" id="config-horizontal-acceleration" min="0" max="20" step="0.1" value="0">
+                            <small style="color: #888; font-size: 11px;">0 keeps instant movement; higher values build speed and brake more gradually.</small>
+                    </div>
+                    <div class="form-group">
+                            <label class="form-label">Air Control</label>
+                            <input type="number" class="form-input" id="config-air-control" min="0" max="1" step="0.05" value="1">
+                            <small style="color: #888; font-size: 11px;">Scales acceleration and braking while airborne; 0 preserves momentum in the air.</small>
+                    </div>
+                    <div class="form-group">
+                            <label class="form-label">Terminal Fall Speed</label>
+                            <input type="number" class="form-input" id="config-terminal-fall-speed" min="1" max="100" step="0.5" value="16">
+                            <small style="color: #888; font-size: 11px;">Maximum downward speed. Leave unchanged to keep the legacy gravity-scaled default.</small>
                     </div>
                         <div class="form-group">
                             <label class="form-label">Camera Horizontal Smoothness</label>
@@ -1088,6 +1180,40 @@ class Editor {
                                 <span>Smooth</span>
                                 <span id="config-camera-lerp-y-value">0.12</span>
                                 <span>Snappy</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Camera Follow</label>
+                            <select class="form-select" id="config-camera-follow-mode">
+                                <option value="both">Follow both axes</option>
+                                <option value="horizontal">Follow horizontally</option>
+                                <option value="vertical">Follow vertically</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Camera Bounds</label>
+                            <label class="toggle">
+                                <input type="checkbox" id="config-camera-bounds-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <small style="color: #888; font-size: 11px;">Keep the gameplay camera inside this world-space rectangle.</small>
+                        </div>
+                        <div id="config-camera-bounds-fields" style="display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px;">
+                            <div class="form-group">
+                                <label class="form-label">Left (X)</label>
+                                <input type="number" class="form-input" id="config-camera-bounds-x" step="1" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Top (Y)</label>
+                                <input type="number" class="form-input" id="config-camera-bounds-y" step="1" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Width</label>
+                                <input type="number" class="form-input" id="config-camera-bounds-width" min="1" step="1" value="2000">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Height</label>
+                                <input type="number" class="form-input" id="config-camera-bounds-height" min="1" step="1" value="1200">
                             </div>
                         </div>
                         <div class="form-group">
@@ -1244,6 +1370,18 @@ class Editor {
                             <input type="number" class="form-input" id="config-hk-maxsoul" min="33" max="198" value="99">
                             <small style="color: #888; font-size: 11px;">33 = one heal, 99 = three heals</small>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label" for="config-hk-pogo-bounce-power">Pogo Bounce Strength</label>
+                            <input type="number" class="form-input" id="config-hk-pogo-bounce-power" min="0.5" max="2" step="0.1" value="1.2">
+                            <small style="color: #888; font-size: 11px;">Upward bounce after a downward nail hit, relative to normal jump strength.</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="config-hk-nail-speed">Nail Attack Speed</label>
+                            <select class="form-select" id="config-hk-nail-speed">
+                                <option value="base">Base (0.41s between attacks)</option>
+                                <option value="quickSlash">Quick Slash (0.25s between attacks)</option>
+                            </select>
+                        </div>
                         <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
                                 <span style="font-size: 13px;">Monarch Wings</span>
@@ -1287,6 +1425,56 @@ class Editor {
                                 <input type="checkbox" id="config-hk-mantisclaw">
                                 <span class="toggle-slider"></span>
                             </label>
+                        </div>
+                        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-light);">
+                            <label class="form-label" style="font-weight: 600; margin-bottom: 12px;">Visual Effects</label>
+                            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 13px;">Nail Slash Effects</span>
+                                <label class="toggle"><input type="checkbox" id="config-hk-slash-effects" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 13px;">Nail Impact Effects</span>
+                                <label class="toggle"><input type="checkbox" id="config-hk-impact-effects" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 13px;">Camera Impact Effects</span>
+                                <label class="toggle"><input type="checkbox" id="config-hk-camera-shake-effects" aria-label="Enable Hollow Knight camera impact effects" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div id="config-hk-camera-shake-settings">
+                                <div class="form-group">
+                                    <label class="form-label" for="config-hk-impact-shake-intensity">Hit Shake Strength</label>
+                                    <input type="number" class="form-input" id="config-hk-impact-shake-intensity" min="0" max="18" step="0.5" value="7">
+                                    <small style="color: #888; font-size: 11px;">Maximum screen-pixel shake for nail hits and Super Dash impacts.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="config-hk-landing-shake-intensity">Landing Shake Strength</label>
+                                    <input type="number" class="form-input" id="config-hk-landing-shake-intensity" min="0" max="8" step="0.5" value="2">
+                                </div>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 13px;">Dash Trails</span>
+                                <label class="toggle"><input type="checkbox" id="config-hk-dash-trail-effects" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 13px;">Charge and Focus Auras</span>
+                                <label class="toggle"><input type="checkbox" id="config-hk-ability-aura-effects" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nail Effect Color</label>
+                                <input type="color" class="form-input" id="config-hk-nail-effect-color" value="#e9fbff">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Dash Trail Color</label>
+                                <input type="color" class="form-input" id="config-hk-dash-effect-color" value="#9cecff">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Super Dash Charge Color</label>
+                                <input type="color" class="form-input" id="config-hk-charge-effect-color" value="#9cecff">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Focus Aura Color</label>
+                                <input type="color" class="form-input" id="config-hk-heal-effect-color" value="#79f2cf">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1382,6 +1570,7 @@ class Editor {
                     </div>
 
                     <!-- Code Plugin is hidden (mechanics are built into the game) -->
+                    <div id="plugins-dynamic-cards"></div>
                 </div>
             </div>
         `;
@@ -1398,6 +1587,14 @@ class Editor {
         layersPanel.innerHTML = `
             <div class="panel-header">
                 <span class="panel-title">Layers</span>
+                <div class="layer-panel-add-buttons">
+                    <button class="btn btn-icon btn-ghost" id="add-layer-behind" title="Add a layer behind the player" aria-label="Add a layer behind the player">
+                        <span class="material-symbols-outlined">add_to_queue</span>
+                    </button>
+                    <button class="btn btn-icon btn-ghost" id="add-layer-above" title="Add a layer above the player" aria-label="Add a layer above the player">
+                        <span class="material-symbols-outlined">add_to_photos</span>
+                    </button>
+                </div>
                 <button class="btn btn-icon btn-ghost" id="close-layers">
                     <span class="material-symbols-outlined">close</span>
                 </button>
@@ -1418,6 +1615,10 @@ class Editor {
             <button class="add-menu-btn" data-add="block">
                 <span class="material-symbols-outlined">square</span>
                 Block
+            </button>
+            <button class="add-menu-btn" data-add="tilemap">
+                <span class="material-symbols-outlined">grid_on</span>
+                Tilemap Brush
             </button>
             <button class="add-menu-btn" data-add="obstacle">
                 <span class="material-symbols-outlined">warning</span>
@@ -1442,6 +1643,10 @@ class Editor {
             <button class="add-menu-btn" data-add="teleportal">
                 <span class="material-symbols-outlined">move</span>
                 Teleportal
+            </button>
+            <button class="add-menu-btn" data-add="object_stamp">
+                <span class="material-symbols-outlined">collections</span>
+                Object Stamp
             </button>
         `;
         document.body.appendChild(addMenu);
@@ -1471,6 +1676,74 @@ class Editor {
                     <div class="texture-dropdown-menu" id="texture-dropdown-menu">
                         <!-- Will be populated dynamically -->
                     </div>
+                </div>
+            </div>
+
+            <div class="placement-option hidden" id="placement-tilemap-layer">
+                <label class="placement-option-label" for="placement-tilemap-layer-select">Tilemap layer</label>
+                <select class="form-input form-input-sm" id="placement-tilemap-layer-select" style="max-width: 170px;"></select>
+            </div>
+
+            <div class="placement-option hidden" id="placement-tilemap-behavior">
+                <label class="placement-option-label" for="placement-tilemap-behavior-select">Cell behavior</label>
+                <select class="form-input form-input-sm" id="placement-tilemap-behavior-select" style="max-width: 170px;">
+                    <option value="solid">Solid</option>
+                    <option value="oneWay">One-way platform</option>
+                    <option value="rampUpRight">Ramp rising to the right</option>
+                    <option value="rampUpLeft">Ramp rising to the left</option>
+                    <option value="hazard">Damage on touch</option>
+                    <option value="decorative">Decorative (no collision)</option>
+                </select>
+            </div>
+
+            <div class="placement-option hidden" id="placement-tilemap-collision-shape">
+                <label class="placement-option-label" for="placement-tilemap-collision-shape-select">Collision shape</label>
+                <select class="form-input form-input-sm" id="placement-tilemap-collision-shape-select" style="max-width:170px;">
+                    <option value="box">Full cell</option>
+                    <option value="polygon">Custom convex polygon</option>
+                </select>
+                <small>Polygon geometry applies to solid and one-way cells; tile artwork stays independent from collision.</small>
+                <div id="placement-tilemap-polygon-settings" style="display:none;gap:8px;align-items:flex-start;flex-wrap:wrap;flex-basis:100%;">
+                    <label class="placement-option-label" style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="placement-tilemap-polygon-one-way">
+                        One-way top surface
+                    </label>
+                    <label class="placement-option-label" for="placement-tilemap-collision-points">Normalized vertices</label>
+                    <textarea class="form-input form-input-sm" id="placement-tilemap-collision-points" rows="3" spellcheck="false" style="min-width:min(320px,70vw);font-family:monospace;">${JSON.stringify(WorldObject.DEFAULT_COLLISION_POLYGON)}</textarea>
+                    <small id="placement-tilemap-collision-points-status" role="status">3–12 ordered convex vertices from 0 to 1.</small>
+                </div>
+            </div>
+
+            <div class="placement-option hidden" id="placement-tilemap-atlas" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <label class="placement-option-label" for="placement-tilemap-atlas-file">Tile atlas</label>
+                <input class="form-input form-input-sm" id="placement-tilemap-atlas-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload tile atlas" style="max-width:210px;">
+                <label class="placement-option-label" for="placement-tilemap-atlas-frame">Frame</label>
+                <input class="form-input form-input-sm" id="placement-tilemap-atlas-frame" type="number" min="0" max="4095" step="1" value="0" style="width:78px;" aria-label="Tile atlas frame index">
+                <label class="placement-option-label" for="placement-tilemap-frame-width">Frame size</label>
+                <input class="form-input form-input-sm" id="placement-tilemap-frame-width" type="number" min="1" max="512" step="1" value="32" style="width:64px;" aria-label="Tile atlas frame width">
+                <span aria-hidden="true">×</span>
+                <input class="form-input form-input-sm" id="placement-tilemap-frame-height" type="number" min="1" max="512" step="1" value="32" style="width:64px;" aria-label="Tile atlas frame height">
+                <canvas id="placement-tilemap-atlas-preview" width="32" height="32" aria-label="Selected tile atlas frame preview" style="width:32px;height:32px;image-rendering:pixelated;border:1px solid var(--border);"></canvas>
+                <button type="button" class="btn btn-sm btn-ghost" id="placement-tilemap-atlas-clear">Clear atlas</button>
+                <small id="placement-tilemap-atlas-status" role="status" style="flex-basis:100%;">No atlas selected. Cells use built-in textures.</small>
+            </div>
+
+            <div class="placement-option hidden" id="placement-tilemap-animation">
+                <label class="placement-option-label" for="placement-tilemap-animation-select">Tile animation</label>
+                <select class="form-input form-input-sm" id="placement-tilemap-animation-select" style="max-width: 170px;">
+                    <option value="none">Static</option>
+                    <option value="textureCycle">Texture cycle</option>
+                    <option value="atlasCycle">Atlas frame cycle</option>
+                </select>
+                <div id="placement-tilemap-animation-settings" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    <label class="placement-option-label" for="placement-tilemap-frame-count">Frames</label>
+                    <select class="form-input form-input-sm" id="placement-tilemap-frame-count" aria-label="Tile animation frame count" style="max-width:80px;">
+                        <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                        <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                    </select>
+                    <div id="placement-tilemap-frame-selectors" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"></div>
+                    <label class="placement-option-label" for="placement-tilemap-animation-fps">FPS</label>
+                    <input class="form-input form-input-sm" id="placement-tilemap-animation-fps" type="number" min="1" max="12" step="1" value="4" aria-label="Tile animation frames per second" style="width:70px;">
                 </div>
             </div>
             
@@ -1681,13 +1954,6 @@ class Editor {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Touchscreen Mode</label>
-                    <label class="toggle">
-                        <input type="checkbox" id="settings-touchscreen">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Keyboard Layout</label>
                     <select class="form-select" id="settings-keyboard-layout">
                         <option value="jimmyqrg">JimmyQrg (Default)</option>
@@ -1777,6 +2043,44 @@ class Editor {
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+
+                    <div class="form-group" id="object-edit-collision-shape-group" style="display: none;">
+                        <label class="form-label">Ground Collision Shape</label>
+                        <select class="form-select" id="object-edit-collision-shape">
+                            <option value="box">Box</option>
+                            <option value="circle">Circle</option>
+                            <option value="capsule">Capsule</option>
+                            <option value="slopeUpRight">Ramp ↗</option>
+                            <option value="slopeUpLeft">Ramp ↖</option>
+                            <option value="polygon">Custom Convex Polygon</option>
+                        </select>
+                        <small style="display: block; margin-top: 6px; color: #aaa; line-height: 1.4;">Changes the solid collider. Ramps are one-way surfaces; custom polygons can be one-way or fully solid. Artwork stays the same. Circle radius is half the block’s shorter side. Capsule rounds both ends along the block’s longer axis.</small>
+                    </div>
+
+                    <div class="form-group" id="object-edit-collision-polygon-group" style="display: none;">
+                        <label class="form-label" for="object-edit-collision-points">Polygon Vertices</label>
+                        <textarea class="form-input" id="object-edit-collision-points" rows="4" spellcheck="false" style="font-family: monospace; resize: vertical;"></textarea>
+                        <small style="display: block; margin-top: 6px; color: #aaa; line-height: 1.4;">Enter 3–12 convex vertices as normalized [x, y] pairs from 0 to 1, in order around the shape. Choose whether the collider is one-way or solid from every side below.</small>
+                        <small id="object-edit-collision-points-status" style="display: block; margin-top: 4px; color: #aaa;"></small>
+                    </div>
+
+                    <div class="form-group" id="object-edit-polygon-one-way-group" style="display: none;">
+                        <label class="form-label">One-Way Polygon Surface</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="object-edit-polygon-one-way" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <small style="display: block; margin-top: 6px; color: #aaa; line-height: 1.4;">On: land and walk on the top from above. Off: the convex polygon is solid from every side.</small>
+                    </div>
+
+                    <div class="form-group" id="object-edit-one-way-group" style="display: none;">
+                        <label class="form-label">One-Way Platform</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="object-edit-one-way">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <small style="display: block; margin-top: 6px; color: #aaa; line-height: 1.4;">Players land on the top while falling, and can pass through from below.</small>
+                    </div>
                     
                     <div class="form-group" id="object-edit-flip-group">
                         <label class="form-label">Flip Horizontal</label>
@@ -1784,6 +2088,26 @@ class Editor {
                             <input type="checkbox" id="object-edit-flip-horizontal">
                             <span class="toggle-slider"></span>
                         </label>
+                    </div>
+
+                    <div class="form-group" id="object-edit-sprite-group">
+                        <label class="form-label">Sprite Sheet</label>
+                        <input type="file" id="object-edit-sprite-file" accept="image/png,image/jpeg,image/webp" class="form-input">
+                        <small style="display:block; margin-top:6px; color:#aaa; line-height:1.4;">Use PNG, JPEG, or WebP up to 1 MB. Frames are read left to right, then top to bottom. This changes artwork only; collision stays attached to the object.</small>
+                        <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:end;">
+                            <label style="font-size:11px; color:#aaa;">Frame W<input type="number" id="object-edit-sprite-frame-width" class="form-input form-input-sm" min="1" max="4096" step="1" value="32" style="width:76px; display:block;"></label>
+                            <label style="font-size:11px; color:#aaa;">Frame H<input type="number" id="object-edit-sprite-frame-height" class="form-input form-input-sm" min="1" max="4096" step="1" value="32" style="width:76px; display:block;"></label>
+                            <label style="font-size:11px; color:#aaa;">Frames<input type="number" id="object-edit-sprite-frame-count" class="form-input form-input-sm" min="1" max="256" step="1" value="1" style="width:76px; display:block;"></label>
+                            <label style="font-size:11px; color:#aaa;">FPS<input type="number" id="object-edit-sprite-fps" class="form-input form-input-sm" min="1" max="30" step="1" value="8" style="width:76px; display:block;"></label>
+                        </div>
+                        <div id="object-edit-sprite-status" style="font-size:11px; color:#aaa; margin-top:6px;">No sprite sheet selected.</div>
+                        <div id="object-edit-sprite-clips-group" style="margin-top:10px;">
+                            <label class="form-label">Named animation clips</label>
+                            <div id="object-edit-sprite-clips" style="display:grid; gap:8px;"></div>
+                            <button type="button" class="btn btn-sm btn-secondary" id="object-edit-sprite-clip-add" style="margin-top:8px;">Add animation clip</button>
+                            <small style="display:block; margin-top:6px; color:#aaa; line-height:1.4;">Name a frame range once, then play that clip from Mechanics Events. Each clip can loop or hold its last frame.</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-secondary" id="object-edit-sprite-clear" style="margin-top:8px;">Clear Sprite Sheet</button>
                     </div>
                     
                     <div class="form-group" id="object-edit-spinner-group" style="display: none;">
@@ -2037,6 +2361,66 @@ class Editor {
                 this.triggerMapChange();
             }
         });
+
+        document.getElementById('object-edit-collision-shape').addEventListener('change', (e) => {
+            if (!this.editingObject) return;
+            const previousShape = this.editingObject.collisionShape;
+            this.editingObject.collisionShape = ['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(e.target.value) ? e.target.value : 'box';
+            if (this.editingObject.collisionShape !== 'box') this.editingObject.oneWayPlatform = false;
+            const polygonGroup = document.getElementById('object-edit-collision-polygon-group');
+            polygonGroup.style.display = this.editingObject.collisionShape === 'polygon' ? 'block' : 'none';
+            if (this.editingObject.collisionShape === 'polygon') {
+                this.editingObject.collisionPoints = WorldObject.normalizeCollisionPolygon(this.editingObject.collisionPoints) ||
+                    WorldObject.DEFAULT_COLLISION_POLYGON.map(point => point.slice());
+                if (previousShape !== 'polygon') this.editingObject.polygonOneWay = true;
+                document.getElementById('object-edit-collision-points').value = JSON.stringify(this.editingObject.collisionPoints, null, 2);
+                document.getElementById('object-edit-collision-points-status').textContent = `${this.editingObject.collisionPoints.length} valid convex vertices`;
+            }
+            const polygonOneWayGroup = document.getElementById('object-edit-polygon-one-way-group');
+            polygonOneWayGroup.style.display = this.editingObject.collisionShape === 'polygon' ? 'block' : 'none';
+            document.getElementById('object-edit-polygon-one-way').checked = this.editingObject.polygonOneWay !== false;
+            const oneWayGroup = document.getElementById('object-edit-one-way-group');
+            const supportsOneWayPlatform = this.editingObject.type === 'block' &&
+                this.editingObject.appearanceType === 'ground' && this.editingObject.actingType === 'ground' &&
+                this.editingObject.collisionShape === 'box';
+            oneWayGroup.style.display = supportsOneWayPlatform ? 'block' : 'none';
+            document.getElementById('object-edit-one-way').checked = this.editingObject.oneWayPlatform === true;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('object-edit-collision-points').addEventListener('change', (e) => {
+            if (!this.editingObject || this.editingObject.collisionShape !== 'polygon') return;
+            let parsed;
+            try {
+                parsed = JSON.parse(e.target.value);
+            } catch (error) {
+                document.getElementById('object-edit-collision-points-status').textContent = 'Invalid JSON; the previous collider is kept.';
+                return;
+            }
+            const normalized = WorldObject.normalizeCollisionPolygon(parsed);
+            const status = document.getElementById('object-edit-collision-points-status');
+            if (!normalized) {
+                status.textContent = 'Use 3–12 ordered convex [x, y] pairs, each between 0 and 1; the previous collider is kept.';
+                return;
+            }
+            this.editingObject.collisionPoints = normalized;
+            e.target.value = JSON.stringify(normalized, null, 2);
+            status.textContent = `${normalized.length} valid convex vertices`;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('object-edit-polygon-one-way').addEventListener('change', (e) => {
+            if (!this.editingObject || this.editingObject.collisionShape !== 'polygon') return;
+            this.editingObject.polygonOneWay = e.target.checked;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('object-edit-one-way').addEventListener('change', (e) => {
+            if (this.editingObject) {
+                this.editingObject.oneWayPlatform = e.target.checked;
+                this.triggerMapChange();
+            }
+        });
         
         // Flip horizontal toggle
         document.getElementById('object-edit-flip-horizontal').addEventListener('change', (e) => {
@@ -2044,6 +2428,30 @@ class Editor {
                 this.editingObject.flipHorizontal = e.target.checked;
                 this.triggerMapChange();
             }
+        });
+
+        const spriteFileInput = document.getElementById('object-edit-sprite-file');
+        spriteFileInput.addEventListener('change', (e) => this.loadObjectSpriteSheet(e.target.files?.[0]));
+        document.getElementById('object-edit-sprite-clip-add').addEventListener('click', () => this.addObjectSpriteAnimationClip());
+        const spriteClips = document.getElementById('object-edit-sprite-clips');
+        spriteClips.addEventListener('change', () => this.saveObjectSpriteAnimationClips());
+        spriteClips.addEventListener('click', (event) => {
+            const removeButton = event.target.closest('.object-sprite-clip-remove');
+            if (!removeButton) return;
+            const index = Number(removeButton.closest('.object-sprite-clip')?.dataset.clipIndex);
+            if (Number.isInteger(index)) this.saveObjectSpriteAnimationClips(this.editingObject, index);
+        });
+        for (const id of ['object-edit-sprite-frame-width', 'object-edit-sprite-frame-height',
+            'object-edit-sprite-frame-count', 'object-edit-sprite-fps']) {
+            document.getElementById(id).addEventListener('change', () => this.applyObjectSpriteSheetSettings());
+        }
+        document.getElementById('object-edit-sprite-clear').addEventListener('click', () => {
+            if (!this.editingObject) return;
+            this.setObjectSpriteSheet(null);
+            spriteFileInput.value = '';
+            this.updateObjectSpriteSheetStatus();
+            this.renderObjectSpriteAnimationClips();
+            this.triggerMapChange();
         });
         
         // Update singular/plural labels on input
@@ -2252,6 +2660,218 @@ class Editor {
         this.editingObject = null;
         this.ui.objectEditPopup.classList.remove('active');
         this.closeColorPicker();
+    }
+
+    setObjectSpriteSheet(spriteSheet) {
+        if (!this.editingObject) return;
+        this.editingObject._spriteSheetSettingsRequest = (this.editingObject._spriteSheetSettingsRequest || 0) + 1;
+        this.editingObject._spriteSheetEditorValidationTarget = null;
+        this.editingObject._spriteSheetValidationError = '';
+        this.editingObject.spriteSheet = spriteSheet;
+        this.editingObject._spriteSheetImage = null;
+        this.editingObject._spriteSheetImageData = null;
+        this.world.invalidateTileCache();
+    }
+
+    updateObjectSpriteSheetStatus(message = null) {
+        const status = document.getElementById('object-edit-sprite-status');
+        if (!status) return;
+        const target = this.editingObject;
+        const sprite = target?.spriteSheet;
+        status.textContent = message || (sprite && target?._spriteSheetValidationError) || (sprite
+            ? `${sprite.frameCount} frame${sprite.frameCount === 1 ? '' : 's'} · ${sprite.frameWidth} × ${sprite.frameHeight} px · ${sprite.fps} FPS · ${sprite.animations?.length || 0} named clips`
+            : 'No sprite sheet selected.');
+    }
+
+    renderObjectSpriteAnimationClips(target = this.editingObject) {
+        const container = document.getElementById('object-edit-sprite-clips');
+        if (!container) return;
+        const clips = target?.spriteSheet?.animations || [];
+        container.innerHTML = clips.map((clip, index) => `
+            <div class="object-sprite-clip" data-clip-index="${index}" style="display:grid; grid-template-columns:minmax(92px,1fr) 64px 64px 64px 92px 32px; gap:5px; align-items:end;">
+                <label style="font-size:10px; color:#aaa;">Name<input class="form-input form-input-sm" data-clip-field="name" maxlength="32" value="${escapeHtml(clip.name)}"></label>
+                <label style="font-size:10px; color:#aaa;">First<input type="number" class="form-input form-input-sm" data-clip-field="startFrame" min="0" max="${Math.max(0, (target?.spriteSheet?.frameCount || 1) - 1)}" step="1" value="${clip.startFrame}"></label>
+                <label style="font-size:10px; color:#aaa;">Frames<input type="number" class="form-input form-input-sm" data-clip-field="frameCount" min="1" max="${target?.spriteSheet?.frameCount || 1}" step="1" value="${clip.frameCount}"></label>
+                <label style="font-size:10px; color:#aaa;">FPS<input type="number" class="form-input form-input-sm" data-clip-field="fps" min="1" max="30" step="1" value="${clip.fps}"></label>
+                <label style="font-size:10px; color:#aaa;">Playback<select class="form-input form-input-sm" data-clip-field="loop"><option value="false" ${clip.loop ? '' : 'selected'}>Once</option><option value="true" ${clip.loop ? 'selected' : ''}>Loop</option></select></label>
+                <button type="button" class="btn btn-sm btn-danger object-sprite-clip-remove" aria-label="Remove ${escapeHtml(clip.name)} clip" title="Remove clip">×</button>
+            </div>`).join('');
+        const addButton = document.getElementById('object-edit-sprite-clip-add');
+        if (addButton) addButton.disabled = !target?.spriteSheet || clips.length >= 32;
+        const clipsGroup = document.getElementById('object-edit-sprite-clips-group');
+        if (clipsGroup) clipsGroup.style.display = target?.spriteSheet ? 'block' : 'none';
+    }
+
+    saveObjectSpriteAnimationClips(target = this.editingObject, removeIndex = null) {
+        const container = document.getElementById('object-edit-sprite-clips');
+        const sprite = target?.spriteSheet;
+        if (!container || !sprite) return false;
+        const clips = Array.from(container.querySelectorAll('.object-sprite-clip')).map(row => {
+            const read = key => row.querySelector(`[data-clip-field="${key}"]`);
+            const name = read('name');
+            const startFrame = read('startFrame');
+            const frameCount = read('frameCount');
+            const fps = read('fps');
+            const loop = read('loop');
+            return {
+                name: name?.value || '',
+                startFrame: startFrame?.value.trim() === '' ? '' : Number(startFrame?.value),
+                frameCount: frameCount?.value.trim() === '' ? '' : Number(frameCount?.value),
+                fps: fps?.value.trim() === '' ? '' : Number(fps?.value),
+                loop: loop?.value === 'true'
+            };
+        });
+        if (removeIndex !== null) clips.splice(removeIndex, 1);
+        const normalized = WorldObject.normalizeSpriteAnimations(clips, sprite.frameCount);
+        if (!normalized) {
+            this.updateObjectSpriteSheetStatus('Use unique names, whole frame ranges within the sheet, and speeds from 1 to 30 FPS.');
+            return false;
+        }
+        this.setObjectSpriteSheet({ ...sprite, animations: normalized });
+        this.renderObjectSpriteAnimationClips(target);
+        this.updateObjectSpriteSheetStatus();
+        this.triggerMapChange();
+        return true;
+    }
+
+    addObjectSpriteAnimationClip() {
+        const target = this.editingObject;
+        const sprite = target?.spriteSheet;
+        if (!sprite || (sprite.animations || []).length >= 32) return;
+        const clips = (sprite.animations || []).slice();
+        let suffix = clips.length + 1;
+        let name = `Clip ${suffix}`;
+        const names = new Set(clips.map(clip => clip.name.toLowerCase()));
+        while (names.has(name.toLowerCase())) name = `Clip ${++suffix}`;
+        clips.push({ name, startFrame: 0, frameCount: 1, fps: 8, loop: false });
+        this.setObjectSpriteSheet({ ...sprite, animations: clips });
+        this.renderObjectSpriteAnimationClips(target);
+        this.updateObjectSpriteSheetStatus();
+        this.triggerMapChange();
+        document.querySelector('#object-edit-sprite-clips .object-sprite-clip:last-child [data-clip-field="name"]')?.focus();
+    }
+
+    validateObjectSpriteSheetForEditor(target) {
+        const sprite = target?.spriteSheet;
+        if (!sprite || target._spriteSheetEditorValidationTarget === sprite) return;
+        target._spriteSheetEditorValidationTarget = sprite;
+        const image = new Image();
+        image.onerror = () => {
+            if (this.editingObject !== target || target.spriteSheet !== sprite) return;
+            target._spriteSheetValidationError = 'The sprite-sheet image could not be decoded.';
+            this.updateObjectSpriteSheetStatus();
+        };
+        image.onload = () => {
+            if (this.editingObject !== target || target.spriteSheet !== sprite) return;
+            const columns = Math.floor(image.naturalWidth / sprite.frameWidth);
+            const rows = Math.floor(image.naturalHeight / sprite.frameHeight);
+            const availableFrames = columns * rows;
+            target._spriteSheetValidationError = image.naturalWidth > 4096 || image.naturalHeight > 4096 ||
+                image.naturalWidth * image.naturalHeight > 16000000
+                ? 'Image dimensions must be at most 4096 × 4096 and 16 megapixels.'
+                : columns < 1 || rows < 1
+                ? 'The configured frame size does not fit this image.'
+                : sprite.frameCount > availableFrames
+                    ? `This image contains ${availableFrames} whole frames; the sheet declares ${sprite.frameCount}.`
+                    : '';
+            this.updateObjectSpriteSheetStatus();
+        };
+        image.src = sprite.data;
+    }
+
+    loadObjectSpriteSheet(file) {
+        const target = this.editingObject;
+        if (!target || !file) return;
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+            this.updateObjectSpriteSheetStatus('Choose a PNG, JPEG, or WebP image up to 1 MB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => this.updateObjectSpriteSheetStatus('The image could not be read.');
+        reader.onload = () => {
+            if (this.editingObject !== target || typeof reader.result !== 'string') return;
+            const image = new Image();
+            image.onerror = () => this.updateObjectSpriteSheetStatus('The selected file is not a valid image.');
+            image.onload = () => {
+                if (this.editingObject !== target) return;
+                if (image.naturalWidth > 4096 || image.naturalHeight > 4096 || image.naturalWidth * image.naturalHeight > 16000000) {
+                    this.updateObjectSpriteSheetStatus('Image dimensions must be at most 4096 × 4096 and 16 megapixels.');
+                    return;
+                }
+                const currentSpriteBytes = this.world.getSpriteSheetDataLength() - (target.spriteSheet?.data?.length || 0);
+                if (currentSpriteBytes + reader.result.length > 8 * 1024 * 1024) {
+                    this.updateObjectSpriteSheetStatus('Sprite sheets across this map and its Object Stamps are limited to 8 MiB total.');
+                    return;
+                }
+                document.getElementById('object-edit-sprite-frame-width').value = image.naturalWidth;
+                document.getElementById('object-edit-sprite-frame-height').value = image.naturalHeight;
+                document.getElementById('object-edit-sprite-frame-count').value = 1;
+                document.getElementById('object-edit-sprite-fps').value = 8;
+                this.setObjectSpriteSheet({
+                    data: reader.result,
+                    frameWidth: image.naturalWidth,
+                    frameHeight: image.naturalHeight,
+                    frameCount: 1,
+                    fps: 8,
+                    animations: []
+                });
+                this.updateObjectSpriteSheetStatus(`${image.naturalWidth} × ${image.naturalHeight} px · set frame size and count for animation`);
+                this.triggerMapChange();
+            };
+            image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    applyObjectSpriteSheetSettings() {
+        const target = this.editingObject;
+        const sprite = target?.spriteSheet;
+        if (!sprite) return;
+        const frameWidth = Number(document.getElementById('object-edit-sprite-frame-width').value);
+        const frameHeight = Number(document.getElementById('object-edit-sprite-frame-height').value);
+        const frameCount = Number(document.getElementById('object-edit-sprite-frame-count').value);
+        const fps = Number(document.getElementById('object-edit-sprite-fps').value);
+        if (!Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 4096 ||
+            !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 4096 ||
+            !Number.isInteger(frameCount) || frameCount < 1 || frameCount > 256 ||
+            !Number.isFinite(fps) || fps < 1 || fps > 30) {
+            this.updateObjectSpriteSheetStatus('Frames must be 1–256, dimensions 1–4096 px, and speed 1–30 FPS.');
+            return;
+        }
+        const requestId = (target._spriteSheetSettingsRequest || 0) + 1;
+        target._spriteSheetSettingsRequest = requestId;
+        const applyIfValid = image => {
+            if (this.editingObject !== target || target._spriteSheetSettingsRequest !== requestId ||
+                target.spriteSheet?.data !== sprite.data) return;
+            const columns = Math.floor(image.naturalWidth / frameWidth);
+            const rows = Math.floor(image.naturalHeight / frameHeight);
+            const availableFrames = columns * rows;
+            if (columns < 1 || rows < 1 || frameCount > availableFrames) {
+                this.updateObjectSpriteSheetStatus(`This image contains ${Math.max(0, availableFrames)} whole frames at the selected frame size.`);
+                return;
+            }
+            const animations = WorldObject.normalizeSpriteAnimations(sprite.animations, frameCount);
+            if (!animations) {
+                this.updateObjectSpriteSheetStatus('The new frame count would invalidate a named clip. Adjust or remove that clip first.');
+                return;
+            }
+            this.setObjectSpriteSheet({ ...sprite, frameWidth, frameHeight, frameCount, fps, animations });
+            this.updateObjectSpriteSheetStatus();
+            this.triggerMapChange();
+        };
+        const cachedImage = target._spriteSheetImage;
+        if (cachedImage?.complete && cachedImage.naturalWidth > 0 && target._spriteSheetImageData === sprite.data) {
+            applyIfValid(cachedImage);
+            return;
+        }
+        const image = new Image();
+        image.onload = () => applyIfValid(image);
+        image.onerror = () => {
+            if (this.editingObject === target && target._spriteSheetSettingsRequest === requestId) {
+                this.updateObjectSpriteSheetStatus('The sprite-sheet image could not be decoded.');
+            }
+        };
+        image.src = sprite.data;
     }
     
     updateSpikeTouchboxEditDescription(mode) {
@@ -2868,6 +3488,34 @@ class Editor {
         document.getElementById('object-edit-opacity-label').textContent = Math.round(obj.opacity * 100) + '%';
         document.getElementById('object-edit-rotation-label').textContent = obj.rotation + '°';
         document.getElementById('object-edit-collision').checked = obj.collision;
+        const spriteGroup = document.getElementById('object-edit-sprite-group');
+        const supportsSpriteSheet = obj.type !== 'spinner' && obj.appearanceType !== 'spinner';
+        spriteGroup.style.display = supportsSpriteSheet ? 'block' : 'none';
+        document.getElementById('object-edit-sprite-file').value = '';
+        document.getElementById('object-edit-sprite-frame-width').value = obj.spriteSheet?.frameWidth || 32;
+        document.getElementById('object-edit-sprite-frame-height').value = obj.spriteSheet?.frameHeight || 32;
+        document.getElementById('object-edit-sprite-frame-count').value = obj.spriteSheet?.frameCount || 1;
+        document.getElementById('object-edit-sprite-fps').value = obj.spriteSheet?.fps || 8;
+        this.updateObjectSpriteSheetStatus();
+        this.validateObjectSpriteSheetForEditor(obj);
+        this.renderObjectSpriteAnimationClips(obj);
+        const collisionShapeGroup = document.getElementById('object-edit-collision-shape-group');
+        const supportsGroundCollisionShape = obj.type === 'block' && obj.appearanceType === 'ground' && obj.actingType === 'ground';
+        collisionShapeGroup.style.display = supportsGroundCollisionShape ? 'block' : 'none';
+        document.getElementById('object-edit-collision-shape').value = ['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape) ? obj.collisionShape : 'box';
+        const polygonGroup = document.getElementById('object-edit-collision-polygon-group');
+        polygonGroup.style.display = obj.collisionShape === 'polygon' ? 'block' : 'none';
+        const polygonOneWayGroup = document.getElementById('object-edit-polygon-one-way-group');
+        polygonOneWayGroup.style.display = obj.collisionShape === 'polygon' ? 'block' : 'none';
+        document.getElementById('object-edit-polygon-one-way').checked = obj.polygonOneWay !== false;
+        const collisionPoints = WorldObject.normalizeCollisionPolygon(obj.collisionPoints) || WorldObject.DEFAULT_COLLISION_POLYGON;
+        document.getElementById('object-edit-collision-points').value = JSON.stringify(collisionPoints, null, 2);
+        document.getElementById('object-edit-collision-points-status').textContent = obj.collisionShape === 'polygon'
+            ? `${collisionPoints.length} valid convex vertices` : '';
+        const oneWayGroup = document.getElementById('object-edit-one-way-group');
+        const supportsOneWayPlatform = supportsGroundCollisionShape && obj.collisionShape === 'box';
+        oneWayGroup.style.display = supportsOneWayPlatform ? 'block' : 'none';
+        document.getElementById('object-edit-one-way').checked = obj.oneWayPlatform === true;
         
         // Show/hide flip horizontal (not for zones)
         const flipGroup = document.getElementById('object-edit-flip-group');
@@ -4219,6 +4867,8 @@ class Editor {
         // Close buttons
         document.getElementById('close-config').addEventListener('click', () => this.closePanel('config'));
         document.getElementById('close-layers').addEventListener('click', () => this.closePanel('layers'));
+        document.getElementById('add-layer-behind').addEventListener('click', () => this.promptAddDrawLayer('behind'));
+        document.getElementById('add-layer-above').addEventListener('click', () => this.promptAddDrawLayer('above'));
         document.getElementById('close-settings-panel').addEventListener('click', () => this.closePanel('settings'));
         document.getElementById('close-color-picker').addEventListener('click', () => this.closeColorPicker());
 
@@ -4308,6 +4958,117 @@ class Editor {
             });
         });
 
+        document.getElementById('placement-tilemap-layer-select')?.addEventListener('change', (e) => {
+            const depth = Number(e.target.value);
+            const layer = this.world.getLayerDefinition(depth);
+            if (!Number.isSafeInteger(depth) || !layer) return;
+            if (this.tilemapCellBehavior !== 'decorative' && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) {
+                this.showToast('Collidable tilemap cells need a layer with parallax set to 1.', 'error');
+                e.target.value = String(this.tilemapLayer);
+                return;
+            }
+            this.tilemapLayer = depth;
+            this.tilemapAtlasFrame = 0;
+            document.getElementById('placement-tilemap-atlas-frame').value = '0';
+            this.updateTilemapAtlasStatus();
+        });
+        document.getElementById('placement-tilemap-atlas-file')?.addEventListener('change', e => {
+            const file = e.target.files?.[0];
+            if (file) this.loadTilemapAtlas(file);
+            e.target.value = '';
+        });
+        document.getElementById('placement-tilemap-atlas-clear')?.addEventListener('click', () => {
+            if (!this.world.clearTilemapAtlas(this.tilemapLayer)) return;
+            this.updateTilemapAtlasStatus();
+            this.triggerMapChange();
+        });
+        document.getElementById('placement-tilemap-atlas-frame')?.addEventListener('change', e => {
+            const atlas = this.world.tilemaps.find(tilemap => tilemap.layer === this.tilemapLayer)?.atlas;
+            const maxFrame = atlas ? atlas.columns * atlas.rows - 1 : 0;
+            this.tilemapAtlasFrame = Math.max(0, Math.min(maxFrame, Math.floor(Number(e.target.value) || 0)));
+            e.target.value = String(this.tilemapAtlasFrame);
+            this.updateTilemapAtlasStatus();
+        });
+        document.getElementById('placement-tilemap-behavior-select')?.addEventListener('change', (e) => {
+            if (['solid', 'oneWay', 'rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(e.target.value)) {
+                const layer = this.world.getLayerDefinition(this.tilemapLayer);
+                if (e.target.value !== 'decorative' && layer && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) {
+                    this.showToast('Collidable tilemap cells need a layer with parallax set to 1.', 'error');
+                    e.target.value = 'decorative';
+                    this.tilemapCellBehavior = 'decorative';
+                    return;
+                }
+                this.tilemapCellBehavior = e.target.value;
+                const supportsPolygon = ['solid', 'oneWay'].includes(this.tilemapCellBehavior);
+                const shapeSelect = document.getElementById('placement-tilemap-collision-shape-select');
+                if (shapeSelect) {
+                    shapeSelect.disabled = !supportsPolygon;
+                    if (!supportsPolygon) {
+                        this.tilemapCollisionShape = 'box';
+                        shapeSelect.value = 'box';
+                        document.getElementById('placement-tilemap-polygon-settings').style.display = 'none';
+                    }
+                }
+                const oneWayToggle = document.getElementById('placement-tilemap-polygon-one-way');
+                if (oneWayToggle) {
+                    oneWayToggle.disabled = this.tilemapCellBehavior === 'oneWay';
+                    if (oneWayToggle.disabled) {
+                        this.tilemapPolygonOneWay = true;
+                        oneWayToggle.checked = true;
+                    }
+                }
+            }
+        });
+        document.getElementById('placement-tilemap-collision-shape-select')?.addEventListener('change', (e) => {
+            this.tilemapCollisionShape = e.target.value === 'polygon' ? 'polygon' : 'box';
+            document.getElementById('placement-tilemap-polygon-settings')?.style.setProperty(
+                'display', this.tilemapCollisionShape === 'polygon' ? 'flex' : 'none'
+            );
+        });
+        document.getElementById('placement-tilemap-polygon-one-way')?.addEventListener('change', (e) => {
+            this.tilemapPolygonOneWay = e.target.checked;
+        });
+        document.getElementById('placement-tilemap-collision-points')?.addEventListener('change', (e) => {
+            let parsed;
+            try { parsed = JSON.parse(e.target.value); } catch {
+                document.getElementById('placement-tilemap-collision-points-status').textContent = 'Invalid JSON; the previous polygon is kept.';
+                return;
+            }
+            const normalized = WorldObject.normalizeCollisionPolygon(parsed);
+            if (!normalized) {
+                document.getElementById('placement-tilemap-collision-points-status').textContent = 'Use 3–12 ordered convex vertices with coordinates from 0 to 1.';
+                return;
+            }
+            this.tilemapCollisionPoints = normalized;
+            e.target.value = JSON.stringify(normalized);
+            document.getElementById('placement-tilemap-collision-points-status').textContent = `${normalized.length} valid convex vertices`;
+        });
+        document.getElementById('placement-tilemap-animation-select')?.addEventListener('change', e => {
+            this.tilemapAnimation = ['textureCycle', 'atlasCycle'].includes(e.target.value) ? e.target.value : 'none';
+            document.getElementById('placement-tilemap-animation-settings')?.classList.toggle('hidden', this.tilemapAnimation === 'none');
+            this.updateTilemapAnimationFrameControls();
+        });
+        document.getElementById('placement-tilemap-frame-count')?.addEventListener('change', e => {
+            this.tilemapAnimationFrameCount = Math.max(2, Math.min(8, Number(e.target.value) || 2));
+            this.updateTilemapAnimationFrameControls();
+        });
+        document.getElementById('placement-tilemap-frame-selectors')?.addEventListener('change', e => {
+            const index = Number(e.target.dataset.frameIndex);
+            if (!Number.isInteger(index) || index < 0 || index >= 8) return;
+            if (this.tilemapAnimation === 'atlasCycle') {
+                const atlas = this.world.tilemaps.find(tilemap => tilemap.layer === this.tilemapLayer)?.atlas;
+                const maxFrame = atlas ? atlas.columns * atlas.rows - 1 : 0;
+                this.tilemapAtlasAnimationFrames[index] = Math.max(0, Math.min(maxFrame, Math.floor(Number(e.target.value) || 0)));
+                e.target.value = String(this.tilemapAtlasAnimationFrames[index]);
+            } else {
+                this.tilemapAnimationFrames[index] = e.target.value;
+            }
+        });
+        document.getElementById('placement-tilemap-animation-fps')?.addEventListener('change', e => {
+            this.tilemapAnimationFps = Math.max(1, Math.min(12, Math.round(Number(e.target.value) || 4)));
+            e.target.value = String(this.tilemapAnimationFps);
+        });
+
         // Fill mode
         document.querySelectorAll('[data-fill]').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -4373,7 +5134,7 @@ class Editor {
             const _raw = parseInt(e.target.value);
             const opacity = Math.max(0, Math.min(100, isNaN(_raw) ? 100 : _raw));
             e.target.value = opacity;
-            if (this.placementMode === PlacementMode.BLOCK) {
+            if (this.placementMode === PlacementMode.BLOCK || this.placementMode === PlacementMode.TILEMAP) {
                 this.placementSettings.opacity = opacity / 100;
             } else if (this.placementMode === PlacementMode.OBSTACLE) {
                 this.obstacleSettings.opacity = opacity / 100;
@@ -4555,6 +5316,14 @@ class Editor {
             }
         });
 
+        const persistCheckpoints = document.getElementById('config-persist-checkpoints');
+        if (persistCheckpoints) {
+            persistCheckpoints.addEventListener('change', (event) => {
+                this.world.persistCheckpoints = event.target.checked;
+                this.triggerMapChange();
+            });
+        }
+
         // Jumps
         document.getElementById('config-jumps').addEventListener('change', (e) => {
             const isInfinite = e.target.value === 'infinite';
@@ -4578,6 +5347,38 @@ class Editor {
             this.world.collideWithEachOther = e.target.checked;
             this.triggerMapChange();
         });
+
+        document.getElementById('config-player-sprite-file').addEventListener('change', (e) => {
+            this.loadPlayerSpriteSheet(e.target.files?.[0]);
+        });
+        document.getElementById('config-player-sprite-clear').addEventListener('click', () => {
+            this._playerSpriteSheetSettingsRequest = (this._playerSpriteSheetSettingsRequest || 0) + 1;
+            this._playerSpriteSheetValidationError = '';
+            this._playerSpriteSheetEditorValidationTarget = null;
+            this.world.playerSpriteSheet = null;
+            document.getElementById('config-player-sprite-file').value = '';
+            this.updatePlayerSpriteSheetStatus();
+            this.triggerMapChange();
+        });
+        for (const state of ['attack', 'hurt', 'dash']) {
+            const enabled = document.getElementById(`config-player-sprite-${state}-enabled`);
+            enabled.addEventListener('change', () => {
+                document.getElementById(`config-player-sprite-${state}-row`)?.classList.toggle('hidden', !enabled.checked);
+                this.applyPlayerSpriteSheetSettings();
+            });
+        }
+        for (const id of ['config-player-sprite-frame-width', 'config-player-sprite-frame-height',
+            ...['idle', 'run', 'jump', 'fall'].flatMap(state => [
+                `config-player-sprite-${state}-row`,
+                `config-player-sprite-${state}-frames`,
+                `config-player-sprite-${state}-fps`
+            ]), ...['attack', 'hurt', 'dash'].flatMap(state => [
+                `config-player-sprite-${state}-row-index`,
+                `config-player-sprite-${state}-frames`,
+                `config-player-sprite-${state}-fps`
+            ])]) {
+            document.getElementById(id).addEventListener('change', () => this.applyPlayerSpriteSheetSettings());
+        }
 
         document.getElementById('config-show-coin-counter').addEventListener('change', (e) => {
             this.world.showCoinCounter = e.target.checked;
@@ -4609,6 +5410,31 @@ class Editor {
             const value = parseFloat(e.target.value);
             this.world.gravity = (value > 0) ? value : 0.71;
             e.target.value = this.world.gravity;
+            if (this.world.terminalFallSpeed === null) {
+                const fallSpeed = document.getElementById('config-terminal-fall-speed');
+                if (fallSpeed) fallSpeed.value = (16 * this.world.gravity / 0.71).toFixed(1);
+            }
+            this.triggerMapChange();
+        });
+
+        document.getElementById('config-horizontal-acceleration').addEventListener('change', (e) => {
+            const value = parseFloat(e.target.value);
+            this.world.horizontalAcceleration = Number.isFinite(value) && value >= 0 && value <= 20 ? value : 0;
+            e.target.value = this.world.horizontalAcceleration;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('config-air-control').addEventListener('change', (e) => {
+            const value = parseFloat(e.target.value);
+            this.world.airControl = Number.isFinite(value) && value >= 0 && value <= 1 ? value : 1;
+            e.target.value = this.world.airControl;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('config-terminal-fall-speed').addEventListener('change', (e) => {
+            const value = parseFloat(e.target.value);
+            this.world.terminalFallSpeed = Number.isFinite(value) && value > 0 && value <= 100 ? value : null;
+            e.target.value = this.world.terminalFallSpeed ?? (16 * this.world.gravity / 0.71).toFixed(1);
             this.triggerMapChange();
         });
 
@@ -4625,6 +5451,40 @@ class Editor {
             document.getElementById('config-camera-lerp-y-value').textContent = this.world.cameraLerpY.toFixed(2);
             this.triggerMapChange();
         });
+
+        document.getElementById('config-camera-follow-mode').addEventListener('change', (e) => {
+            this.world.cameraFollowMode = ['both', 'horizontal', 'vertical'].includes(e.target.value)
+                ? e.target.value : 'both';
+            this.triggerMapChange();
+        });
+
+        const cameraBoundsEnabled = document.getElementById('config-camera-bounds-enabled');
+        const cameraBoundsFields = document.getElementById('config-camera-bounds-fields');
+        const cameraBoundsInputs = ['x', 'y', 'width', 'height'].map(key =>
+            document.getElementById(`config-camera-bounds-${key}`)
+        );
+        const setCameraBoundsInputsEnabled = (enabled) => {
+            cameraBoundsFields.style.display = enabled ? 'grid' : 'none';
+            cameraBoundsInputs.forEach(input => { input.disabled = !enabled; });
+        };
+        cameraBoundsEnabled.addEventListener('change', (e) => {
+            this.world.cameraBounds.enabled = e.target.checked;
+            setCameraBoundsInputsEnabled(e.target.checked);
+            this.triggerMapChange();
+        });
+        cameraBoundsInputs.forEach(input => input.addEventListener('change', () => {
+            const [x, y, width, height] = cameraBoundsInputs.map(field => Number(field.value));
+            if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0 ||
+                !Number.isFinite(x + width) || !Number.isFinite(y + height)) {
+                const bounds = this.world.cameraBounds;
+                cameraBoundsInputs.forEach((field, index) => {
+                    field.value = [bounds.x, bounds.y, bounds.width, bounds.height][index];
+                });
+                return;
+            }
+            this.world.cameraBounds = { ...this.world.cameraBounds, x, y, width, height };
+            this.triggerMapChange();
+        }));
 
         // Spike touchbox mode
         document.getElementById('config-spike-touchbox').addEventListener('change', (e) => {
@@ -4774,11 +5634,38 @@ class Editor {
         });
         
         // Plugin toggle buttons
-        document.querySelectorAll('.plugin-toggle-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const pluginId = e.target.dataset.plugin;
-                this.togglePlugin(pluginId);
-            });
+        document.getElementById('plugins-popup').addEventListener('click', (e) => {
+            const button = e.target.closest('.plugin-toggle-btn');
+            if (!button || !button.dataset.plugin) return;
+            this.togglePlugin(button.dataset.plugin);
+        });
+        document.getElementById('plugins-popup').addEventListener('change', (e) => {
+            const input = e.target.closest('.custom-plugin-config');
+            if (!input) return;
+            const plugin = window.PluginManager?.plugins?.get(input.dataset.plugin);
+            const field = plugin?.config?.[input.dataset.configKey];
+            if (!plugin || !field) return;
+
+            window.PluginManager.ensureWorldPluginConfig(plugin.id, plugin, this.world);
+            let value;
+            if (field.type === 'boolean') {
+                value = input.checked;
+            } else if (field.type === 'number') {
+                value = input.value.trim() === '' ? field.default : Number(input.value);
+                if (!Number.isFinite(value)) value = field.default;
+                if (field.min !== undefined) value = Math.max(field.min, value);
+                if (field.max !== undefined) value = Math.min(field.max, value);
+                input.value = String(value);
+            } else if (field.type === 'select') {
+                value = field.options[Number(input.value)]?.value;
+                if (value === undefined) value = field.default;
+            } else {
+                value = input.value.slice(0, 512);
+                input.value = value;
+            }
+            this.world.plugins[plugin.id][input.dataset.configKey] = value;
+            this.updateAdditionalPluginConfigVisibility(plugin.id);
+            this.triggerMapChange();
         });
         
         // HP settings
@@ -4809,6 +5696,21 @@ class Editor {
             this.ensureHKConfig();
             this.world.plugins.hk.maxSoul = Math.max(33, Math.min(198, parseInt(e.target.value) || 99));
             e.target.value = this.world.plugins.hk.maxSoul;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('config-hk-pogo-bounce-power')?.addEventListener('change', (e) => {
+            this.ensureHKConfig();
+            const value = Number.parseFloat(e.target.value);
+            this.world.plugins.hk.pogoBouncePower = Math.max(0.5, Math.min(2, Number.isFinite(value) ? value : 1.2));
+            e.target.value = this.world.plugins.hk.pogoBouncePower;
+            this.triggerMapChange();
+        });
+
+        document.getElementById('config-hk-nail-speed')?.addEventListener('change', (e) => {
+            this.ensureHKConfig();
+            this.world.plugins.hk.nailSpeed = e.target.value === 'quickSlash' ? 'quickSlash' : 'base';
+            e.target.value = this.world.plugins.hk.nailSpeed;
             this.triggerMapChange();
         });
         
@@ -4844,7 +5746,52 @@ class Editor {
             this.world.plugins.hk.mantisClaw = e.target.checked;
             this.triggerMapChange();
         });
-        
+
+        const hkEffectToggles = [
+            ['config-hk-slash-effects', 'slashEffects'],
+            ['config-hk-impact-effects', 'impactEffects'],
+            ['config-hk-camera-shake-effects', 'cameraShakeEffects'],
+            ['config-hk-dash-trail-effects', 'dashTrailEffects'],
+            ['config-hk-ability-aura-effects', 'abilityAuraEffects']
+        ];
+        hkEffectToggles.forEach(([elementId, configKey]) => {
+            document.getElementById(elementId)?.addEventListener('change', (e) => {
+                this.ensureHKConfig();
+                this.world.plugins.hk[configKey] = e.target.checked;
+                if (configKey === 'cameraShakeEffects') {
+                    document.getElementById('config-hk-camera-shake-settings')?.classList.toggle('hidden', !e.target.checked);
+                }
+                this.triggerMapChange();
+            });
+        });
+        const hkShakeIntensities = [
+            ['config-hk-impact-shake-intensity', 'impactShakeIntensity', 0, 18, 7],
+            ['config-hk-landing-shake-intensity', 'landingShakeIntensity', 0, 8, 2]
+        ];
+        hkShakeIntensities.forEach(([elementId, configKey, min, max, fallback]) => {
+            document.getElementById(elementId)?.addEventListener('change', (e) => {
+                this.ensureHKConfig();
+                const value = Number.parseFloat(e.target.value);
+                this.world.plugins.hk[configKey] = Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback));
+                e.target.value = this.world.plugins.hk[configKey];
+                this.triggerMapChange();
+            });
+        });
+        const hkEffectColors = [
+            ['config-hk-nail-effect-color', 'nailEffectColor'],
+            ['config-hk-dash-effect-color', 'dashEffectColor'],
+            ['config-hk-charge-effect-color', 'chargeEffectColor'],
+            ['config-hk-heal-effect-color', 'healEffectColor']
+        ];
+        hkEffectColors.forEach(([elementId, configKey]) => {
+            document.getElementById(elementId)?.addEventListener('input', (e) => {
+                if (!/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) return;
+                this.ensureHKConfig();
+                this.world.plugins.hk[configKey] = e.target.value;
+                this.triggerMapChange();
+            });
+        });
+
         // Edit Mechanics button (always available)
         document.getElementById('btn-edit-mechanics')?.addEventListener('click', () => {
             if (typeof CodeEditor !== 'undefined' && CodeEditor.open) {
@@ -4854,7 +5801,7 @@ class Editor {
             }
         });
     }
-    
+
     ensureCodeConfig() {
         // Ensure Code config object exists with defaults
         if (!this.world.plugins.code) {
@@ -4864,22 +5811,158 @@ class Editor {
         }
     }
     
-    openPluginsPopup() {
+    renderAdditionalPluginCards() {
+        const container = document.getElementById('plugins-dynamic-cards');
+        if (!container) return;
+        const builtInCards = new Set(['hp', 'hk', 'cj', 'code']);
+        const registeredPluginIds = new Set(window.PluginManager?.plugins?.keys?.() || []);
+        const requestedPluginIds = Array.isArray(this.world.plugins?.enabled) ? this.world.plugins.enabled : [];
+        const missingPluginIds = requestedPluginIds.filter(id => typeof id === 'string' && id && !registeredPluginIds.has(id));
+        const failedPluginIds = requestedPluginIds.filter(id => typeof id === 'string' && id && registeredPluginIds.has(id) &&
+            !window.PluginManager.isEnabled?.(id));
+        const plugins = Array.from(window.PluginManager?.plugins?.values?.() || [])
+            .filter(plugin => !builtInCards.has(plugin.id) && plugin.hideInPluginLibrary !== true)
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        const pluginStatusItems = [
+            ...missingPluginIds.map(id => `<li><code>${escapeHtml(id)}</code> is not in the reviewed local library. Its map settings are preserved, but its features cannot run.</li>`),
+            ...failedPluginIds.map(id => {
+                const error = window.PluginManager.getLoadDiagnostic?.(id) || 'No initialization detail was recorded.';
+                return `<li><code>${escapeHtml(id)}</code> did not initialize: ${escapeHtml(error)}</li>`;
+            })
+        ];
+        const missingPluginNotice = pluginStatusItems.length
+            ? `<div role="status" style="margin:16px 0;padding:12px 14px;border-radius:8px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:var(--text-primary);font-size:13px;line-height:1.5;"><strong>Map plugin status</strong><ul style="margin:6px 0;padding-left:20px;">${pluginStatusItems.join('')}</ul><span>Importing a map never installs or executes plugin code.</span></div>`
+            : '';
+        if (plugins.length === 0) {
+            container.innerHTML = missingPluginNotice;
+            return;
+        }
+
+        const renderConfigField = (plugin, key, field) => {
+            const savedConfig = this.world.plugins?.[plugin.id] || {};
+            const savedValue = Object.hasOwn(savedConfig, key) ? savedConfig[key] : field.default;
+            let value = field.default;
+            if (field.type === 'boolean' && typeof savedValue === 'boolean') value = savedValue;
+            else if (field.type === 'string' && typeof savedValue === 'string') value = savedValue;
+            else if (field.type === 'number' && typeof savedValue === 'number' && Number.isFinite(savedValue) &&
+                (field.min === undefined || savedValue >= field.min) && (field.max === undefined || savedValue <= field.max)) value = savedValue;
+            else if (field.type === 'select' && field.options?.some(option => option.value === savedValue)) value = savedValue;
+
+            const inputId = `plugin-config-${plugin.id}-${key}`;
+            let control;
+            if (field.type === 'boolean') {
+                control = `<label class="toggle"><input id="${escapeHtml(inputId)}" class="custom-plugin-config" type="checkbox" data-plugin="${escapeHtml(plugin.id)}" data-config-key="${escapeHtml(key)}" ${value ? 'checked' : ''}><span class="toggle-slider"></span></label>`;
+            } else if (field.type === 'number') {
+                control = `<input id="${escapeHtml(inputId)}" class="form-input custom-plugin-config" type="number" data-plugin="${escapeHtml(plugin.id)}" data-config-key="${escapeHtml(key)}" value="${escapeHtml(String(value))}" min="${field.min ?? ''}" max="${field.max ?? ''}" step="any" style="max-width:180px;">`;
+            } else if (field.type === 'select') {
+                control = `<select id="${escapeHtml(inputId)}" class="form-input custom-plugin-config" data-plugin="${escapeHtml(plugin.id)}" data-config-key="${escapeHtml(key)}">${field.options.map((option, index) => `<option value="${index}" ${option.value === value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>`;
+            } else {
+                control = `<input id="${escapeHtml(inputId)}" class="form-input custom-plugin-config" type="text" maxlength="512" data-plugin="${escapeHtml(plugin.id)}" data-config-key="${escapeHtml(key)}" value="${escapeHtml(value)}" style="max-width:240px;">`;
+            }
+            const showIf = typeof field.showIf === 'string' ? field.showIf : '';
+            const showIfDefinition = showIf ? plugin.config?.[showIf] : null;
+            const showIfValue = typeof savedConfig[showIf] === 'boolean' ? savedConfig[showIf] : showIfDefinition?.default;
+            const visible = !showIf || showIfValue === true;
+            return `
+                <div class="plugin-config-field ${visible ? '' : 'hidden'}" data-plugin="${escapeHtml(plugin.id)}" data-show-if="${escapeHtml(showIf)}" style="margin-top:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <label class="form-label" style="margin:0;" for="${escapeHtml(inputId)}">${escapeHtml(field.label || key)}</label>
+                            ${field.description ? `<p style="margin:3px 0 0; color:var(--text-muted); font-size:12px;">${escapeHtml(field.description.slice(0, 256))}</p>` : ''}
+                        </div>
+                        ${control}
+                    </div>
+                </div>
+            `;
+        };
+
+        container.innerHTML = `
+            ${missingPluginNotice}
+            <h3 style="margin:24px 0 12px;">Other Plugins</h3>
+            ${plugins.map(plugin => {
+                const coverUrl = plugin.cover
+                    ? window.PluginManager.getPluginAssetUrl(plugin, plugin.cover)
+                    : '';
+                const cover = coverUrl
+                    ? `<img src="${escapeHtml(coverUrl)}" alt="${escapeHtml(plugin.name)}" style="width:100%; max-height:220px; object-fit:cover; display:block;">`
+                    : '';
+                const developmentBadge = plugin.localDevelopment
+                    ? '<span style="font-size:11px; background:rgba(245,158,11,.18); color:#fbbf24; padding:3px 8px; border-radius:4px;">Local preview · trusted code</span>'
+                    : '';
+                const configFields = Object.entries(plugin.config || {})
+                    .map(([key, field]) => renderConfigField(plugin, key, field))
+                    .join('');
+                const pluginControls = Object.entries(plugin.controls || {}).map(([, control]) => {
+                    const keyLabel = control.key.replace(/^Key/, '').replace(/^Digit/, '');
+                    return `
+                    <div style="display:flex; gap:8px; align-items:baseline; font-size:12px; color:var(--text-muted);">
+                        <strong style="color:var(--text-primary);">${escapeHtml(control.label)}</strong>
+                        <kbd>${escapeHtml(keyLabel)}</kbd>
+                        ${control.description ? `<span>${escapeHtml(control.description)}</span>` : ''}
+                    </div>
+                `;
+                }).join('');
+                const hookDiagnostics = window.PluginManager.getHookDiagnostics?.(plugin.id) || [];
+                const hookDiagnosticsMarkup = hookDiagnostics.length
+                    ? `<div role="status" style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(245,158,11,.12); color:#fbbf24; font-size:12px;"><strong>Plugin hook paused after repeated errors</strong><ul style="margin:6px 0 0; padding-left:18px;">${hookDiagnostics.map(item => `<li><code>${escapeHtml(item.hookName)}</code>: ${escapeHtml(item.message)}</li>`).join('')}</ul><span>Fix the hook, bump the plugin version if it is bundled, then reload to retry it.</span></div>`
+                    : '';
+                const loadDiagnostic = window.PluginManager.getLoadDiagnostic?.(plugin.id) || '';
+                const loadDiagnosticMarkup = loadDiagnostic
+                    ? `<div role="status" style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(220,53,69,.12); color:var(--text-primary); font-size:12px;"><strong>Plugin did not initialize</strong><p style="margin:6px 0 0;">${escapeHtml(loadDiagnostic)}</p><span>Fix the plugin or its dependencies, then reload the map to retry.</span></div>`
+                    : '';
+                return `
+                    <div class="plugin-card" data-plugin="${escapeHtml(plugin.id)}" style="background:var(--bg-light); border-radius:12px; overflow:hidden; margin-bottom:16px;">
+                        ${cover}
+                        <div style="padding:16px 20px 20px;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                                <div style="flex:1; min-width:0;">
+                                    <h3 style="margin:0 0 8px; color:var(--text-primary);">${escapeHtml(plugin.name)}</h3>
+                                    <p style="margin:0 0 10px; color:var(--text-muted); font-size:13px; line-height:1.5;">${escapeHtml(plugin.description)}</p>
+                                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; color:var(--text-muted);">
+                                        <span>API v${escapeHtml(String(plugin.apiVersion))}</span>
+                                        <span>·</span>
+                                        <span>Version ${escapeHtml(plugin.version)}</span>
+                                        ${developmentBadge}
+                                    </div>
+                                </div>
+                                <button type="button" class="btn plugin-toggle-btn" data-plugin="${escapeHtml(plugin.id)}" style="min-width:80px; flex-shrink:0;">Add</button>
+                            </div>
+                            ${pluginControls ? `<div style="display:grid; gap:4px; margin-top:12px;">${pluginControls}</div>` : ''}
+                            ${configFields ? `<div style="margin-top:16px; padding-top:8px; border-top:1px solid var(--surface-light);">${configFields}</div>` : ''}
+                            ${hookDiagnosticsMarkup}
+                            ${loadDiagnosticMarkup}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        `;
+    }
+
+    async openPluginsPopup() {
+        if (window.PluginManager) {
+            try {
+                await window.PluginManager.discoverPlugins();
+            } catch (error) {
+                console.warn('[Editor] Could not refresh plugin library:', error);
+            }
+        }
+        this.renderAdditionalPluginCards();
         this.updatePluginsPopupState();
         document.getElementById('plugins-popup').classList.add('active');
     }
-    
+
     closePluginsPopup() {
         document.getElementById('plugins-popup').classList.remove('active');
     }
-    
+
     updatePluginsPopupState() {
         const enabledPlugins = this.world.plugins.enabled;
-        
+
         document.querySelectorAll('.plugin-toggle-btn').forEach(btn => {
             const pluginId = btn.dataset.plugin;
             const isEnabled = enabledPlugins.includes(pluginId);
-            
+
             if (isEnabled) {
                 btn.textContent = 'Remove';
                 btn.style.background = '#dc3545';
@@ -4891,6 +5974,15 @@ class Editor {
                 btn.style.borderColor = '#28a745';
                 btn.style.color = 'white';
             }
+        });
+    }
+
+    updateAdditionalPluginConfigVisibility(pluginId) {
+        const config = this.world.plugins?.[pluginId] || {};
+        document.querySelectorAll('.plugin-config-field').forEach(field => {
+            if (field.dataset.plugin !== pluginId) return;
+            const showIf = field.dataset.showIf;
+            field.classList.toggle('hidden', Boolean(showIf) && config[showIf] !== true);
         });
     }
     
@@ -4913,16 +6005,18 @@ class Editor {
                 return;
             }
             
-            this.world.disablePlugin(pluginId);
+            const result = this.world.disablePlugin(pluginId);
+            if (!result?.success) {
+                this.showPluginError('Cannot remove plugin', result?.error || 'The plugin could not be disabled.');
+                return;
+            }
         } else {
             // Enable plugin
-            // Check dependencies
-            if (pluginId === 'hk' && !this.world.plugins.enabled.includes('hp')) {
-                // Auto-enable HP when enabling Hollow Knight
-                await this.world.enablePlugin('hp');
+            const result = await this.world.enablePlugin(pluginId);
+            if (!result?.success) {
+                this.showPluginError('Cannot enable plugin', result?.error || 'The plugin could not be initialized.');
+                return;
             }
-            
-            await this.world.enablePlugin(pluginId);
             
             // When enabling HK plugin, apply default gravity settings
             if (pluginId === 'hk') {
@@ -4936,8 +6030,9 @@ class Editor {
             }
         }
         
+        this.engine?.updatePlayerInput();
         this.updatePluginsPopupState();
-        this.updatePluginConfigSections();
+        this.syncPluginSettings();
         this.refreshTouchControls();
         this.updateTouchButtonVisibility();
         this.triggerMapChange();
@@ -5108,7 +6203,6 @@ class Editor {
         const volumeNumber = document.getElementById('settings-volume-number');
         const fontsizeRange = document.getElementById('settings-fontsize-range');
         const fontsizeNumber = document.getElementById('settings-fontsize-number');
-        const touchscreen = document.getElementById('settings-touchscreen');
 
         // Volume listeners
         volumeRange.addEventListener('input', (e) => {
@@ -5142,40 +6236,13 @@ class Editor {
             }
         });
 
-        // Touchscreen listener
-        touchscreen.addEventListener('change', (e) => {
-            this.engine.touchscreenMode = e.target.checked;
-            Settings.set('touchscreenMode', e.target.checked);
+        const syncDeviceMode = (event) => {
+            const isMobile = event?.detail?.isMobile ?? !!window.ParkoreenDevice?.isMobile();
+            this.engine.touchControlsEnabled = isMobile;
             this.updateTouchControls();
-        });
-
-        // Mobile detection helper
-        const isMobileDevice = () => {
-            // Check for touch capability
-            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-            // Check user agent for mobile devices
-            const mobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            // Check screen size (mobile typically < 1024px width)
-            const smallScreen = window.innerWidth <= 1024;
-            return hasTouch && (mobileUA || smallScreen);
         };
-        
-        // Load saved settings or auto-detect for mobile
-        let savedTouchscreen = Settings.get('touchscreenMode');
-        
-        // Auto-enable touchscreen mode on mobile if not explicitly set
-        if (savedTouchscreen === undefined || savedTouchscreen === null) {
-            savedTouchscreen = isMobileDevice();
-            Settings.set('touchscreenMode', savedTouchscreen);
-        }
-        
-        touchscreen.checked = savedTouchscreen;
-        this.engine.touchscreenMode = savedTouchscreen;
-        
-        // Initialize touch controls if enabled
-        if (savedTouchscreen) {
-            this.updateTouchControls();
-        }
+        syncDeviceMode();
+        window.addEventListener('parkoreen-device-change', syncDeviceMode);
 
         // Volume now lives in SettingsManager (account-bound). Falls back to legacy
         // parkoreen_volume localStorage only if SettingsManager isn't ready.
@@ -5426,20 +6493,14 @@ class Editor {
         const menu = document.getElementById('texture-dropdown-menu');
         if (!menu) return;
         
-        const currentColor = this.placementSettings.color || '#787878';
+        const currentColor = this.getTexturePreviewColor();
         
         let html = '<div class="texture-dropdown-grid">';
         
         for (const texture of BLOCK_TEXTURES) {
             const isSelected = this.placementSettings.texture === texture.id;
             
-            let previewHtml = '';
-            if (texture.id === 'solid') {
-                previewHtml = `<div style="width: 100%; height: 100%; background: ${currentColor}; border-radius: 4px;"></div>`;
-            } else if (texture.preview) {
-                // Show the full texture preview image
-                previewHtml = `<img src="${texture.preview}" alt="${texture.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;">`;
-            }
+            const previewHtml = this.getTexturePreviewMarkup(texture, currentColor, '4px');
             
             html += `
                 <div class="texture-dropdown-item ${isSelected ? 'selected' : ''}" data-texture="${texture.id}">
@@ -5461,6 +6522,24 @@ class Editor {
             });
         });
     }
+
+    getTexturePreviewColor() {
+        const color = this.placementSettings.color;
+        return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : '#787878';
+    }
+
+    getTexturePreviewMarkup(texture, color, borderRadius) {
+        if (texture?.id === 'solid') {
+            return `<div style="width:100%; height:100%; background:${color}; border-radius:${borderRadius};"></div>`;
+        }
+        if (texture?.pattern) {
+            return `<div style="width:100%; height:100%; background:${color}; border-radius:${borderRadius}; overflow:hidden;"><img src="${escapeHtml(texture.pattern)}" alt="" style="width:100%; height:100%; object-fit:cover; border-radius:${borderRadius};"></div>`;
+        }
+        if (texture?.preview) {
+            return `<img src="${escapeHtml(texture.preview)}" alt="${escapeHtml(texture.name)}" style="width:100%; height:100%; object-fit:cover; border-radius:${borderRadius};">`;
+        }
+        return '';
+    }
     
     selectTexture(textureId) {
         this.placementSettings.texture = textureId;
@@ -5472,15 +6551,9 @@ class Editor {
             // Update preview
             const preview = document.querySelector('#texture-dropdown-trigger .texture-preview');
             if (preview) {
-                const currentColor = this.placementSettings.color || '#787878';
-                if (texture.id === 'solid') {
-                    preview.style.background = currentColor;
-                    preview.innerHTML = '';
-                } else if (texture.preview) {
-                    // Show the brick preview image
-                    preview.style.background = 'transparent';
-                    preview.innerHTML = `<img src="${texture.preview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 2px;">`;
-                }
+                const currentColor = this.getTexturePreviewColor();
+                preview.style.background = texture.id === 'solid' ? currentColor : 'transparent';
+                preview.innerHTML = this.getTexturePreviewMarkup(texture, currentColor, '2px');
             }
         }
         
@@ -5488,20 +6561,14 @@ class Editor {
     }
     
     updateTexturePreview() {
-        const currentColor = this.placementSettings.color || '#787878';
+        const currentColor = this.getTexturePreviewColor();
         const currentTexture = this.placementSettings.texture || 'solid';
         
         const preview = document.querySelector('#texture-dropdown-trigger .texture-preview');
         if (preview) {
             const texture = BLOCK_TEXTURES.find(t => t.id === currentTexture);
-            if (texture?.id === 'solid') {
-                preview.style.background = currentColor;
-                preview.innerHTML = '';
-            } else if (texture?.preview) {
-                // Show the brick preview image
-                preview.style.background = 'transparent';
-                preview.innerHTML = `<img src="${texture.preview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 2px;">`;
-            }
+            preview.style.background = texture?.id === 'solid' ? currentColor : 'transparent';
+            preview.innerHTML = this.getTexturePreviewMarkup(texture, currentColor, '2px');
         }
     }
     
@@ -6014,6 +7081,15 @@ class Editor {
         if (countEl) {
             countEl.textContent = `${this.selectedObjects.size} selected`;
         }
+        const saveStampButton = this.ui.selectionToolbar?.querySelector('[data-sel-cmd="save-stamp"]');
+        if (saveStampButton) {
+            saveStampButton.disabled = this.selectedObjects.size === 0 || this.selectedObjects.size > 64 || (this.world.objectStamps || []).length >= 32;
+            saveStampButton.title = this.selectedObjects.size > 64
+                ? 'Select at most 64 objects to save a stamp'
+                : (this.world.objectStamps || []).length >= 32
+                    ? 'This map already has the maximum of 32 Object Stamps'
+                    : 'Save selection as an Object Stamp';
+        }
     }
     
     handleSelectionCommand(cmd) {
@@ -6036,11 +7112,309 @@ class Editor {
                 this.selectedObjects = newSelection;
                 break;
             }
+            case 'save-stamp':
+                this.saveObjectStampFromSelection();
+                return;
             case 'done':
                 this.exitSelectionMode();
                 return;
         }
         this.updateSelectionCount();
+    }
+
+    saveObjectStampFromSelection() {
+        const selected = this.world.objects.filter(obj => this.selectedObjects.has(obj));
+        if (selected.length === 0) return;
+        if (selected.length > 64) {
+            this.showToast('An Object Stamp can contain up to 64 objects.', 'error');
+            return;
+        }
+        this.world.objectStamps ||= [];
+        if (this.world.objectStamps.length >= 32) {
+            this.showToast('This map already has the maximum of 32 Object Stamps.', 'error');
+            this.updateSelectionCount();
+            return;
+        }
+
+        const requestedName = window.prompt('Name this Object Stamp:');
+        if (requestedName === null) return;
+        const name = requestedName.trim();
+        if (!name || name.length > 40) {
+            this.showToast('Stamp names must contain 1 to 40 characters.', 'error');
+            return;
+        }
+        if (this.world.objectStamps.some(stamp => stamp.name.toLowerCase() === name.toLowerCase())) {
+            this.showToast('A stamp with that name already exists on this map.', 'error');
+            return;
+        }
+
+        const originX = Math.min(...selected.map(obj => obj.x));
+        const originY = Math.min(...selected.map(obj => obj.y));
+        const objects = sanitizeObjectStampObjects(selected.map(obj => {
+            const snapshot = obj.toJSON();
+            snapshot.x -= originX;
+            snapshot.y -= originY;
+            delete snapshot.id;
+            return snapshot;
+        }));
+
+        this.beginUndoTransaction();
+        this.world.objectStamps.push({
+            id: `stamp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`,
+            name,
+            objects
+        });
+        this.endUndoTransaction();
+        this.triggerMapChange();
+        this.updateSelectionCount();
+        this.showToast(`Saved “${name}” with ${objects.length} objects.`, 'success');
+    }
+
+    openObjectStampPicker() {
+        let overlay = document.getElementById('object-stamp-picker');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'object-stamp-picker';
+            overlay.className = 'modal-overlay';
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                    <h2 class="modal-title" style="margin:0;">Object Stamps</h2>
+                    <button type="button" class="btn btn-secondary" id="object-stamp-import">Import</button>
+                </div>
+                <input type="file" id="object-stamp-import-file" accept=".pkrstamp,application/json" hidden>
+                <p class="modal-text">Place saved object groups or import a portable <code>.pkrstamp</code> asset. Stamps copy object data only; mechanics and external object-ID references are not copied.</p>
+                <div id="object-stamp-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+                <button type="button" class="btn btn-secondary" id="object-stamp-close" style="width:100%; margin-top:16px;">Close</button>
+            `;
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) overlay.classList.remove('active');
+            });
+            modal.querySelector('#object-stamp-close').addEventListener('click', () => overlay.classList.remove('active'));
+            const importInput = modal.querySelector('#object-stamp-import-file');
+            modal.querySelector('#object-stamp-import').addEventListener('click', () => importInput.click());
+            importInput.addEventListener('change', async () => {
+                const file = importInput.files?.[0];
+                importInput.value = '';
+                if (file) await this.importObjectStampFile(file);
+            });
+        }
+        this.renderObjectStampPicker();
+        overlay.classList.add('active');
+    }
+
+    renderObjectStampPicker() {
+        const list = document.getElementById('object-stamp-list');
+        if (!list) return;
+        list.replaceChildren();
+        const stamps = this.world.objectStamps || [];
+        if (stamps.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'modal-text';
+            empty.textContent = 'No stamps saved yet. Select objects and choose Save Stamp in the selection toolbar.';
+            list.appendChild(empty);
+            return;
+        }
+
+        for (const stamp of stamps) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px; border:1px solid var(--surface-light); border-radius:8px;';
+            const label = document.createElement('div');
+            label.style.cssText = 'flex:1; min-width:0;';
+            const title = document.createElement('strong');
+            title.textContent = stamp.name;
+            const detail = document.createElement('div');
+            detail.style.cssText = 'font-size:12px; color:var(--text-secondary); margin-top:3px;';
+            detail.textContent = `${stamp.objects.length} objects`;
+            label.append(title, detail);
+
+            const placeButton = document.createElement('button');
+            placeButton.type = 'button';
+            placeButton.className = 'btn btn-primary';
+            placeButton.textContent = 'Place';
+            placeButton.addEventListener('click', () => this.startObjectStampPlacement(stamp.id));
+
+            const exportButton = document.createElement('button');
+            exportButton.type = 'button';
+            exportButton.className = 'btn btn-secondary';
+            exportButton.textContent = 'Export';
+            exportButton.title = 'Download this stamp as a portable .pkrstamp asset';
+            exportButton.addEventListener('click', () => this.exportObjectStamp(stamp.id));
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'btn btn-secondary';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', () => {
+                if (!window.confirm(`Delete the “${stamp.name}” Object Stamp?`)) return;
+                const index = this.world.objectStamps.findIndex(item => item.id === stamp.id);
+                if (index === -1) return;
+                this.beginUndoTransaction();
+                this.world.objectStamps.splice(index, 1);
+                this.endUndoTransaction();
+                this.triggerMapChange();
+                this.updateSelectionCount();
+                this.renderObjectStampPicker();
+            });
+            row.append(label, exportButton, placeButton, deleteButton);
+            list.appendChild(row);
+        }
+    }
+
+    exportObjectStamp(stampId) {
+        const stamp = (this.world.objectStamps || []).find(item => item.id === stampId);
+        if (!stamp) {
+            this.showToast('That Object Stamp is no longer available.', 'error');
+            return;
+        }
+
+        const portableStamp = {
+            format: 'parkoreen-object-stamp',
+            version: 1,
+            name: stamp.name,
+            objects: sanitizeObjectStampObjects(stamp.objects)
+        };
+        const blob = new Blob([JSON.stringify(portableStamp, null, 2)], { type: 'application/json' });
+        if (blob.size > OBJECT_STAMP_MAX_TRANSFER_BYTES) {
+            this.showToast('This stamp is too large to export; portable files must be 2 MiB or smaller.', 'error');
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const safeName = stamp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'object-stamp';
+        link.href = url;
+        link.download = `${safeName}.pkrstamp`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async importObjectStampFile(file) {
+        if (file.size > OBJECT_STAMP_MAX_TRANSFER_BYTES) {
+            this.showToast('Portable Object Stamps must be 2 MiB or smaller.', 'error');
+            return;
+        }
+        if ((this.world.objectStamps || []).length >= 32) {
+            this.showToast('This map already has the maximum of 32 Object Stamps.', 'error');
+            return;
+        }
+
+        let data;
+        try {
+            data = JSON.parse(await file.text());
+        } catch (_) {
+            this.showToast('That file is not valid Object Stamp JSON.', 'error');
+            return;
+        }
+        if (!data || typeof data !== 'object' || Array.isArray(data) ||
+            data.format !== 'parkoreen-object-stamp' || data.version !== 1 ||
+            Object.keys(data).some(key => !['format', 'version', 'name', 'objects'].includes(key)) ||
+            typeof data.name !== 'string' || !Array.isArray(data.objects)) {
+            this.showToast('That file is not a supported Parkoreen Object Stamp (version 1).', 'error');
+            return;
+        }
+
+        let name = data.name.trim();
+        if (!name || name.length > 40) {
+            this.showToast('Stamp names must contain 1 to 40 characters.', 'error');
+            return;
+        }
+        const baseName = name;
+        let suffix = 2;
+        while ((this.world.objectStamps || []).some(stamp => stamp.name.toLowerCase() === name.toLowerCase())) {
+            const tail = ` ${suffix++}`;
+            name = `${baseName.slice(0, 40 - tail.length)}${tail}`;
+        }
+
+        try {
+            this.beginUndoTransaction();
+            const stamp = this.world.addObjectStamp(name, sanitizeObjectStampObjects(data.objects));
+            this.endUndoTransaction();
+            this.triggerMapChange();
+            this.updateSelectionCount();
+            this.renderObjectStampPicker();
+            this.showToast(`Imported “${stamp.name}” with ${stamp.objects.length} objects.`, 'success');
+        } catch (error) {
+            this.endUndoTransaction();
+            this._discardMatchingTopUndoIfUnchanged();
+            this.showToast(error?.message || 'That Object Stamp could not be imported.', 'error');
+        }
+    }
+
+    startObjectStampPlacement(stampId) {
+        const stamp = (this.world.objectStamps || []).find(item => item.id === stampId);
+        if (!stamp) {
+            this.showToast('That Object Stamp is no longer available.', 'error');
+            return;
+        }
+        if (this.isSelectionActive) this.exitSelectionMode();
+        document.getElementById('object-stamp-picker')?.classList.remove('active');
+        this.closeAddMenu();
+        this.objectStampPlacementId = stampId;
+        this.placementMode = PlacementMode.OBJECT_STAMP;
+        this.disableNonFlyTools();
+        this.ui.btnAdd.innerHTML = '<span class="material-symbols-outlined">close</span>';
+        this.ui.placementToolbar.classList.remove('active');
+        this.showToast(`Click the map to place “${stamp.name}”.`, 'info');
+    }
+
+    placeObjectStamp(x, y) {
+        const stamp = (this.world.objectStamps || []).find(item => item.id === this.objectStampPlacementId);
+        if (!stamp) {
+            this.showToast('That Object Stamp is no longer available.', 'error');
+            this.stopPlacement();
+            return;
+        }
+
+        const takenPortalNames = new Set(this.world.objects
+            .filter(obj => obj.type === 'teleportal' && obj.teleportalName)
+            .map(obj => obj.teleportalName));
+        const portalNameMap = new Map();
+        const stampObjects = sanitizeObjectStampObjects(stamp.objects);
+        const spriteBytes = stampObjects.reduce((total, obj) => total + (obj.spriteSheet?.data?.length || 0), 0);
+        if (this.world.getSpriteSheetDataLength() + spriteBytes > 8 * 1024 * 1024) {
+            this.showToast('Placing this stamp would exceed the map’s 8 MiB sprite sheet limit.', 'error');
+            this.stopPlacement();
+            return;
+        }
+        for (const source of stampObjects) {
+            if (source.type !== 'teleportal' || !source.teleportalName || portalNameMap.has(source.teleportalName)) continue;
+            const base = `${source.teleportalName} Copy`;
+            let candidate = base;
+            let suffix = 2;
+            while (takenPortalNames.has(candidate)) candidate = `${base} ${suffix++}`;
+            takenPortalNames.add(candidate);
+            portalNameMap.set(source.teleportalName, candidate);
+        }
+
+        for (const source of stampObjects) {
+            const clone = new WorldObject({
+                ...source,
+                id: undefined,
+                x: x + source.x,
+                y: y + source.y
+            });
+            if (clone.type === 'teleportal' && clone.teleportalName && portalNameMap.has(clone.teleportalName)) {
+                clone.teleportalName = portalNameMap.get(clone.teleportalName);
+                clone.name = `Teleportal: ${clone.teleportalName}`;
+            }
+            for (const connectionType of ['sendTo', 'receiveFrom']) {
+                clone[connectionType] = clone[connectionType].map(connection => ({
+                    ...connection,
+                    name: portalNameMap.get(connection.name) || connection.name
+                }));
+            }
+            this.world.addObject(clone);
+        }
+
+        this.updateLayersList();
+        this.triggerMapChange();
+        this.playTileSound();
     }
     
     handleSelectionMouseAction(action) {
@@ -6348,6 +7722,25 @@ class Editor {
         
         // Collision — available on all objects
         fields.push({ key: 'collision', label: 'Collision', type: 'boolean' });
+
+        const allGroundBlocks = objects.every(o =>
+            o.type === 'block' && o.appearanceType === 'ground' && o.actingType === 'ground'
+        );
+        if (allGroundBlocks) {
+            fields.push({ key: 'collisionShape', label: 'Ground Collision Shape', type: 'select', options: [
+                { value: 'box', label: 'Box' },
+                { value: 'circle', label: 'Circle' },
+                { value: 'capsule', label: 'Capsule' },
+                { value: 'slopeUpRight', label: 'Ramp ↗' },
+                { value: 'slopeUpLeft', label: 'Ramp ↖' },
+                { value: 'polygon', label: 'Custom Convex Polygon' }
+            ] });
+        }
+        const allPolygonColliders = objects.every(o => o.type === 'block' && o.appearanceType === 'ground' &&
+            o.actingType === 'ground' && o.collisionShape === 'polygon');
+        if (allPolygonColliders) {
+            fields.push({ key: 'polygonOneWay', label: 'One-Way Polygon Surface', type: 'boolean' });
+        }
         
         // Flip — available on non-zone objects
         const allNonZone = objects.every(o => o.appearanceType !== 'zone');
@@ -6615,7 +8008,13 @@ class Editor {
                 else if (_selField?.castInt) val = parseInt(val);
                 
                 for (const obj of objects) {
+                    const previousShape = obj[key];
                     obj[key] = val;
+                    if (key === 'collisionShape' && val !== 'box') obj.oneWayPlatform = false;
+                    if (key === 'collisionShape' && val === 'polygon' && previousShape !== 'polygon') obj.polygonOneWay = true;
+                    if (key === 'collisionShape' && val === 'polygon' && !WorldObject.normalizeCollisionPolygon(obj.collisionPoints)) {
+                        obj.collisionPoints = WorldObject.DEFAULT_COLLISION_POLYGON.map(point => point.slice());
+                    }
                 }
                 this.triggerMapChange();
             });
@@ -6766,6 +8165,11 @@ class Editor {
     startPlacement(mode) {
         this.closeAddMenu();
 
+        if (mode === 'object_stamp') {
+            this.openObjectStampPicker();
+            return;
+        }
+
         // Obstacle mode for spike and saw blade
         if (mode === 'obstacle') {
             this.placementMode = PlacementMode.OBSTACLE;
@@ -6797,6 +8201,7 @@ class Editor {
 
     stopPlacement() {
         this.placementMode = PlacementMode.NONE;
+        this.objectStampPlacementId = null;
         this.isPlacing = false;
         
         // Reset UI - restore add icon (click handler checks placementMode)
@@ -6815,6 +8220,148 @@ class Editor {
         this.closeAddMenu();
     }
 
+    updateTilemapAnimationFrameControls() {
+        const container = document.getElementById('placement-tilemap-frame-selectors');
+        if (!container) return;
+        const atlas = this.world.tilemaps.find(tilemap => tilemap.layer === this.tilemapLayer)?.atlas;
+        if (this.tilemapAnimation === 'atlasCycle' && atlas) {
+            const maxFrame = atlas.columns * atlas.rows - 1;
+            container.innerHTML = Array.from({ length: 8 }, (_, index) => {
+                this.tilemapAtlasAnimationFrames[index] = Math.max(0, Math.min(maxFrame,
+                    Math.floor(Number(this.tilemapAtlasAnimationFrames[index]) || 0)));
+                const hidden = index >= this.tilemapAnimationFrameCount ? ' hidden' : '';
+                return `<label class="placement-option-label${hidden}" style="display:flex;align-items:center;gap:4px;">${index + 1}<input class="form-input form-input-sm" type="number" min="0" max="${maxFrame}" step="1" value="${this.tilemapAtlasAnimationFrames[index]}" data-frame-index="${index}" aria-label="Tile atlas animation frame ${index + 1}" style="width:78px;"></label>`;
+            }).join('');
+            return;
+        }
+        const textures = [
+            ['solid', 'Solid'], ['brick', 'Brick'], ['stone', 'Stone'],
+            ['wood', 'Wood'], ['moss', 'Moss']
+        ];
+        container.innerHTML = Array.from({ length: 8 }, (_, index) => {
+            const hidden = index >= this.tilemapAnimationFrameCount ? ' hidden' : '';
+            const options = textures.map(([value, label]) =>
+                `<option value="${value}"${this.tilemapAnimationFrames[index] === value ? ' selected' : ''}>${label}</option>`
+            ).join('');
+            return `<label class="placement-option-label${hidden}" style="display:flex;align-items:center;gap:4px;">${index + 1}<select class="form-input form-input-sm" data-frame-index="${index}" aria-label="Tile animation frame ${index + 1} texture" style="max-width:120px;">${options}</select></label>`;
+        }).join('');
+    }
+
+    loadTilemapAtlas(file) {
+        const status = document.getElementById('placement-tilemap-atlas-status');
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+            if (status) status.textContent = 'Choose a PNG, JPEG, or WebP tile atlas up to 1 MiB.';
+            return;
+        }
+        const frameWidth = Math.floor(Number(document.getElementById('placement-tilemap-frame-width')?.value));
+        const frameHeight = Math.floor(Number(document.getElementById('placement-tilemap-frame-height')?.value));
+        if (!Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 512 ||
+            !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 512) {
+            if (status) status.textContent = 'Atlas frame dimensions must be between 1 and 512 pixels.';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => { if (status) status.textContent = 'The tile atlas could not be read.'; };
+        reader.onload = () => {
+            if (typeof reader.result !== 'string') return;
+            const image = new Image();
+            image.onerror = () => { if (status) status.textContent = 'The selected file is not a valid image.'; };
+            image.onload = () => {
+                const columns = image.naturalWidth / frameWidth;
+                const rows = image.naturalHeight / frameHeight;
+                if (image.naturalWidth > 4096 || image.naturalHeight > 4096 ||
+                    image.naturalWidth * image.naturalHeight > 16000000 ||
+                    image.naturalWidth % frameWidth !== 0 || image.naturalHeight % frameHeight !== 0 ||
+                    columns > 128 || rows > 128 || columns * rows > 4096) {
+                    if (status) status.textContent = 'Image dimensions must divide evenly into the frame size and contain at most 4096 frames (128 columns or rows).';
+                    return;
+                }
+                const atlas = {
+                    data: reader.result,
+                    frameWidth,
+                    frameHeight,
+                    columns,
+                    rows
+                };
+                if (!this.world.setTilemapAtlas(atlas, this.tilemapLayer)) {
+                    if (status) status.textContent = 'The map has reached its combined 8 MiB sprite data or 32 megapixel tile atlas limit.';
+                    return;
+                }
+                this.tilemapAtlasFrame = 0;
+                const frameInput = document.getElementById('placement-tilemap-atlas-frame');
+                if (frameInput) {
+                    frameInput.max = String(atlas.columns * atlas.rows - 1);
+                    frameInput.value = '0';
+                }
+                this.updateTilemapAtlasStatus();
+                this.triggerMapChange();
+            };
+            image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    updateTilemapAtlasStatus() {
+        const tilemap = this.world.tilemaps.find(item => item.layer === this.tilemapLayer);
+        const atlas = tilemap?.atlas;
+        const frameInput = document.getElementById('placement-tilemap-atlas-frame');
+        if (frameInput) {
+            const maxFrame = atlas ? atlas.columns * atlas.rows - 1 : 0;
+            this.tilemapAtlasFrame = Math.min(this.tilemapAtlasFrame, maxFrame);
+            frameInput.max = String(maxFrame);
+            frameInput.value = String(this.tilemapAtlasFrame);
+        }
+        const status = document.getElementById('placement-tilemap-atlas-status');
+        if (status) status.textContent = atlas
+            ? `${atlas.columns * atlas.rows} frames · ${atlas.frameWidth} × ${atlas.frameHeight} px · layer ${this.tilemapLayer}`
+            : 'No atlas selected. Cells use built-in textures.';
+        const preview = document.getElementById('placement-tilemap-atlas-preview');
+        const previewContext = preview?.getContext('2d');
+        if (previewContext) {
+            previewContext.clearRect(0, 0, preview.width, preview.height);
+            if (atlas) {
+                const images = this.world._tilemapAtlasImages || (this.world._tilemapAtlasImages = new Map());
+                let image = images.get(atlas.data);
+                if (!image) {
+                    image = new Image();
+                    image.onload = () => {
+                        this.world.invalidateTileCache();
+                        this.updateTilemapAtlasStatus();
+                    };
+                    image.src = atlas.data;
+                    images.set(atlas.data, image);
+                    if (images.size > 24) images.delete(images.keys().next().value);
+                }
+                if (image.complete && image.naturalWidth > 0) {
+                    const sourceX = (this.tilemapAtlasFrame % atlas.columns) * atlas.frameWidth;
+                    const sourceY = Math.floor(this.tilemapAtlasFrame / atlas.columns) * atlas.frameHeight;
+                    if (sourceX + atlas.frameWidth <= image.naturalWidth && sourceY + atlas.frameHeight <= image.naturalHeight) {
+                        previewContext.imageSmoothingEnabled = false;
+                        previewContext.drawImage(image, sourceX, sourceY, atlas.frameWidth, atlas.frameHeight, 0, 0, preview.width, preview.height);
+                    }
+                }
+            }
+        }
+        const frameWidthInput = document.getElementById('placement-tilemap-frame-width');
+        const frameHeightInput = document.getElementById('placement-tilemap-frame-height');
+        if (atlas && frameWidthInput && frameHeightInput) {
+            frameWidthInput.value = String(atlas.frameWidth);
+            frameHeightInput.value = String(atlas.frameHeight);
+        }
+        const animationSelect = document.getElementById('placement-tilemap-animation-select');
+        if (animationSelect) {
+            const atlasCycleOption = animationSelect.querySelector('option[value="atlasCycle"]');
+            if (atlasCycleOption) atlasCycleOption.disabled = !atlas || atlas.columns * atlas.rows < 2;
+            if (this.tilemapAnimation === 'atlasCycle' && (!atlas || atlas.columns * atlas.rows < 2)) {
+                this.tilemapAnimation = 'none';
+                document.getElementById('placement-tilemap-animation-settings')?.classList.add('hidden');
+            }
+            animationSelect.value = this.tilemapAnimation;
+        }
+        document.getElementById('placement-tilemap-animation-settings')?.classList.toggle('hidden', this.tilemapAnimation === 'none');
+        this.updateTilemapAnimationFrameControls();
+    }
+
     updatePlacementOptions() {
         const options = {
             texture: document.getElementById('placement-texture'),
@@ -6825,6 +8372,11 @@ class Editor {
             coinSnap: document.getElementById('placement-coin-snap'),
             color: document.getElementById('placement-color'),
             opacity: document.getElementById('placement-opacity'),
+            tilemapLayer: document.getElementById('placement-tilemap-layer'),
+            tilemapBehavior: document.getElementById('placement-tilemap-behavior'),
+            tilemapCollisionShape: document.getElementById('placement-tilemap-collision-shape'),
+            tilemapAtlas: document.getElementById('placement-tilemap-atlas'),
+            tilemapAnimation: document.getElementById('placement-tilemap-animation'),
             content: document.getElementById('placement-content'),
             font: document.getElementById('placement-font'),
             fontSize: document.getElementById('placement-fontsize'),
@@ -6841,7 +8393,37 @@ class Editor {
         const spawnEndMarkerEl = document.getElementById('placement-spawn-end-marker');
         if (spawnEndMarkerEl) spawnEndMarkerEl.classList.add('hidden');
 
-        if (this.placementMode === PlacementMode.BLOCK) {
+        if (this.placementMode === PlacementMode.TILEMAP) {
+            options.texture.classList.remove('hidden');
+            options.color.classList.remove('hidden');
+            options.opacity.classList.remove('hidden');
+            options.tilemapLayer.classList.remove('hidden');
+            options.tilemapBehavior.classList.remove('hidden');
+            options.tilemapCollisionShape.classList.remove('hidden');
+            options.tilemapAtlas.classList.remove('hidden');
+            options.tilemapAnimation.classList.remove('hidden');
+            const layerSelect = document.getElementById('placement-tilemap-layer-select');
+            const definitions = this.world.layerDefinitions || [];
+            layerSelect.innerHTML = definitions.map(layer =>
+                `<option value="${layer.depth}">${escapeHtml(layer.name)}</option>`
+            ).join('');
+            if (!definitions.some(layer => layer.depth === this.tilemapLayer)) this.tilemapLayer = 1;
+            layerSelect.value = String(this.tilemapLayer);
+            document.getElementById('placement-tilemap-behavior-select').value = this.tilemapCellBehavior;
+            document.getElementById('placement-tilemap-collision-shape-select').value = this.tilemapCollisionShape;
+            const supportsPolygon = ['solid', 'oneWay'].includes(this.tilemapCellBehavior);
+            document.getElementById('placement-tilemap-collision-shape-select').disabled = !supportsPolygon;
+            document.getElementById('placement-tilemap-polygon-one-way').checked = this.tilemapPolygonOneWay;
+            document.getElementById('placement-tilemap-polygon-one-way').disabled = this.tilemapCellBehavior === 'oneWay';
+            document.getElementById('placement-tilemap-collision-points').value = JSON.stringify(this.tilemapCollisionPoints);
+            document.getElementById('placement-tilemap-polygon-settings').style.display = supportsPolygon && this.tilemapCollisionShape === 'polygon' ? 'flex' : 'none';
+            document.getElementById('placement-tilemap-collision-points-status').textContent = `${this.tilemapCollisionPoints.length} valid convex vertices`;
+            document.getElementById('placement-tilemap-animation-select').value = this.tilemapAnimation;
+            document.getElementById('placement-tilemap-frame-count').value = String(this.tilemapAnimationFrameCount);
+            document.getElementById('placement-tilemap-animation-fps').value = String(this.tilemapAnimationFps);
+            this.updateTilemapAtlasStatus();
+            this.updateTexturePreview();
+        } else if (this.placementMode === PlacementMode.BLOCK) {
             options.texture.classList.remove('hidden'); // Show texture dropdown
             options.acting.classList.remove('hidden');
             options.collision.classList.remove('hidden');
@@ -7306,7 +8888,7 @@ class Editor {
 
     updateDefaultColor() {
         let color;
-        if (this.placementMode === PlacementMode.BLOCK) {
+        if (this.placementMode === PlacementMode.BLOCK || this.placementMode === PlacementMode.TILEMAP) {
                 color = this.world.defaultBlockColor;
             this.placementSettings.color = color;
         } else if (this.placementMode === PlacementMode.OBSTACLE) {
@@ -7323,7 +8905,7 @@ class Editor {
         document.getElementById('placement-color-input').value = color;
         
         // Update texture preview with new color
-        if (this.placementMode === PlacementMode.BLOCK) {
+        if (this.placementMode === PlacementMode.BLOCK || this.placementMode === PlacementMode.TILEMAP) {
             this.updateTexturePreview();
         }
     }
@@ -7390,9 +8972,88 @@ class Editor {
         return groups;
     }
     
+    promptAddDrawLayer(side) {
+        const position = side === 'behind' ? 'behind the player' : 'above the player';
+        const name = window.prompt(`Name the new draw layer (${position}):`);
+        if (name === null) return;
+        try {
+            this.world.addDrawLayer(name, side);
+            this.triggerMapChange();
+            this.updateLayersList();
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    }
+
     updateLayersList() {
         const list = this.ui.layersList;
         list.innerHTML = '';
+
+        const layerDefinitions = [...this.world.layerDefinitions].sort((a, b) => a.depth - b.depth);
+        const layerDefinitionsPanel = document.createElement('div');
+        layerDefinitionsPanel.className = 'draw-layer-definitions';
+        layerDefinitionsPanel.innerHTML = `
+            <div class="draw-layer-definitions-title">Draw layers <span>ordered around the player</span></div>
+            ${layerDefinitions.map(layer => `
+                <div class="draw-layer-definition">
+                    <span class="draw-layer-definition-name">${escapeHtml(layer.name)}</span>
+                    <span class="draw-layer-definition-position">${layer.depth < 1 ? 'Behind player' : (layer.depth === 1 ? 'Player depth' : 'Above player')}</span>
+                    ${layer.builtin ? '' : `
+                        <span class="draw-layer-definition-position">Parallax ${layer.parallaxX ?? 1}, ${layer.parallaxY ?? 1}</span>
+                        <button class="layer-btn" data-parallax-layer="${escapeHtml(layer.id)}" title="Set parallax for ${escapeHtml(layer.name)}" aria-label="Set parallax for ${escapeHtml(layer.name)}"><span class="material-symbols-outlined">layers</span></button>
+                        <button class="layer-btn" data-rename-layer="${escapeHtml(layer.id)}" title="Rename ${escapeHtml(layer.name)}" aria-label="Rename ${escapeHtml(layer.name)}"><span class="material-symbols-outlined">edit</span></button>
+                        <button class="layer-btn" data-delete-layer="${escapeHtml(layer.id)}" title="Delete ${escapeHtml(layer.name)}" aria-label="Delete ${escapeHtml(layer.name)}"><span class="material-symbols-outlined">delete</span></button>
+                    `}
+                </div>
+            `).join('')}
+        `;
+        list.appendChild(layerDefinitionsPanel);
+
+        layerDefinitionsPanel.querySelectorAll('[data-parallax-layer]').forEach(button => {
+            button.addEventListener('click', () => {
+                const layer = this.world.layerDefinitions.find(item => item.id === button.dataset.parallaxLayer);
+                if (!layer) return;
+                const value = window.prompt('Enter horizontal, vertical parallax factors (0 to 2). Use 1 for normal camera movement and lower values for distant scenery.', `${layer.parallaxX ?? 1}, ${layer.parallaxY ?? 1}`);
+                if (value === null) return;
+                const factors = value.split(',').map(item => item.trim());
+                if (factors.length !== 2 || factors.some(item => item === '')) {
+                    this.showToast('Enter two numbers separated by a comma.', 'error');
+                    return;
+                }
+                try {
+                    this.world.setDrawLayerParallax(layer.id, Number(factors[0]), Number(factors[1]));
+                    this.triggerMapChange();
+                    this.updateLayersList();
+                } catch (error) {
+                    this.showToast(error.message, 'error');
+                }
+            });
+        });
+
+        layerDefinitionsPanel.querySelectorAll('[data-rename-layer]').forEach(button => {
+            button.addEventListener('click', () => {
+                const layer = this.world.layerDefinitions.find(item => item.id === button.dataset.renameLayer);
+                if (!layer) return;
+                const name = window.prompt('Rename draw layer:', layer.name);
+                if (name === null) return;
+                try {
+                    this.world.renameDrawLayer(layer.id, name);
+                    this.triggerMapChange();
+                    this.updateLayersList();
+                } catch (error) {
+                    this.showToast(error.message, 'error');
+                }
+            });
+        });
+        layerDefinitionsPanel.querySelectorAll('[data-delete-layer]').forEach(button => {
+            button.addEventListener('click', () => {
+                const layer = this.world.layerDefinitions.find(item => item.id === button.dataset.deleteLayer);
+                if (!layer || !window.confirm(`Delete "${layer.name}"? Its objects will move to the nearest built-in layer.`)) return;
+                this.world.removeDrawLayer(layer.id);
+                this.triggerMapChange();
+                this.updateLayersList();
+            });
+        });
 
         // Get overlap groups
         const groups = this.getOverlapGroups();
@@ -7452,6 +9113,7 @@ class Editor {
                 // Opacity label overlay
                 const opacityLabel = obj.opacity < 1 ? 
                     `<span class="layer-opacity-label">${opacityText}</span>` : '';
+                const supportsDrawLayer = obj.appearanceType !== 'zone' && obj.appearanceType !== 'button';
             
             item.innerHTML = `
                 <span class="material-symbols-outlined" style="cursor: grab; color: var(--text-muted);">drag_indicator</span>
@@ -7462,15 +9124,14 @@ class Editor {
                     <button class="layer-btn layer-delete" data-delete="${obj.id}" title="Delete">
                         <span class="material-symbols-outlined">delete</span>
                     </button>
-                    <button class="layer-btn ${obj.layer === 2 ? 'active' : ''}" data-layer="2" data-obj="${obj.id}" title="On top of player">
-                        <span class="material-symbols-outlined">arrow_upward_alt</span>
-                    </button>
-                    <button class="layer-btn ${obj.layer === 1 ? 'active' : ''}" data-layer="1" data-obj="${obj.id}" title="Same layer">
-                        <span class="material-symbols-outlined">remove</span>
-                    </button>
-                    <button class="layer-btn ${obj.layer === 0 ? 'active' : ''}" data-layer="0" data-obj="${obj.id}" title="Behind player">
-                        <span class="material-symbols-outlined">arrow_downward_alt</span>
-                    </button>
+                    ${supportsDrawLayer ? `
+                        <select class="layer-depth-select" data-layer-object="${escapeHtml(obj.id)}" aria-label="Draw layer for ${escapeHtml(obj.name || 'object')}">
+                            ${layerDefinitions.map(layer => {
+                                const parallaxOnly = obj.collision !== false && (layer.parallaxX !== 1 || layer.parallaxY !== 1);
+                                return `<option value="${layer.depth}" ${obj.layer === layer.depth ? 'selected' : ''} ${parallaxOnly ? 'disabled' : ''}>${escapeHtml(layer.name)}</option>`;
+                            }).join('')}
+                        </select>
+                    ` : '<span class="layer-overlay-label">Overlay</span>'}
                 </div>
             `;
 
@@ -7481,13 +9142,16 @@ class Editor {
                 this.triggerMapChange();
             });
 
-            // Layer buttons
-            item.querySelectorAll('[data-layer]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    obj.layer = parseInt(btn.dataset.layer);
-                    this.updateLayersList();
+            // Draw depth selector
+            item.querySelector('.layer-depth-select')?.addEventListener('change', (event) => {
+                const depth = Number(event.target.value);
+                const targetLayer = this.world.getLayerDefinition(depth);
+                if (Number.isSafeInteger(depth) && targetLayer &&
+                    !(obj.collision !== false && (targetLayer.parallaxX !== 1 || targetLayer.parallaxY !== 1))) {
+                    obj.layer = depth;
                     this.triggerMapChange();
-                });
+                }
+                this.updateLayersList();
             });
 
             // Drag and drop
@@ -7996,16 +9660,16 @@ class Editor {
                 this._quickEraseUndoActive = true;
             }
             const objOrObjs = this.getObjectToErase(worldPos.x, worldPos.y);
-            if (objOrObjs) {
-                const gridPos = this.engine.getGridAlignedPos(worldPos.x, worldPos.y);
-                const halfW = Math.floor(this.eraseSettings.width / 2) * GRID_SIZE;
-                const halfH = Math.floor(this.eraseSettings.height / 2) * GRID_SIZE;
-                const eX = gridPos.x - halfW;
-                const eY = gridPos.y - halfH;
-                const eW = this.eraseSettings.width * GRID_SIZE;
-                const eH = this.eraseSettings.height * GRID_SIZE;
+            const gridPos = this.engine.getGridAlignedPos(worldPos.x, worldPos.y);
+            const halfW = Math.floor(this.eraseSettings.width / 2) * GRID_SIZE;
+            const halfH = Math.floor(this.eraseSettings.height / 2) * GRID_SIZE;
+            const eX = gridPos.x - halfW;
+            const eY = gridPos.y - halfH;
+            const eW = this.eraseSettings.width * GRID_SIZE;
+            const eH = this.eraseSettings.height * GRID_SIZE;
+            if (objOrObjs || this.world.hasTilemapCellsInArea(eX, eY, eW, eH)) {
                 if (this.eraseFromArea(objOrObjs, eX, eY, eW, eH, true)) {
-                this.triggerMapChange();
+                    this.triggerMapChange();
                 }
             }
         }
@@ -8063,6 +9727,16 @@ class Editor {
 
         const worldPos = this.engine.getMouseWorldPos();
         const gridPos = this.engine.getGridAlignedPos(worldPos.x, worldPos.y);
+
+        if (this.placementMode === PlacementMode.OBJECT_STAMP) {
+            this.beginUndoTransaction();
+            try {
+                this.placeObjectStamp(gridPos.x, gridPos.y);
+            } finally {
+                this.endUndoTransaction();
+            }
+            return;
+        }
 
         // Zone placement mode - start drawing region
         if (this.placementMode === PlacementMode.KOREEN && this.koreenSettings.appearanceType === 'zone') {
@@ -8160,14 +9834,14 @@ class Editor {
             
             case EditorTool.ERASE: {
                 const objOrObjsToErase = this.getObjectToErase(worldPos.x, worldPos.y);
-                if (objOrObjsToErase) {
-                    const gridPos = this.engine.getGridAlignedPos(worldPos.x, worldPos.y);
-                    const halfW = Math.floor(this.eraseSettings.width / 2) * GRID_SIZE;
-                    const halfH = Math.floor(this.eraseSettings.height / 2) * GRID_SIZE;
-                    const eX = gridPos.x - halfW;
-                    const eY = gridPos.y - halfH;
-                    const eW = this.eraseSettings.width * GRID_SIZE;
-                    const eH = this.eraseSettings.height * GRID_SIZE;
+                const gridPos = this.engine.getGridAlignedPos(worldPos.x, worldPos.y);
+                const halfW = Math.floor(this.eraseSettings.width / 2) * GRID_SIZE;
+                const halfH = Math.floor(this.eraseSettings.height / 2) * GRID_SIZE;
+                const eX = gridPos.x - halfW;
+                const eY = gridPos.y - halfH;
+                const eW = this.eraseSettings.width * GRID_SIZE;
+                const eH = this.eraseSettings.height * GRID_SIZE;
+                if (objOrObjsToErase || this.world.hasTilemapCellsInArea(eX, eY, eW, eH)) {
                     if (this.eraseFromArea(objOrObjsToErase, eX, eY, eW, eH)) {
                         this.triggerMapChange();
                     }
@@ -8356,11 +10030,13 @@ class Editor {
         if (objectsInArea.length === 0) return null;
         if (objectsInArea.length === 1) return objectsInArea[0];
         
-        // Sort by array index (layer order in world.objects)
+        // Sort by actual visual draw order, then by object order for ties.
         objectsInArea.sort((a, b) => {
             const indexA = this.world.objects.indexOf(a);
             const indexB = this.world.objects.indexOf(b);
-            return indexA - indexB;
+            const depthA = a.appearanceType === 'zone' || a.appearanceType === 'button' ? Number.POSITIVE_INFINITY : (a.layer ?? 1);
+            const depthB = b.appearanceType === 'zone' || b.appearanceType === 'button' ? Number.POSITIVE_INFINITY : (b.layer ?? 1);
+            return depthA - depthB || indexA - indexB;
         });
         
         switch (this.eraseSettings.eraseType) {
@@ -8383,6 +10059,43 @@ class Editor {
     // ========================================
     placeObject(x, y) {
         let settings, type;
+
+        if (this.placementMode === PlacementMode.TILEMAP) {
+            const animationFrames = this.tilemapAnimationFrames.slice(0, this.tilemapAnimationFrameCount);
+            if (this.tilemapAnimation === 'textureCycle' && new Set(animationFrames).size < 2) {
+                this.showToast('Choose at least two different textures for an animated tile.', 'error');
+                return;
+            }
+            const tilemapAtlas = this.world.tilemaps.find(tilemap => tilemap.layer === this.tilemapLayer)?.atlas;
+            const atlasAnimationFrames = this.tilemapAtlasAnimationFrames.slice(0, this.tilemapAnimationFrameCount);
+            if (this.tilemapAnimation === 'atlasCycle' &&
+                (!tilemapAtlas || new Set(atlasAnimationFrames).size < 2)) {
+                this.showToast('Choose at least two different frames from a tile atlas.', 'error');
+                return;
+            }
+            const animation = this.tilemapAnimation === 'textureCycle'
+                ? { textures: animationFrames, fps: this.tilemapAnimationFps }
+                : this.tilemapAnimation === 'atlasCycle'
+                    ? { atlasFrames: atlasAnimationFrames, fps: this.tilemapAnimationFps }
+                    : null;
+            const changed = this.world.setTilemapCell(x, y, {
+                color: this.placementSettings.color,
+                texture: this.placementSettings.texture,
+                opacity: this.placementSettings.opacity,
+                collisionType: this.tilemapCellBehavior,
+                collisionShape: this.tilemapCollisionShape,
+                collisionPoints: this.tilemapCollisionShape === 'polygon' ? this.tilemapCollisionPoints : undefined,
+                polygonOneWay: this.tilemapPolygonOneWay,
+                atlasFrame: this.tilemapAnimation === 'textureCycle' ? undefined
+                    : this.tilemapAnimation === 'atlasCycle' ? atlasAnimationFrames[0] : this.tilemapAtlasFrame,
+                animation
+            }, this.tilemapLayer);
+            if (changed) {
+                this.triggerMapChange();
+                if (this.engine?.audioManager) this.engine.audioManager.play('place');
+            }
+            return;
+        }
 
         if (this.placementMode === PlacementMode.BLOCK) {
             settings = this.placementSettings;
@@ -8502,7 +10215,7 @@ class Editor {
         if (!skipOuterTransaction) this.beginUndoTransaction();
         let didErase = false;
         try {
-            const toProcess = Array.isArray(objects) ? objects : [objects];
+            const toProcess = Array.isArray(objects) ? objects : (objects ? [objects] : []);
 
             for (const obj of toProcess) {
                 const isMerged = obj.type === 'block' && obj.appearanceType === 'ground' &&
@@ -8554,6 +10267,9 @@ class Editor {
                     }));
                 }
             }
+            if (toProcess.length === 0 || this.eraseSettings.eraseType === 'all') {
+                didErase = this.world.removeTilemapCellsInArea(eraserX, eraserY, eraserW, eraserH) > 0 || didErase;
+            }
         } finally {
             if (!skipOuterTransaction) this.endUndoTransaction();
         }
@@ -8569,7 +10285,7 @@ class Editor {
         if (obj.rotation !== 0 || obj.flipHorizontal) return;
 
         const propKey = (o) =>
-            `${o.color}|${o.texture || 'solid'}|${o.opacity}|${o.layer || 1}|${o.collision}|${o.appearanceType}|${o.actingType}`;
+            `${o.color}|${o.texture || 'solid'}|${o.opacity}|${o.layer ?? 1}|${o.collision}|${o.appearanceType}|${o.actingType}`;
         const myKey = propKey(obj);
 
         let changed = true;
@@ -8685,7 +10401,7 @@ class Editor {
             'Opacity': obj.opacity !== undefined ? Math.round(obj.opacity * 100) + '%' : '-',
             'Collision': obj.collision ? 'Yes' : 'No',
             'Rotation': obj.rotation ? obj.rotation + '°' : '0°',
-            'Layer': obj.layer || 1
+            'Layer': obj.layer ?? 1
         };
         
         // Add type-specific data
@@ -8738,7 +10454,7 @@ class Editor {
         if (!worldPos) return null;
         
         // Check from top layer to bottom
-        const sortedObjects = [...this.world.objects].sort((a, b) => (b.layer || 1) - (a.layer || 1));
+        const sortedObjects = [...this.world.objects].sort((a, b) => (b.layer ?? 1) - (a.layer ?? 1));
         
         for (const obj of sortedObjects) {
             if (worldPos.x >= obj.x && worldPos.x <= obj.x + obj.width &&
@@ -9011,6 +10727,171 @@ class Editor {
         this.syncConfigPanel();
     }
     
+    updatePlayerSpriteSheetStatus(message = null) {
+        const status = document.getElementById('config-player-sprite-status');
+        if (!status) return;
+        const spriteSheet = this.world?.playerSpriteSheet;
+        status.textContent = message || (spriteSheet && this._playerSpriteSheetValidationError) || (spriteSheet
+            ? `Frame ${spriteSheet.frameWidth} × ${spriteSheet.frameHeight} px · ${Object.keys(spriteSheet.animations).length} states configured`
+            : 'No character sprite sheet selected.');
+    }
+
+    validatePlayerSpriteSheetForEditor() {
+        const spriteSheet = this.world?.playerSpriteSheet;
+        if (!spriteSheet || this._playerSpriteSheetEditorValidationTarget === spriteSheet) return;
+        this._playerSpriteSheetEditorValidationTarget = spriteSheet;
+        this._playerSpriteSheetValidationError = '';
+        const image = new Image();
+        image.onerror = () => {
+            if (this.world?.playerSpriteSheet !== spriteSheet) return;
+            this._playerSpriteSheetValidationError = 'The selected sprite-sheet image could not be decoded.';
+            this.updatePlayerSpriteSheetStatus();
+        };
+        image.onload = () => {
+            if (this.world?.playerSpriteSheet !== spriteSheet) return;
+            const columns = Math.floor(image.naturalWidth / spriteSheet.frameWidth);
+            const rows = Math.floor(image.naturalHeight / spriteSheet.frameHeight);
+            if (image.naturalWidth > 4096 || image.naturalHeight > 4096 || image.naturalWidth * image.naturalHeight > 16000000) {
+                this._playerSpriteSheetValidationError = 'Image dimensions must be at most 4096 × 4096 and 16 megapixels.';
+            } else if (columns < 1 || rows < 1) {
+                this._playerSpriteSheetValidationError = 'The configured frame size does not fit this image.';
+            } else {
+                const invalid = Object.entries(spriteSheet.animations || {}).find(([, animation]) =>
+                    !animation || animation.row < 0 || animation.row >= rows ||
+                    animation.frameCount < 1 || animation.frameCount > columns);
+                this._playerSpriteSheetValidationError = invalid
+                    ? `${invalid[0][0].toUpperCase()}${invalid[0].slice(1)} needs a row below ${rows} and no more than ${columns} frames.`
+                    : '';
+            }
+            this.updatePlayerSpriteSheetStatus();
+        };
+        image.src = spriteSheet.data;
+    }
+
+    loadPlayerSpriteSheet(file) {
+        if (!this.world || !file) return;
+        const requestId = (this._playerSpriteSheetSettingsRequest || 0) + 1;
+        this._playerSpriteSheetSettingsRequest = requestId;
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+            this.updatePlayerSpriteSheetStatus('Choose a PNG, JPEG, or WebP image up to 1 MB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => {
+            if (this._playerSpriteSheetSettingsRequest === requestId) this.updatePlayerSpriteSheetStatus('The image could not be read.');
+        };
+        reader.onload = () => {
+            if (this._playerSpriteSheetSettingsRequest !== requestId || typeof reader.result !== 'string') return;
+            const image = new Image();
+            image.onerror = () => {
+                if (this._playerSpriteSheetSettingsRequest === requestId) this.updatePlayerSpriteSheetStatus('The selected file is not a valid image.');
+            };
+            image.onload = () => {
+                if (this._playerSpriteSheetSettingsRequest !== requestId) return;
+                if (image.naturalWidth > 4096 || image.naturalHeight > 4096 || image.naturalWidth * image.naturalHeight > 16000000) {
+                    this.updatePlayerSpriteSheetStatus('Image dimensions must be at most 4096 × 4096 and 16 megapixels.');
+                    return;
+                }
+                const data = reader.result;
+                const currentSpriteBytes = this.world.getSpriteSheetDataLength() - (this.world.playerSpriteSheet?.data.length || 0);
+                if (currentSpriteBytes + data.length > 8 * 1024 * 1024) {
+                    this.updatePlayerSpriteSheetStatus('Sprite sheets across this map and its Object Stamps are limited to 8 MiB total.');
+                    return;
+                }
+                document.getElementById('config-player-sprite-frame-width').value = image.naturalWidth;
+                document.getElementById('config-player-sprite-frame-height').value = image.naturalHeight;
+                const animations = Object.fromEntries(['idle', 'run', 'jump', 'fall'].map(state => [
+                    state, { row: 0, frameCount: 1, fps: 8 }
+                ]));
+                this._playerSpriteSheetValidationError = '';
+                this._playerSpriteSheetEditorValidationTarget = null;
+                this.world.playerSpriteSheet = normalizeWorldPlayerSpriteSheet({
+                    data, frameWidth: image.naturalWidth, frameHeight: image.naturalHeight, animations
+                });
+                for (const state of ['idle', 'run', 'jump', 'fall']) {
+                    document.getElementById(`config-player-sprite-${state}-row`).value = this.world.playerSpriteSheet.animations[state].row;
+                    document.getElementById(`config-player-sprite-${state}-frames`).value = 1;
+                    document.getElementById(`config-player-sprite-${state}-fps`).value = 8;
+                }
+                for (const state of ['attack', 'hurt', 'dash']) {
+                    const enabled = document.getElementById(`config-player-sprite-${state}-enabled`);
+                    if (enabled) enabled.checked = false;
+                    document.getElementById(`config-player-sprite-${state}-row`)?.classList.add('hidden');
+                }
+                this.updatePlayerSpriteSheetStatus(`${image.naturalWidth} × ${image.naturalHeight} px · configure rows and frame counts below`);
+                this.triggerMapChange();
+            };
+            image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    applyPlayerSpriteSheetSettings() {
+        const current = this.world?.playerSpriteSheet;
+        if (!current) return;
+        const requestId = (this._playerSpriteSheetSettingsRequest || 0) + 1;
+        this._playerSpriteSheetSettingsRequest = requestId;
+        const frameWidth = Number(document.getElementById('config-player-sprite-frame-width').value);
+        const frameHeight = Number(document.getElementById('config-player-sprite-frame-height').value);
+        if (!Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 4096 ||
+            !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 4096) {
+            this.updatePlayerSpriteSheetStatus('Frame dimensions must be between 1 and 4096 pixels.');
+            return;
+        }
+        const animations = {};
+        for (const state of ['idle', 'run', 'jump', 'fall']) {
+            const row = Number(document.getElementById(`config-player-sprite-${state}-row`).value);
+            const frameCount = Number(document.getElementById(`config-player-sprite-${state}-frames`).value);
+            const fps = Number(document.getElementById(`config-player-sprite-${state}-fps`).value);
+            if (!Number.isInteger(row) || row < 0 || row > 127 ||
+                !Number.isInteger(frameCount) || frameCount < 1 || frameCount > 256 ||
+                !Number.isFinite(fps) || fps < 1 || fps > 30) {
+                this.updatePlayerSpriteSheetStatus('Rows must be 0–127, frames 1–256, and animation speed 1–30 FPS.');
+                return;
+            }
+            animations[state] = { row, frameCount, fps };
+        }
+        for (const state of ['attack', 'hurt', 'dash']) {
+            if (!document.getElementById(`config-player-sprite-${state}-enabled`)?.checked) continue;
+            const row = Number(document.getElementById(`config-player-sprite-${state}-row-index`).value);
+            const frameCount = Number(document.getElementById(`config-player-sprite-${state}-frames`).value);
+            const fps = Number(document.getElementById(`config-player-sprite-${state}-fps`).value);
+            if (!Number.isInteger(row) || row < 0 || row > 127 ||
+                !Number.isInteger(frameCount) || frameCount < 1 || frameCount > 256 ||
+                !Number.isFinite(fps) || fps < 1 || fps > 30) {
+                this.updatePlayerSpriteSheetStatus(`${state[0].toUpperCase()}${state.slice(1)} rows must be 0–127, frames 1–256, and animation speed 1–30 FPS.`);
+                return;
+            }
+            animations[state] = { row, frameCount, fps };
+        }
+        const applyIfValid = image => {
+            if (!this.world || this._playerSpriteSheetSettingsRequest !== requestId || this.world.playerSpriteSheet !== current) return;
+            const columns = Math.floor(image.naturalWidth / frameWidth);
+            const rows = Math.floor(image.naturalHeight / frameHeight);
+            if (columns < 1 || rows < 1) {
+                this.updatePlayerSpriteSheetStatus('The selected frame size does not fit this image.');
+                return;
+            }
+            for (const [state, animation] of Object.entries(animations)) {
+                if (animation.row >= rows || animation.frameCount > columns) {
+                    this.updatePlayerSpriteSheetStatus(`${state[0].toUpperCase()}${state.slice(1)} needs a row below ${rows} and no more than ${columns} frames.`);
+                    return;
+                }
+            }
+            this._playerSpriteSheetValidationError = '';
+            this._playerSpriteSheetEditorValidationTarget = null;
+            this.world.playerSpriteSheet = normalizeWorldPlayerSpriteSheet({ ...current, frameWidth, frameHeight, animations });
+            this.updatePlayerSpriteSheetStatus();
+            this.triggerMapChange();
+        };
+        const image = new Image();
+        image.onload = () => applyIfValid(image);
+        image.onerror = () => {
+            if (this._playerSpriteSheetSettingsRequest === requestId) this.updatePlayerSpriteSheetStatus('The selected sprite-sheet image could not be decoded.');
+        };
+        image.src = current.data;
+    }
+
     syncConfigPanel() {
         // Map Name
         const mapNameInput = document.getElementById('config-map-name');
@@ -9072,6 +10953,8 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         const cpTouchedPreview = document.getElementById('config-checkpoint-touched-preview');
         if (cpTouchedColor) cpTouchedColor.value = this.world.checkpointTouchedColor || '#2196F3';
         if (cpTouchedPreview) cpTouchedPreview.style.background = this.world.checkpointTouchedColor || '#2196F3';
+        const persistCheckpoints = document.getElementById('config-persist-checkpoints');
+        if (persistCheckpoints) persistCheckpoints.checked = this.world.persistCheckpoints === true;
         
         // Jumps
         const jumpsSelect = document.getElementById('config-jumps');
@@ -9090,6 +10973,37 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         if (airjumpCheck) airjumpCheck.checked = this.world.additionalAirjump;
         if (collideCheck) collideCheck.checked = this.world.collideWithEachOther;
 
+        const playerSprite = this.world.playerSpriteSheet;
+        const playerSpriteFile = document.getElementById('config-player-sprite-file');
+        if (playerSpriteFile) playerSpriteFile.value = '';
+        const playerSpriteFrameWidth = document.getElementById('config-player-sprite-frame-width');
+        if (playerSpriteFrameWidth) playerSpriteFrameWidth.value = playerSprite?.frameWidth || 32;
+        const playerSpriteFrameHeight = document.getElementById('config-player-sprite-frame-height');
+        if (playerSpriteFrameHeight) playerSpriteFrameHeight.value = playerSprite?.frameHeight || 32;
+        for (const [index, state] of ['attack', 'hurt', 'dash'].entries()) {
+            const animation = playerSprite?.animations?.[state];
+            const enabled = document.getElementById(`config-player-sprite-${state}-enabled`);
+            if (enabled) enabled.checked = Boolean(animation);
+            document.getElementById(`config-player-sprite-${state}-row`)?.classList.toggle('hidden', !animation);
+            const row = document.getElementById(`config-player-sprite-${state}-row-index`);
+            const frames = document.getElementById(`config-player-sprite-${state}-frames`);
+            const fps = document.getElementById(`config-player-sprite-${state}-fps`);
+            if (row) row.value = animation?.row ?? 4 + index;
+            if (frames) frames.value = animation?.frameCount ?? 1;
+            if (fps) fps.value = animation?.fps ?? (state === 'attack' ? 12 : 8);
+        }
+        for (const [index, state] of ['idle', 'run', 'jump', 'fall'].entries()) {
+            const animation = playerSprite?.animations?.[state];
+            const row = document.getElementById(`config-player-sprite-${state}-row`);
+            const frames = document.getElementById(`config-player-sprite-${state}-frames`);
+            const fps = document.getElementById(`config-player-sprite-${state}-fps`);
+            if (row) row.value = animation?.row ?? index;
+            if (frames) frames.value = animation?.frameCount ?? 1;
+            if (fps) fps.value = animation?.fps ?? 8;
+        }
+        this.updatePlayerSpriteSheetStatus();
+        this.validatePlayerSpriteSheetForEditor();
+
         // Coin counter
         const showCoinCounter = document.getElementById('config-show-coin-counter');
         if (showCoinCounter) showCoinCounter.checked = this.world.showCoinCounter !== false;
@@ -9107,6 +11021,17 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         
         const gravity = document.getElementById('config-gravity');
         if (gravity) gravity.value = this.world.gravity || 0.71;
+
+        const horizontalAcceleration = document.getElementById('config-horizontal-acceleration');
+        if (horizontalAcceleration) horizontalAcceleration.value = this.world.horizontalAcceleration ?? 0;
+
+        const airControl = document.getElementById('config-air-control');
+        if (airControl) airControl.value = this.world.airControl ?? 1;
+
+        const terminalFallSpeed = document.getElementById('config-terminal-fall-speed');
+        if (terminalFallSpeed) {
+            terminalFallSpeed.value = this.world.terminalFallSpeed ?? (16 * (this.world.gravity || 0.71) / 0.71).toFixed(1);
+        }
         
         const cameraLerpX = document.getElementById('config-camera-lerp-x');
         const cameraLerpXValue = document.getElementById('config-camera-lerp-x-value');
@@ -9121,6 +11046,21 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
             cameraLerpY.value = this.world.cameraLerpY || 0.12;
             if (cameraLerpYValue) cameraLerpYValue.textContent = (this.world.cameraLerpY || 0.12).toFixed(2);
         }
+        const cameraFollowMode = document.getElementById('config-camera-follow-mode');
+        if (cameraFollowMode) cameraFollowMode.value = this.world.cameraFollowMode || 'both';
+
+        const cameraBounds = this.world.cameraBounds || { enabled: false, x: 0, y: 0, width: 2000, height: 1200 };
+        const cameraBoundsEnabled = document.getElementById('config-camera-bounds-enabled');
+        const cameraBoundsFields = document.getElementById('config-camera-bounds-fields');
+        if (cameraBoundsEnabled) cameraBoundsEnabled.checked = cameraBounds.enabled === true;
+        if (cameraBoundsFields) cameraBoundsFields.style.display = cameraBounds.enabled === true ? 'grid' : 'none';
+        ['x', 'y', 'width', 'height'].forEach(key => {
+            const input = document.getElementById(`config-camera-bounds-${key}`);
+            if (input) {
+                input.value = cameraBounds[key];
+                input.disabled = cameraBounds.enabled !== true;
+            }
+        });
         
         // Spike touchbox
         const spikeTouchbox = document.getElementById('config-spike-touchbox');
@@ -9205,22 +11145,58 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         // Hollow Knight settings
         const hkGravity = document.getElementById('config-hk-gravity');
         const hkMaxSoul = document.getElementById('config-hk-maxsoul');
+        const hkPogoBouncePower = document.getElementById('config-hk-pogo-bounce-power');
+        const hkNailSpeed = document.getElementById('config-hk-nail-speed');
         const hkMonarchWing = document.getElementById('config-hk-monarchwing');
         const hkMonarchWingAmount = document.getElementById('config-hk-monarchwing-amount');
         const hkMonarchWingAmountGroup = document.getElementById('config-hk-monarchwing-amount-group');
         const hkDash = document.getElementById('config-hk-dash');
         const hkSuperDash = document.getElementById('config-hk-superdash');
         const hkMantisClaw = document.getElementById('config-hk-mantisclaw');
+        const hkEffectToggles = [
+            ['config-hk-slash-effects', 'slashEffects'],
+            ['config-hk-impact-effects', 'impactEffects'],
+            ['config-hk-camera-shake-effects', 'cameraShakeEffects'],
+            ['config-hk-dash-trail-effects', 'dashTrailEffects'],
+            ['config-hk-ability-aura-effects', 'abilityAuraEffects']
+        ];
+        const hkShakeIntensities = [
+            ['config-hk-impact-shake-intensity', 'impactShakeIntensity', 7],
+            ['config-hk-landing-shake-intensity', 'landingShakeIntensity', 2]
+        ];
+        const hkEffectColors = [
+            ['config-hk-nail-effect-color', 'nailEffectColor'],
+            ['config-hk-dash-effect-color', 'dashEffectColor'],
+            ['config-hk-charge-effect-color', 'chargeEffectColor'],
+            ['config-hk-heal-effect-color', 'healEffectColor']
+        ];
         
         const hk = this.world.plugins?.hk;
         if (hkGravity) hkGravity.value = hk?.defaultGravity ?? 1.14;
         if (hkMaxSoul) hkMaxSoul.value = hk?.maxSoul ?? 99;
+        if (hkPogoBouncePower) hkPogoBouncePower.value = hk?.pogoBouncePower ?? 1.2;
+        if (hkNailSpeed) hkNailSpeed.value = hk?.nailSpeed === 'quickSlash' ? 'quickSlash' : 'base';
         if (hkMonarchWing) hkMonarchWing.checked = hk?.monarchWing ?? false;
         if (hkMonarchWingAmount) hkMonarchWingAmount.value = hk?.monarchWingAmount ?? 1;
         if (hkMonarchWingAmountGroup) hkMonarchWingAmountGroup.classList.toggle('hidden', !(hk?.monarchWing));
         if (hkDash) hkDash.checked = hk?.dash ?? false;
         if (hkSuperDash) hkSuperDash.checked = hk?.superDash ?? false;
         if (hkMantisClaw) hkMantisClaw.checked = hk?.mantisClaw ?? false;
+        hkEffectToggles.forEach(([elementId, configKey]) => {
+            const input = document.getElementById(elementId);
+            if (input) input.checked = hk?.[configKey] !== false;
+        });
+        hkShakeIntensities.forEach(([elementId, configKey, fallback]) => {
+            const input = document.getElementById(elementId);
+            if (input) input.value = hk?.[configKey] ?? fallback;
+        });
+        document.getElementById('config-hk-camera-shake-settings')?.classList.toggle('hidden', hk?.cameraShakeEffects === false);
+        hkEffectColors.forEach(([elementId, configKey]) => {
+            const input = document.getElementById(elementId);
+            const color = hk?.[configKey];
+            if (input) input.value = typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)
+                ? color : input.defaultValue;
+        });
         
         // Code plugin settings
         const codeAutoRespawn = document.getElementById('config-code-autorespawn');
@@ -9650,10 +11626,30 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
     // ========================================
     // TOUCH CONTROLS - Multi-touch enabled
     // ========================================
+    clearTouchControlInput() {
+        for (const direction of ['up', 'down', 'left', 'right', 'jump', 'attack', 'dash', 'heal']) {
+            this.engine.setTouchInput(direction, false);
+        }
+
+        const touchControls = document.getElementById('touch-controls');
+        touchControls?.querySelectorAll('.touch-plugin-control').forEach(button => {
+            this.engine.setTouchInput(button.dataset.action, false);
+        });
+        touchControls?.querySelector('.touch-joystick-base')?.classList.remove('active');
+        const joystickStick = touchControls?.querySelector('.touch-joystick-stick');
+        if (joystickStick) joystickStick.style.transform = 'translate(0, 0)';
+        touchControls?.querySelectorAll('.touch-btn.active').forEach(button => button.classList.remove('active'));
+
+        if (this.touchState) {
+            this.touchState.joystick = { touchId: null, x: 0, y: 0 };
+            this.touchState.buttons?.clear();
+        }
+    }
+
     updateTouchControls() {
         let touchControls = document.getElementById('touch-controls');
         
-        if (this.engine.touchscreenMode) {
+        if (this.engine.touchControlsEnabled) {
             if (!touchControls) {
                 touchControls = document.createElement('div');
                 touchControls.id = 'touch-controls';
@@ -9669,6 +11665,7 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                 const hasDash = hkEnabled && hkConfig.dash;
                 // Heal is always available when HK is enabled (uses soul)
                 const hasHeal = hkEnabled;
+                const pluginControls = window.PluginManager?.getTouchControls?.() || [];
                 
                 touchControls.innerHTML = `
                     <div class="touch-joystick-container">
@@ -9695,6 +11692,11 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                             <span class="material-symbols-outlined">favorite</span>
                         </button>
                         ` : ''}
+                        ${pluginControls.map(control => `
+                            <button class="touch-btn touch-plugin-control" data-action="plugin:${escapeHtml(control.id)}" title="${escapeHtml(control.label)}" aria-label="${escapeHtml(control.label)}">
+                                <span class="touch-plugin-control-label">${escapeHtml(control.label)}</span>
+                            </button>
+                        `).join('')}
                     </div>
                 `;
                 document.body.appendChild(touchControls);
@@ -9828,16 +11830,7 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                             this.touchState.buttons.set(action, touch.identifier);
                             btn.classList.add('active');
                             
-                            // Set input based on action
-                            if (action === 'jump') {
-                                this.engine.setTouchInput('jump', true);
-                            } else if (action === 'attack') {
-                                this.engine.setTouchInput('attack', true);
-                            } else if (action === 'dash') {
-                                this.engine.setTouchInput('dash', true);
-                            } else if (action === 'heal') {
-                                this.engine.setTouchInput('heal', true);
-                            }
+                            this.engine.setTouchInput(action, true);
                             
                             // Haptic feedback
                             if (navigator.vibrate) navigator.vibrate(15);
@@ -9855,16 +11848,7 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                                 this.touchState.buttons.delete(action);
                                 btn.classList.remove('active');
                                 
-                                // Release input
-                                if (action === 'jump') {
-                                    this.engine.setTouchInput('jump', false);
-                                } else if (action === 'attack') {
-                                    this.engine.setTouchInput('attack', false);
-                                } else if (action === 'dash') {
-                                    this.engine.setTouchInput('dash', false);
-                                } else if (action === 'heal') {
-                                    this.engine.setTouchInput('heal', false);
-                                }
+                                this.engine.setTouchInput(action, false);
                                 break;
                             }
                         }
@@ -9875,15 +11859,7 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                         this.touchState.buttons.delete(action);
                         btn.classList.remove('active');
                         
-                        if (action === 'jump') {
-                            this.engine.setTouchInput('jump', false);
-                        } else if (action === 'attack') {
-                            this.engine.setTouchInput('attack', false);
-                        } else if (action === 'dash') {
-                            this.engine.setTouchInput('dash', false);
-                        } else if (action === 'heal') {
-                            this.engine.setTouchInput('heal', false);
-                        }
+                        this.engine.setTouchInput(action, false);
                     }, { passive: false });
                 });
             }
@@ -9892,8 +11868,9 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
             this.updateTouchButtonVisibility();
             touchControls.classList.add('active');
             document.body.classList.add('touch-active');
-        } else if (touchControls) {
-            touchControls.classList.remove('active');
+        } else {
+            this.clearTouchControlInput();
+            if (touchControls) touchControls.classList.remove('active');
             document.body.classList.remove('touch-active');
         }
     }
@@ -9911,6 +11888,9 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
             const attackBtn = buttonsContainer.querySelector('.touch-attack');
             const dashBtn = buttonsContainer.querySelector('.touch-dash');
             const healBtn = buttonsContainer.querySelector('.touch-heal');
+            const expectedPluginControls = (window.PluginManager?.getTouchControls?.() || []).map(control => control.id).sort();
+            const renderedPluginControls = Array.from(buttonsContainer.querySelectorAll('.touch-plugin-control'))
+                .map(button => button.dataset.action.slice('plugin:'.length)).sort();
             
             // Check what should be visible
             const shouldShowAttack = hkEnabled;
@@ -9924,9 +11904,12 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                 (shouldShowDash && !dashBtn) || 
                 (!shouldShowDash && dashBtn) ||
                 (shouldShowHeal && !healBtn) || 
-                (!shouldShowHeal && healBtn);
+                (!shouldShowHeal && healBtn) ||
+                expectedPluginControls.length !== renderedPluginControls.length ||
+                expectedPluginControls.some((controlId, index) => controlId !== renderedPluginControls[index]);
             
             if (needsRecreate) {
+                this.clearTouchControlInput();
                 touchControls.remove();
                 this.updateTouchControls();
                 return;
@@ -9942,7 +11925,8 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
     // Called when plugin settings change to refresh touch controls
     refreshTouchControls() {
         const touchControls = document.getElementById('touch-controls');
-        if (touchControls && this.engine.touchscreenMode) {
+        if (touchControls && this.engine.touchControlsEnabled) {
+            this.clearTouchControlInput();
             touchControls.remove();
             this.updateTouchControls();
         }
@@ -10344,13 +12328,23 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
                 } else if (at === 'spawnpoint' || at === 'endpoint' || at === 'checkpoint') {
                     drawBox(obj.x, obj.y, obj.width, obj.height, '#4caf50');
                 } else if (obj.collision) {
-                    if (obj.type === 'block' && obj.rotation === 0 && !obj.flipHorizontal &&
+                    if (obj.type === 'block' && obj.collisionShape === 'box' && obj.rotation === 0 && !obj.flipHorizontal &&
                         obj.width === gs && obj.height === gs &&
                         Math.round(obj.x) % gs === 0 && Math.round(obj.y) % gs === 0) {
                         collisionBlocks.push(obj);
                     } else {
                         nonMergeableCollision.push(obj);
                     }
+                }
+            }
+
+            // Tilemap cells are not stored in world.objects, so include visible
+            // custom-shape cells explicitly in the tester collision overlay.
+            const visibleTileColliders = this.world.queryNear?.(camera.x, camera.y, vpW, vpH) || [];
+            for (const tile of visibleTileColliders) {
+                if (tile?._tilemapCell === true && tile.collision !== false &&
+                    ['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(tile.collisionShape)) {
+                    nonMergeableCollision.push(tile);
                 }
             }
 
@@ -10399,7 +12393,47 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
 
             for (let i = 0; i < nonMergeableCollision.length; i++) {
                 const obj = nonMergeableCollision[i];
-                drawBox(obj.x, obj.y, obj.width, obj.height, '#2196f3');
+                if (obj.collisionShape === 'capsule') {
+                    ctx.strokeStyle = '#2196f3';
+                    const left = obj.x - camera.x;
+                    const top = obj.y - camera.y;
+                    const radius = Math.min(obj.width, obj.height) / 2;
+                    ctx.beginPath();
+                    ctx.moveTo(left + radius, top);
+                    ctx.lineTo(left + obj.width - radius, top);
+                    ctx.quadraticCurveTo(left + obj.width, top, left + obj.width, top + radius);
+                    ctx.lineTo(left + obj.width, top + obj.height - radius);
+                    ctx.quadraticCurveTo(left + obj.width, top + obj.height, left + obj.width - radius, top + obj.height);
+                    ctx.lineTo(left + radius, top + obj.height);
+                    ctx.quadraticCurveTo(left, top + obj.height, left, top + obj.height - radius);
+                    ctx.lineTo(left, top + radius);
+                    ctx.quadraticCurveTo(left, top, left + radius, top);
+                    ctx.stroke();
+                } else if (obj.collisionShape === 'circle') {
+                    const cx = obj.x + obj.width / 2 - camera.x;
+                    const cy = obj.y + obj.height / 2 - camera.y;
+                    ctx.strokeStyle = '#2196f3';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, Math.min(obj.width, obj.height) / 2, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape)) {
+                    const left = obj.x - camera.x;
+                    const top = obj.y - camera.y;
+                    const normalized = obj.collisionShape === 'polygon'
+                        ? (WorldObject.normalizeCollisionPolygon(obj.collisionPoints) || WorldObject.DEFAULT_COLLISION_POLYGON)
+                        : obj.collisionShape === 'slopeUpRight'
+                            ? [[0, 1], [1, 0], [1, 1]]
+                            : [[0, 0], [0, 1], [1, 1]];
+                    const points = normalized.map(([x, y]) => [left + x * obj.width, top + y * obj.height]);
+                    ctx.strokeStyle = '#2196f3';
+                    ctx.beginPath();
+                    ctx.moveTo(points[0][0], points[0][1]);
+                    for (let p = 1; p < points.length; p++) ctx.lineTo(points[p][0], points[p][1]);
+                    ctx.closePath();
+                    ctx.stroke();
+                } else {
+                    drawBox(obj.x, obj.y, obj.width, obj.height, '#2196f3');
+                }
             }
         }
 

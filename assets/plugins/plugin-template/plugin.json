@@ -1,0 +1,39 @@
+{
+  "$schema": "../plugin-manifest.schema.json",
+  "id": "plugin-template",
+  "apiVersion": 1,
+  "name": "Plugin Template",
+  "version": "0.1.0",
+  "description": "A starter plugin that demonstrates declared image assets, a sprite sheet, a render hook, and a custom keyboard control.",
+  "author": "Your name",
+  "color": "#64748b",
+  "scripts": {
+    "inject": "js/inject.js"
+  },
+  "assets": {
+    "playerMarker": "assets/player-marker.svg",
+    "playerSheet": "assets/player-sheet.svg"
+  },
+  "controls": {
+    "markerPulse": {
+      "key": "KeyQ",
+      "label": "Marker pulse",
+      "description": "Hold Q to show a ring around the player marker."
+    }
+  },
+  "config": {
+    "showPlayerMarker": {
+      "type": "boolean",
+      "label": "Show player marker",
+      "description": "Draw a small marker above the player as a render-hook example.",
+      "default": true
+    },
+    "animateMarker": {
+      "type": "boolean",
+      "label": "Animate marker",
+      "description": "Draw three frames from the declared sprite sheet.",
+      "default": true,
+      "showIf": "showPlayerMarker"
+    }
+  }
+}

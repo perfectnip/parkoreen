@@ -1,0 +1,481 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parkoreen.example/schemas/plugin-api-v2-draft.schema.json",
+  "title": "Parkoreen isolated plugin API v2 draft messages",
+  "description": "Draft wire envelopes only. Not used by or accepted in the current runtime.",
+  "oneOf": [
+    { "$ref": "#/$defs/hostInitialize" },
+    { "$ref": "#/$defs/hostResponseSuccess" },
+    { "$ref": "#/$defs/hostResponseError" },
+    { "$ref": "#/$defs/hostEvent" },
+    { "$ref": "#/$defs/pluginReady" },
+    { "$ref": "#/$defs/pluginRequest" }
+  ],
+  "$defs": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "capability": {
+      "type": "string",
+      "enum": ["map.read", "players.read", "input.read", "render.commands", "audio.play", "gameplay.request", "storage.local"]
+    },
+    "pluginMethod": {
+      "type": "string",
+      "enum": ["map.getSnapshot", "players.getSnapshot", "input.subscribe", "render.submit", "audio.play", "gameplay.request", "storage.get", "storage.set"]
+    },
+    "jsonValue": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/jsonValue" } },
+        { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "maxProperties": 64,
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "mapObjectSnapshot": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "x": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "y": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "width": { "type": "number", "minimum": 0, "maximum": 10000000 },
+        "height": { "type": "number", "minimum": 0, "maximum": 10000000 },
+        "enabled": { "type": "boolean" },
+        "collisionShape": { "enum": ["box", "circle", "capsule", "slopeUpRight", "slopeUpLeft", "polygon"] }
+      },
+      "required": ["id", "name", "type", "x", "y", "width", "height", "enabled"],
+      "additionalProperties": false
+    },
+    "mapSnapshotResult": {
+      "type": "object",
+      "properties": {
+        "mapId": { "type": ["string", "null"], "maxLength": 128 },
+        "mapName": { "type": "string", "maxLength": 128 },
+        "gravity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "objectCount": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "objectOffset": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "nextObjectOffset": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000 },
+        "objects": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/mapObjectSnapshot" } }
+      },
+      "required": ["mapId", "mapName", "gravity", "objectCount", "objectOffset", "nextObjectOffset", "objects"],
+      "additionalProperties": false
+    },
+    "playerSnapshot": {
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Opaque room-session id, never an account id." },
+        "name": { "type": "string", "maxLength": 128, "description": "Player display name; may be personally identifying even though account identifiers are excluded." },
+        "x": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "y": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+        "width": { "type": "number", "minimum": 0, "maximum": 10000 },
+        "height": { "type": "number", "minimum": 0, "maximum": 10000 },
+        "vx": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "vy": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "isGrounded": { "type": ["boolean", "null"] },
+        "isDead": { "type": ["boolean", "null"] }
+      },
+      "required": ["playerId", "name", "x", "y", "width", "height", "vx", "vy", "isGrounded", "isDead"],
+      "additionalProperties": false
+    },
+    "playersSnapshotResult": {
+      "type": "object",
+      "description": "Broker must enforce unique playerId values within the snapshot and sort records by playerId before paging.",
+      "properties": {
+        "playerCount": { "type": "integer", "minimum": 0, "maximum": 1024 },
+        "playerOffset": { "type": "integer", "minimum": 0, "maximum": 1024 },
+        "nextPlayerOffset": { "type": ["integer", "null"], "minimum": 0, "maximum": 1024 },
+        "players": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/playerSnapshot" } }
+      },
+      "required": ["playerCount", "playerOffset", "nextPlayerOffset", "players"],
+      "additionalProperties": false
+    },
+    "pluginResult": {
+      "oneOf": [
+        { "$ref": "#/$defs/mapSnapshotResult" },
+        { "$ref": "#/$defs/playersSnapshotResult" },
+        {
+          "type": "object",
+          "properties": { "subscribedControlIds": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 48, "pattern": "^[a-z][a-zA-Z0-9_-]*$" } } },
+          "required": ["subscribedControlIds"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "queuedCommands": { "type": "integer", "minimum": 0, "maximum": 256 } },
+          "required": ["queuedCommands"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "played": { "type": "boolean" } },
+          "required": ["played"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "queuedForTick": { "type": "integer", "minimum": 0, "maximum": 2147483647 } },
+          "required": ["queuedForTick"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "found": { "const": true },
+            "value": {
+              "$ref": "#/$defs/jsonValue",
+              "description": "Broker must enforce a maximum of 32768 UTF-8 bytes when this value is JSON-encoded."
+            }
+          },
+          "required": ["found", "value"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "found": { "const": false } },
+          "required": ["found"], "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "stored": { "type": "boolean" } },
+          "required": ["stored"], "additionalProperties": false
+        }
+      ]
+    },
+    "hostInitialize": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "initialize" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "apiVersion": { "const": 2 },
+        "pluginId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+        "grants": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/capability" } },
+        "config": { "$ref": "#/$defs/jsonObject" }
+      },
+      "required": ["type", "requestId", "apiVersion", "pluginId", "grants", "config"],
+      "additionalProperties": false
+    },
+    "hostResponseSuccess": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "response" },
+        "apiVersion": { "const": 2 },
+        "responseTo": { "$ref": "#/$defs/requestId" },
+        "ok": { "const": true },
+        "value": { "$ref": "#/$defs/pluginResult" }
+      },
+      "required": ["type", "apiVersion", "responseTo", "ok", "value"],
+      "additionalProperties": false
+    },
+    "hostResponseError": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "response" },
+        "apiVersion": { "const": 2 },
+        "responseTo": { "$ref": "#/$defs/requestId" },
+        "ok": { "const": false },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Z0-9_]+$" },
+            "message": { "type": "string", "maxLength": 256 }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "responseTo", "ok", "error"],
+      "additionalProperties": false
+    },
+    "hostEvent": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "event" },
+        "apiVersion": { "const": 2 },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-zA-Z0-9.]*$" },
+        "payload": { "$ref": "#/$defs/jsonValue" }
+      },
+      "required": ["type", "apiVersion", "sequence", "name", "payload"],
+      "additionalProperties": false
+    },
+    "pluginReady": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ready" },
+        "responseTo": { "$ref": "#/$defs/requestId" },
+        "apiVersion": { "const": 2 }
+      },
+      "required": ["type", "responseTo", "apiVersion"],
+      "additionalProperties": false
+    },
+    "mapSnapshotRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "map.getSnapshot" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "objectOffset": { "type": "integer", "minimum": 0, "maximum": 1000000, "default": 0 },
+            "objectLimit": { "type": "integer", "minimum": 1, "maximum": 64, "default": 64 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "inputSubscribeRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "input.subscribe" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "controlIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 48, "pattern": "^[a-z][a-zA-Z0-9_-]*$" }
+            }
+          },
+          "required": ["controlIds"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "playersSnapshotRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "players.getSnapshot" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "playerOffset": { "type": "integer", "minimum": 0, "maximum": 1024, "default": 0 },
+            "playerLimit": { "type": "integer", "minimum": 1, "maximum": 32, "default": 32 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "renderRectCommand": {
+      "type": "object",
+      "properties": {
+        "op": { "const": "rect" },
+        "x": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "y": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["op", "x", "y", "width", "height", "color"],
+      "additionalProperties": false
+    },
+    "renderCircleCommand": {
+      "type": "object",
+      "properties": {
+        "op": { "const": "circle" },
+        "x": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "y": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "radius": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["op", "x", "y", "radius", "color"],
+      "additionalProperties": false
+    },
+    "renderTextCommand": {
+      "type": "object",
+      "properties": {
+        "op": { "const": "text" },
+        "x": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "y": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "text": { "type": "string", "maxLength": 256 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "fontSize": { "type": "integer", "minimum": 8, "maximum": 64 }
+      },
+      "required": ["op", "x", "y", "text", "color", "fontSize"],
+      "additionalProperties": false
+    },
+    "renderImageCommand": {
+      "type": "object",
+      "properties": {
+        "op": { "const": "image" },
+        "assetName": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+        "x": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "y": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096 },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["op", "assetName", "x", "y", "width", "height"],
+      "additionalProperties": false
+    },
+    "renderCommand": {
+      "oneOf": [
+        { "$ref": "#/$defs/renderRectCommand" },
+        { "$ref": "#/$defs/renderCircleCommand" },
+        { "$ref": "#/$defs/renderTextCommand" },
+        { "$ref": "#/$defs/renderImageCommand" }
+      ]
+    },
+    "renderSubmitRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "render.submit" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "commands": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/renderCommand" } }
+          },
+          "required": ["commands"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "audioPlayRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "audio.play" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "soundName": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+            "volume": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["soundName"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "gameplayRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "gameplay.request" },
+        "args": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "action": { "const": "setPlayerVelocity" },
+                "playerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "vx": { "type": "number", "minimum": -10000, "maximum": 10000 },
+                "vy": { "type": "number", "minimum": -10000, "maximum": 10000 }
+              },
+              "required": ["action", "playerId", "vx", "vy"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": { "const": "setObjectEnabled" },
+                "objectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "enabled": { "type": "boolean" }
+              },
+              "required": ["action", "objectId", "enabled"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": { "const": "setObjectPosition" },
+                "objectId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "x": { "type": "number", "minimum": -10000000, "maximum": 10000000 },
+                "y": { "type": "number", "minimum": -10000000, "maximum": 10000000 }
+              },
+              "required": ["action", "objectId", "x", "y"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "storageGetRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "storage.get" },
+        "args": {
+          "type": "object",
+          "properties": { "key": { "type": "string", "minLength": 1, "maxLength": 128 } },
+          "required": ["key"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "storageSetRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "storage.set" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "value": {
+              "$ref": "#/$defs/jsonValue",
+              "description": "Broker must enforce a maximum of 32768 UTF-8 bytes when this value is JSON-encoded."
+            }
+          },
+          "required": ["key", "value"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "pluginRequest": {
+      "oneOf": [
+        { "$ref": "#/$defs/mapSnapshotRequest" },
+        { "$ref": "#/$defs/playersSnapshotRequest" },
+        { "$ref": "#/$defs/inputSubscribeRequest" },
+        { "$ref": "#/$defs/renderSubmitRequest" },
+        { "$ref": "#/$defs/audioPlayRequest" },
+        { "$ref": "#/$defs/gameplayRequest" },
+        { "$ref": "#/$defs/storageGetRequest" },
+        { "$ref": "#/$defs/storageSetRequest" }
+      ]
+    }
+  }
+}

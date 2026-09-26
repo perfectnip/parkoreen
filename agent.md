@@ -8,7 +8,7 @@ Parkoreen is a multiplayer 2D platformer with a full map editor, real-time multi
 
 - **Frontend**: pure static HTML/JS/CSS — no build step. Plain `<canvas>` 2D rendering, ES6 classes, no framework.
 - **Backend**: Cloudflare Worker (Workers + KV + Durable Object) for auth, map storage, mail, admin tools, and WebSocket multiplayer.
-- **PWA**: service worker caches the `parkoreen-v*` cache name (currently `parkoreen-v28`). Skips `/admin/` and `/mails/` (stale HTML causes bugs).
+- **PWA**: service worker uses the `parkoreen-v216` cache. It bypasses cache handling for `/admin` and `/mails` routes.
 - **Note**: `agent.md` in the repo root is a duplicate of this file (kept for an external tool). Edit `CLAUDE.md` and re-sync `agent.md` if you change either.
 - **Cloudflare dashboard is blocked in the user's home network in China.** Deploy via `wrangler deploy` works (the API at `api.cloudflare.com` is reachable), but `wrangler login` (OAuth to `dash.cloudflare.com`) does not. Plan accordingly if iterating from a blocked network.
 
@@ -29,7 +29,7 @@ Required KV namespaces: `USERS`, `MAPS`, `SESSIONS`. Optional: `GAME_ROOMS` (Dur
 
 Already-deployed Worker URL and KV namespace IDs live in `cloudflare-worker/README.md` — read it before redeploying to avoid clobbering existing bindings.
 
-**No test suite, no linter, no build step.** Verify changes by opening the relevant HTML page in a browser and observing behavior. For the editor, `host.html` is the all-in-one entry; for backend changes, hit the relevant route with `curl` from the deployed Worker URL.
+There is no linter or build step. Targeted Node tests cover Mechanics map-data normalization and the Cloudflare Worker's Mechanics event routing; run them with `node --test tools/mechanics-data.test.js tools/mechanics-worker.test.mjs`. These tests do not cover browser behavior. Also open the relevant HTML page and observe the changed behavior; for the editor, `host.html` is the all-in-one entry. For backend changes, hit the relevant route with `curl` from the deployed Worker URL.
 
 ## Project Structure
 
@@ -40,7 +40,7 @@ index.html               # Level selection page (entry point)
 dashboard/               # User's map management
 login/, signup/          # Auth pages
 settings/, mails/, admin/, howtoplay/, join/
-wiki/                   # Offline-first HTML docs (one folder per version)
+wiki/                   # Parkoreen Guide pages (served at the legacy /wiki/ path)
 assets/
   js/
     game.js             # Core engine: physics, player, camera, world, objects (~5k lines)
@@ -57,7 +57,7 @@ cloudflare-worker/
   worker.js             # All backend routes + GameRoom Durable Object
   README.md             # Deployed URL + KV namespace IDs + redeploy steps
 sw.js                   # Service worker
-CHANGELOG.md            # Pointer to wiki/changelog (the canonical changelog)
+CHANGELOG.md            # Pointer to wiki/changelog (canonical Guide changelog)
 ```
 
 ## Key Architecture
@@ -89,8 +89,9 @@ CHANGELOG.md            # Pointer to wiki/changelog (the canonical changelog)
 
 - `PluginManager` loads plugins from `/assets/plugins/{id}/plugin.json`.
 - Each plugin can declare `dependencies`, `scripts` (globals/inject/script + optional library scripts as `<script>` tags + editor script), `sounds`, `config`, `editorFeatures`, `worldObjectGuards`.
-- Lifecycle per plugin: load libraries as script tags → fetch globals/inject/script as text → `eval(globals)`, `new Function('ctx', inject)(ctx)`, `eval(script)`. Inject receives `{ pluginManager, pluginId, world, hooks, sounds }`.
-- **Hooks** are priority-ordered. Mutate the passed `data` object; return value is merged in. Available hooks: `player.init`, `player.update`, `player.damage`, `player.jump`, `player.land`, `player.respawn`, `player.checkpoint`, `input.keydown`, `input.keyup`, `input.update`, `button.pressed`, `render.hud`, `render.player`, `render.soulStatue`.
+- Lifecycle per plugin: load declared libraries as script tags, then evaluate the plugin's globals, inject, and script in the page. Inject receives `{ api, pluginManager, pluginId, world, hooks, sounds }`. The v1 API adds hooks, listeners, config, asset URLs, sound playback, and cleanup registration.
+- **Hooks** run in priority order on the game thread. Mutate the passed `data` object; returned fields are merged in. Current hook names: `player.init`, `player.update`, `player.damage`, `player.died`, `player.respawn`, `player.jump`, `player.jumped`, `player.land`, `player.checkpoint`, `player.attack.hit`, `game.ended`, `game.sceneLoaded`, `button.pressed`, `input.keydown`, `input.keyup`, `input.update`, `render.camera`, `render.hud`, `render.player`, `render.soulStatue`.
+- **Plugin trust model**: current API v1 plugins are trusted page scripts. They can access the page and are not sandboxed; cleanup helpers manage lifecycle but are not a security boundary. Do not load untrusted plugin code. See the API v2 draft and Guide plugin documentation before changing this architecture.
 - Plugins in repo: **HK** (Hollow Knight — HP/attacks/wall-cling/dash/super-dash/soul statue), **HP** (generic HP), **CJ** (movement abilities), **Code** (in-map Skulpt scripting, BETA).
 
 ### Multiplayer (`runtime.js` + `GameRoom` Durable Object)
@@ -117,7 +118,7 @@ RLE encoding: `0xFF, count, byte` for runs ≥4 identical bytes; `0xFF, 0x00` to
 - Routes: `/auth/{signup,login,profile,password}`, `/level-progress`, `/flag/{name}`, `/maps`, `/maps/{id}`, `/mail`, `/mail/unread`, `/mail/{id}`, `/ws`, `/settings`, `/editor/recent-fonts`, `/admin/{users,rooms,maps,global-bans,...}`.
 - The Wrangler config (`wrangler.toml` or `wrangler.jsonc`) and binding IDs are tracked in `cloudflare-worker/`. KV namespace IDs are listed in `cloudflare-worker/README.md`.
 - **Per-account state (post-`/settings` migration)**: game data is account-bound, not device-bound. KV keys owned per-user:
-  - `settings:{userId}` — JSON blob with `{volume, touchscreenMode, fontSize, keyboardLayout, roleMode, testerShowTouchboxes, theme}`. Whitelisted server-side.
+  - `settings:{userId}` — JSON blob with `{volume, fontSize, keyboardLayout, roleMode, testerShowTouchboxes, theme}`. Whitelisted server-side.
   - `recent_fonts:{userId}` — JSON array (capped at 20 server-side).
   - `global_bans` — single shared JSON blob (admin-only via `resolveAdminUser`).
   - Plus the pre-existing `level_progress:{userId}`, `flag:{userId}:{name}`, and `user:{userId}`.
@@ -134,7 +135,7 @@ RLE encoding: `0xFF, count, byte` for runs ≥4 identical bytes; `0xFF, 0x00` to
 ## Conventions & Patterns
 
 - **Performance**: the engine aggressively caches — `SpatialHash` uses integer stamps instead of `Set`, `WorldObject` caches pre-tinted offscreen canvases for SVG sprites, particle rendering batches by color/alpha into single `fill()` calls.
-- **Touch input** is synthesized into mouse events in `GameEngine` (`onTouchStart/Move/End`).
+- **Device-specific UI** is selected by `ParkoreenDevice` in `runtime.js`; mobile/tablet devices show virtual controls, while computers use keyboard and pointer UI. `GameEngine` synthesizes touch events into mouse events, and touch controls are not an account preference.
 - **Save/load safety**: `host.html` tracks `mapLoadedSuccessfully` and refuses to auto-save corrupt maps (shows a "Save Corrupted" popup with "Force Enter" option to override).
 - **Auto-save**: 30s interval + 2s debounce on editor change + `beforeunload` keepalive fetch (so saves survive tab close/reload).
 - **Keyboard layouts**: two supported — `JimmyQrg` (default) and `hk` (Hollow Knight — `Z` jump, `X` attack, `A` heal, `C` dash, `S` super-dash). Selected in Settings.
@@ -152,5 +153,5 @@ RLE encoding: `0xFF, count, byte` for runs ≥4 identical bytes; `0xFF, 0x00` to
 - **`action` → `event` rename** in code plugin data: legacy maps with `codeData.actions` are auto-migrated to `codeData.events` on `World.fromJSON`. New code should use `events`.
 - **`parkoreen_` prefix** is used for all `localStorage` keys (volume, user, token, level progress, recent fonts, etc.). Use this prefix for any new localStorage entries.
 - **`API_URL`** in `runtime.js` is hardcoded to `https://parkoreen.ikunbeautiful.workers.dev`. Don't introduce new URLs without coordinating with deployment.
-- **Service worker cache name must bump on frontend changes**: `CACHE_NAME` in `sw.js` is the cache key for the PWA. Bump the suffix (`parkoreen-vN` → `parkoreen-v{N+1}`) whenever `runtime.js`, `style.js`, `assets/js/game.js`, `assets/js/editor.js`, or any plugin is changed, otherwise users on stale installs won't see the update.
+- **Service worker cache name must bump on frontend changes**: `CACHE_NAME` in `sw.js` is the cache key for the PWA. Bump the suffix (`parkoreen-vN` → `parkoreen-v{N+1}`) whenever frontend or plugin assets change, otherwise users on stale installs may not see the update. Keep the version reported above synchronized.
 - **`activate-minimax.sh` at the repo root contains a hardcoded API token** (committed to git history). If you find yourself editing or referencing it, do not paste the token anywhere. Suggest to the user that they rotate it and either gitignore the file or move the token to an env var.

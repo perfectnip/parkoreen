@@ -1,5 +1,6 @@
 {
     "id": "hp",
+    "apiVersion": 1,
     "cover": "cover.png",
     "scripts": {
         "globals": "js/globals.js",
@@ -7,7 +8,7 @@
         "editorUi": "js/editor-ui.js"
     },
     "name": "HP (Health Points)",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "description": "Adds a health system to the game. Players start with configurable HP. Touching spikes removes 1 HP and teleports player to the last safe ground they stood on.",
     "author": "Parkoreen",
     "icon": "❤️",

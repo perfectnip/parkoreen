@@ -1,0 +1,3 @@
+# Wrangler state and local credentials must stay out of source control.
+.wrangler/
+.dev.vars*

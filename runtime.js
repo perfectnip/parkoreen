@@ -13,6 +13,69 @@ const API_TIMEOUT = 10000; // 10 seconds timeout
 // KV namespaces are now configured!
 const USE_LOCAL_MODE = false;
 
+// Device presentation is detected from input capabilities and mobile/tablet
+// user agents. This intentionally stays out of account settings.
+const ParkoreenDevice = (() => {
+    const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+    let activeInputMode = null;
+    let lastReportedMobile = null;
+
+    function hasTouch() {
+        return (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    }
+
+    function isMobile() {
+        if (activeInputMode === 'touch') return true;
+        if (activeInputMode === 'pointer' || activeInputMode === 'keyboard') return false;
+        const ua = navigator.userAgent || '';
+        const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches || false;
+        const noHover = window.matchMedia?.('(hover: none)').matches || false;
+        // iPadOS can use a desktop-style Macintosh UA. Multiple touch points
+        // on that platform distinguish it from an ordinary Mac laptop.
+        const ipadOS = navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+        return mobileUserAgent.test(ua) || ipadOS || (hasTouch() && (coarsePointer || noHover));
+    }
+
+    function apply() {
+        const mobile = isMobile();
+        document.body?.classList.toggle('device-mobile', mobile);
+        document.body?.classList.toggle('device-desktop', !mobile);
+        if (lastReportedMobile === mobile) return;
+        lastReportedMobile = mobile;
+        window.dispatchEvent(new CustomEvent('parkoreen-device-change', {
+            detail: { isMobile: mobile, hasTouch: hasTouch() }
+        }));
+    }
+
+    // Hybrid devices (touch laptops, tablets with a mouse) can change their
+    // preferred layout as the player changes input. Keep capability detection
+    // as the startup fallback, then follow the most recent real pointer type.
+    window.addEventListener('pointerdown', event => {
+        if (event.pointerType === 'touch') activeInputMode = 'touch';
+        else if (event.pointerType === 'mouse' || event.pointerType === 'pen') activeInputMode = 'pointer';
+        else return;
+        apply();
+    }, { capture: true, passive: true });
+    window.addEventListener('keydown', event => {
+        if (event.isComposing || event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+        activeInputMode = 'keyboard';
+        apply();
+    }, { capture: true });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', apply, { once: true });
+    } else {
+        apply();
+    }
+    window.addEventListener('resize', apply, { passive: true });
+    window.addEventListener('orientationchange', apply, { passive: true });
+    window.matchMedia?.('(pointer: coarse)').addEventListener?.('change', apply);
+    window.matchMedia?.('(hover: none)').addEventListener?.('change', apply);
+
+    return { isMobile, hasTouch };
+})();
+window.ParkoreenDevice = ParkoreenDevice;
+
 // ============================================
 // FETCH WITH TIMEOUT
 // ============================================
@@ -623,12 +686,24 @@ class MultiplayerManager {
         this.roomCode = null;
         this.isHost = false;
         this.isAuthenticated = false;
+        this.playerId = null;
         this.players = new Map();
         this.callbacks = {};
+        this.mechanicsState = null;
+        this.mechanicsRevision = 0;
+        this.mechanicsServerTimestamp = null;
     }
 
     on(event, callback) {
+        if (typeof callback !== 'function') return () => {};
         this.callbacks[event] = callback;
+        return () => {
+            if (this.callbacks[event] === callback) delete this.callbacks[event];
+        };
+    }
+
+    off(event, callback) {
+        if (this.callbacks[event] === callback) delete this.callbacks[event];
     }
 
     emit(event, data) {
@@ -699,32 +774,66 @@ class MultiplayerManager {
             this.ws = null;
         }
         this.roomCode = null;
+        window.parkoreenRoomMapId = null;
         this.isHost = false;
         this.isAuthenticated = false;
+        this.playerId = null;
         this.players.clear();
+        this.mechanicsState = null;
+        this.mechanicsRevision = 0;
+        this.mechanicsServerTimestamp = null;
     }
 
     send(data) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(data));
+            return true;
         }
+        return false;
+    }
+
+    acceptMechanicsState(state, revision, serverTimestamp = null) {
+        if (!Number.isInteger(revision) || revision < 1 || revision <= this.mechanicsRevision ||
+            !state || typeof state !== 'object' || Array.isArray(state)) return;
+        this.mechanicsRevision = revision;
+        this.mechanicsState = state;
+        this.mechanicsServerTimestamp = Number.isSafeInteger(serverTimestamp) ? serverTimestamp : null;
+        this.emit('mechanicsState', { revision, state, serverTimestamp: this.mechanicsServerTimestamp });
     }
 
     handleMessage(data) {
         switch (data.type) {
             case 'auth_success':
+                this.playerId = typeof data.playerId === 'string' ? data.playerId : null;
+                if (window.engine?.localPlayer && this.playerId) window.engine.localPlayer.id = this.playerId;
                 this.emit('authenticated');
                 break;
                 
             case 'room_created':
                 this.roomCode = data.roomCode;
                 this.isHost = true;
+                this.mechanicsState = null;
+                this.mechanicsRevision = 0;
+                this.mechanicsServerTimestamp = null;
+                if (window.engine?.localPlayer) {
+                    if (this.playerId) window.engine.localPlayer.id = this.playerId;
+                    window.engine.localPlayer.isHost = true;
+                }
                 this.emit('roomCreated', data);
                 break;
                 
             case 'room_joined':
                 this.roomCode = data.roomCode;
                 this.isHost = false;
+                window.parkoreenRoomMapId = typeof data.mapId === 'string' && data.mapId ? data.mapId : null;
+                this.mechanicsState = null;
+                this.mechanicsRevision = 0;
+                this.mechanicsServerTimestamp = null;
+                this.acceptMechanicsState(data.mechanicsState, data.mechanicsRevision, data.mechanicsServerTimestamp);
+                if (window.engine?.localPlayer) {
+                    if (this.playerId) window.engine.localPlayer.id = this.playerId;
+                    window.engine.localPlayer.isHost = false;
+                }
                 if (data.players) {
                     data.players.forEach(p => {
                         this.players.set(p.id, { id: p.id, name: p.name, username: p.username, color: p.color });
@@ -736,6 +845,15 @@ class MultiplayerManager {
             case 'room_rejoined':
                 this.roomCode = data.roomCode;
                 this.isHost = data.isHost || false;
+                window.parkoreenRoomMapId = typeof data.mapId === 'string' && data.mapId ? data.mapId : null;
+                this.mechanicsState = null;
+                this.mechanicsRevision = 0;
+                this.mechanicsServerTimestamp = null;
+                this.acceptMechanicsState(data.mechanicsState, data.mechanicsRevision, data.mechanicsServerTimestamp);
+                if (window.engine?.localPlayer) {
+                    if (this.playerId) window.engine.localPlayer.id = this.playerId;
+                    window.engine.localPlayer.isHost = this.isHost;
+                }
                 // Add existing players
                 if (data.players) {
                     data.players.forEach(p => {
@@ -768,16 +886,46 @@ class MultiplayerManager {
             case 'player_position':
                 this.emit('playerPosition', data);
                 break;
+
+            case 'mechanics_state':
+                this.acceptMechanicsState(data.state, data.revision);
+                break;
+
+            case 'mechanics_event_request':
+                this.emit('mechanicsEventRequest', data);
+                break;
+
+            case 'global_coin_collected':
+                this.emit('globalCoinCollected', data);
+                break;
+
+            case 'global_coin_collection_rejected':
+                this.emit('globalCoinCollectionRejected', data);
+                break;
             
             case 'position_ack':
                 this.emit('positionAck', data);
                 break;
                 
             case 'player_kicked':
+                this.roomCode = null;
+                window.parkoreenRoomMapId = null;
+                this.isHost = false;
+                if (window.engine?.localPlayer) window.engine.localPlayer.isHost = null;
+                this.mechanicsState = null;
+                this.mechanicsRevision = 0;
+                this.mechanicsServerTimestamp = null;
                 this.emit('kicked', data);
                 break;
                 
             case 'room_closed':
+                this.roomCode = null;
+                window.parkoreenRoomMapId = null;
+                this.isHost = false;
+                if (window.engine?.localPlayer) window.engine.localPlayer.isHost = null;
+                this.mechanicsState = null;
+                this.mechanicsRevision = 0;
+                this.mechanicsServerTimestamp = null;
                 this.emit('roomClosed', data);
                 break;
                 
@@ -863,8 +1011,52 @@ class MultiplayerManager {
     leaveRoom() {
         this.send({ type: 'leave_room' });
         this.roomCode = null;
+        window.parkoreenRoomMapId = null;
         this.isHost = false;
+        if (window.engine?.localPlayer) window.engine.localPlayer.isHost = null;
+        this.mechanicsState = null;
+        this.mechanicsRevision = 0;
+        this.mechanicsServerTimestamp = null;
         this.players.clear();
+    }
+
+    sendMechanicsState(state) {
+        if (!this.roomCode || !this.isHost) return false;
+        return this.send({ type: 'mechanics_state', state });
+    }
+
+    requestMechanicsEvent(triggerId, eventId, touchedPlayerId = null, triggerEvidence = null) {
+        if (!this.roomCode || this.isHost) return false;
+        const player = window.engine?.localPlayer;
+        if (player && Number.isFinite(player.x) && Number.isFinite(player.y)) {
+            const jumps = Number.isSafeInteger(player.jumpsRemaining) && player.jumpsRemaining >= 0
+                ? player.jumpsRemaining
+                : 1;
+            // Send the current contact position before the event request so
+            // the room worker can verify zone and object overlap conditions.
+            this.sendPosition(player.x, player.y, player.vx, player.vy, jumps);
+        }
+        return this.send({
+            type: 'mechanics_event_request',
+            triggerId,
+            eventId,
+            choiceParentEventId: typeof triggerEvidence?.choiceParentEventId === 'string'
+                ? triggerEvidence.choiceParentEventId : null,
+            touchedPlayerId: typeof touchedPlayerId === 'string' ? touchedPlayerId : null,
+            inputKeys: Array.isArray(triggerEvidence?.inputKeys) ? triggerEvidence.inputKeys : undefined
+        });
+    }
+
+    requestGlobalCoinCollection(coinId) {
+        if (!this.roomCode || typeof coinId !== 'string' || !coinId) return false;
+        const player = window.engine?.localPlayer;
+        if (player && Number.isFinite(player.x) && Number.isFinite(player.y)) {
+            const jumps = Number.isSafeInteger(player.jumpsRemaining) && player.jumpsRemaining >= 0
+                ? player.jumpsRemaining
+                : 1;
+            this.sendPosition(player.x, player.y, player.vx, player.vy, jumps);
+        }
+        return this.send({ type: 'global_coin_collect_request', coinId });
     }
 
     sendPosition(x, y, vx = 0, vy = 0, jumps = 1) {
@@ -1328,7 +1520,6 @@ class SettingsManager {
     constructor() {
         this.defaults = {
             volume: 100,
-            touchscreenMode: false,
             fontSize: 100, // percentage (50-150)
             keyboardLayout: 'jimmyqrg',
             roleMode: 'normal',
@@ -1354,6 +1545,7 @@ class SettingsManager {
         if (saved) {
             try {
                 this.settings = { ...this.defaults, ...JSON.parse(saved) };
+                delete this.settings.touchscreenMode;
             } catch (e) {
                 this.settings = { ...this.defaults };
             }
@@ -1387,6 +1579,7 @@ class SettingsManager {
             const data = await res.json();
             if (data.settings && typeof data.settings === 'object') {
                 this.settings = { ...this.defaults, ...this.settings, ...data.settings };
+                delete this.settings.touchscreenMode;
                 this._saveLocal();
                 this.applyFontSize();
             } else {
@@ -1598,6 +1791,97 @@ function createFooter() {
 console.log('[Runtime] Initializing global instances...');
 window.API_URL = API_URL;
 window.Auth = new AuthManager();
+
+// Small local save store shared by the game and built-in mechanics runtime.
+// Saves are scoped to the current map and account (or browser device when
+// playing without an account); they are not uploaded or synced between devices.
+window.ParkoreenLocalSave = (() => {
+    const deviceIdKey = 'parkoreen_local_save_device_id';
+
+    const createId = () => {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    };
+
+    const getMapId = (world) => {
+        const roomMapId = window.parkoreenRoomMapId;
+        if (typeof roomMapId === 'string' && roomMapId.trim()) return roomMapId.trim();
+        // Solo scene transitions keep the editor page mounted. Scope local
+        // saves to the scene currently loaded into the engine, not the map
+        // that originally opened the editor page.
+        const activeSceneMapId = window.parkoreenActiveSceneMapId;
+        if (typeof activeSceneMapId === 'string' && activeSceneMapId.trim()) return activeSceneMapId.trim();
+        const cloudMapId = window.parkoreenEditorMapId;
+        if (typeof cloudMapId === 'string' && cloudMapId.trim()) return cloudMapId.trim();
+        return typeof world?.mechanicsSaveId === 'string' && world.mechanicsSaveId.trim()
+            ? world.mechanicsSaveId.trim()
+            : null;
+    };
+
+    const getUserId = () => {
+        const user = window.Auth?.getUser?.();
+        if (user?.id !== undefined && user?.id !== null && String(user.id).trim()) {
+            return `account:${String(user.id).trim()}`;
+        }
+        try {
+            let deviceId = localStorage.getItem(deviceIdKey);
+            if (!deviceId) {
+                deviceId = createId();
+                localStorage.setItem(deviceIdKey, deviceId);
+            }
+            return `device:${deviceId}`;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const getKey = (world, namespace) => {
+        if (typeof namespace !== 'string' || !/^[a-z0-9_-]{1,32}$/i.test(namespace)) return null;
+        const mapId = getMapId(world);
+        const userId = getUserId();
+        if (!mapId || !userId) return null;
+        return `parkoreen_local_save_v1:${encodeURIComponent(mapId)}:${encodeURIComponent(userId)}:${namespace}`;
+    };
+
+    const read = (world, namespace) => {
+        const key = getKey(world, namespace);
+        if (!key) return null;
+        try {
+            const serialized = localStorage.getItem(key) || 'null';
+            if (serialized.length > 1048576) return null;
+            const value = JSON.parse(serialized);
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const write = (world, namespace, value) => {
+        const key = getKey(world, namespace);
+        if (!key || !value || typeof value !== 'object' || Array.isArray(value)) return false;
+        try {
+            const serialized = JSON.stringify(value);
+            if (serialized.length > 1048576) return false;
+            localStorage.setItem(key, serialized);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    const remove = (world, namespace) => {
+        const key = getKey(world, namespace);
+        if (!key) return false;
+        try {
+            localStorage.removeItem(key);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    };
+
+    return { getKey, read, write, remove };
+})();
 window.MapManager = new MapManager(window.Auth);
 window.MultiplayerManager = new MultiplayerManager(window.Auth);
 window.Settings = new SettingsManager();

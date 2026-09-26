@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Editor — Current — Parkoreen Wiki</title>
+  <title>Editor — Current — Parkoreen Guide</title>
   <link rel="stylesheet" href="../../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -11,7 +11,7 @@
   <div class="topbar">
     <a class="topbar-logo" href="../../../">Parkoreen</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-logo topbar-wiki" href="../../">Wiki</a>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
     <span class="topbar-sep">/</span>
     <a class="topbar-crumb" href="..">Current</a>
     <span class="topbar-sep">/</span>
@@ -30,6 +30,9 @@
     <h2>Grid &amp; snapping</h2>
     <p>All objects snap to a <strong>32×32 px grid</strong>. Grid lines are visible on the canvas in edit mode.</p>
 
+    <h2>Object layers</h2>
+    <p>Open <strong>Layers</strong> to manage named draw layers and assign visual objects to them. The built-in depths remain compatible with existing maps: <code>0</code> behind the player, <code>1</code> at player depth (drawn just below the player), and <code>2</code> above the player. Use the add buttons to create custom layers on either side of the player, then rename or remove them. Custom layers can set separate horizontal and vertical parallax factors from <code>0</code> to <code>2</code>; lower values move scenery more slowly than the camera, and <code>1</code> keeps normal camera movement. The editor keeps all layers aligned for precise placement; parallax is applied during Play and Test. Zones and buttons remain visible overlays. Draw layers do not change collision. Layer names, parallax settings, and object assignments survive map save/load and <code>.pkrn</code> export/import.</p>
+
     <h2>Toolbar buttons</h2>
     <table class="wiki-table">
       <thead><tr><th>Button</th><th>Purpose</th></tr></thead>
@@ -40,6 +43,9 @@
         <tr><td>▶ <strong>Test Game</strong></td><td>Enters tester mode</td></tr>
       </tbody>
     </table>
+
+    <p>If a Mechanics action or Python event fails during <strong>Test Game</strong>, Parkoreen shows a brief error notice with the Event, action, and message. Recent failures remain in the Mechanics dashboard after testing; select an error to reopen its Event. Repeated copies of the same failure are rate-limited so a broken repeating flow does not flood the screen. See the <a href="../mechanics/">Mechanics guide</a> for trigger types, Event flows, variables, templates, and hosted-room behavior.</p>
+    <p>If a map contains a trigger or action type from a newer Parkoreen version, an older editor keeps the trigger configuration and linked Event, or the action and its saved fields, while you edit the map. Unknown variable and List item value types also remain intact when you make other edits. You can remove or replace an unsupported record explicitly. An older runtime cannot execute unknown mechanic types; it records an author-facing error until the map is opened in a version that supports them or they are replaced.</p>
 
     <h2>Editor tools</h2>
     <table class="wiki-table">
@@ -60,18 +66,32 @@
     <ul>
       <li>A combined <strong>Object Config</strong> panel shows shared properties (e.g. color if all selected objects share a color, opacity, spin direction for saw blades, etc.).</li>
       <li>The <strong>Rotate</strong>, <strong>Duplicate</strong>, <strong>Erase</strong>, and <strong>Move</strong> actions apply to the whole selection.</li>
+      <li>Use <strong>Save Stamp</strong> to store the selected objects as a reusable Object Stamp for this map.</li>
       <li>Click an empty area to deselect.</li>
     </ul>
+
+    <h2>Object Stamps</h2>
+    <p>Object Stamps save a group of up to 64 selected map objects. Choose <strong>Add → Object Stamp</strong>, pick a saved stamp, then click the map to place a copy. Each placed object receives a new ID, and portal connections between portals in the copied group are remapped together. A map can store up to 32 stamps; stamps stay with that map and survive save/load and <code>.pkrn</code> export/import. Use <strong>Export</strong> to download one stamp as a portable <code>.pkrstamp</code> file, then choose <strong>Import</strong> in another map's stamp picker to reuse it. Version 1 files contain data only, hold at most 64 objects, and are limited to 2 MiB; malformed object data is rejected. The format is described by the <a href="../../../assets/object-stamp.schema.json">Object Stamp schema</a>. Import renames a stamp when its name already exists in the map. Mechanics blocks and links to objects outside the copied group are not included.</p>
+    <p>A stamp copies object settings and layout. It does not copy mechanics triggers or events, or references in mechanics that target the original objects by ID.</p>
+
+    <h2>Animated object artwork</h2>
+    <p>Open an object’s settings and add a PNG, JPEG, or WebP sprite sheet (up to 1 MB per image). Set the frame width and height, number of frames, and playback speed. Frames are read left to right and then top to bottom; the image replaces the object’s artwork while its collision and mechanics behavior stay in place. Objects moved by Mechanics face left or right based on their current horizontal movement. Sprite sheets are saved with the map, packaged as media files in <code>.pkrn</code> exports, and included in portable Object Stamps. Map objects support up to 256 frames at 1–30 FPS, with 8 MiB total sprite data per map.</p>
+
+    <h2>Tilemap Brush</h2>
+    <p>Choose <strong>Add → Tilemap Brush</strong> to paint 32×32 px cells. Pick a draw layer, surface texture, color, opacity, cell behavior, and collision shape. For solid or one-way cells you can choose a validated convex polygon with 3–12 normalized vertices; one-way cells can use a top-surface polygon, while solid cells can use one-way or fully solid polygon collision. Tile artwork remains independent from collision geometry. Enable <strong>Show Touchboxes</strong> during Test to inspect the polygon boundary. Choose a cell behavior: <strong>Solid</strong>, <strong>One-way platform</strong>, <strong>Ramp rising to the right</strong>, <strong>Ramp rising to the left</strong>, <strong>Damage on touch</strong>, or <strong>Decorative</strong>. Built-in surfaces include solid fill, brick, stone, wood, and moss; the tint and opacity controls apply to textured cells too. To use custom art, upload a PNG, JPEG, or WebP tile atlas up to 1 MiB, set its frame dimensions, choose a zero-based frame in row-major order, then paint. Each frame is scaled to a 32×32 cell; collision stays controlled by the cell behavior. Atlas image data is limited to 8 MiB and 32 megapixels across a map; use <strong>Clear atlas</strong> to return a layer to its built-in textures. Atlas data is saved with maps and `.pkrn` media files. <strong>Texture cycle</strong> animates two to eight built-in surface texture frames, while <strong>Atlas frame cycle</strong> animates two to eight selected atlas frames, each at 1–12 frames per second. Animated cells keep the same collision behavior and are limited to 2,048 per map. One-way cells have a gold top cue, ramps show their slope, and damage cells show a warning mark. Drag to paint a stroke; use the Erase tool to remove tilemap cells. Cells are stored as compact tilemap data instead of separate map objects. Tilemaps and animation settings are included in save/load and <code>.pkrn</code> import/export.</p>
+    <p>Mechanics can use <strong>Player Touches Tilemap</strong> to run an event when a player enters collidable cells on a selected tilemap, optionally filtered to solid, one-way (including either ramp), or damage cells. The <strong>Set Tilemap Cell Behavior</strong> event action changes a fixed cell or the cell touched by the event to solid, one-way, either ramp direction, damage, or decorative for the current play session; reset restores the authored map. Large-map streaming remains future work.</p>
 
     <h2>Placement modes</h2>
     <table class="wiki-table">
       <thead><tr><th>Mode</th><th>Objects available</th></tr></thead>
       <tbody>
         <tr><td><strong>Block</strong></td><td>Solid ground blocks</td></tr>
+        <tr><td><strong>Tilemap Brush</strong></td><td>Paint solid, one-way, left- or right-rising ramp, damage, or decorative 32×32 px cells on a selected draw layer</td></tr>
         <tr><td><strong>Obstacle</strong></td><td>Spikes, Saw blades</td></tr>
         <tr><td><strong>Game Item / Koreen</strong></td><td>Checkpoints, Zones, Teleportals, Coins, Bouncers, Buttons</td></tr>
         <tr><td><strong>Text</strong></td><td>In-world text labels</td></tr>
         <tr><td><strong>Spawn / End</strong></td><td>Spawn point, End goal</td></tr>
+        <tr><td><strong>Object Stamp</strong></td><td>Place a saved group of map objects</td></tr>
       </tbody>
     </table>
 

@@ -1,5 +1,6 @@
 {
     "id": "hk",
+    "apiVersion": 1,
     "cover": "cover.png",
     "worldObjectGuards": [
         { "actingType": "soulStatus", "section": "Map", "name": "Soul Status" },
@@ -11,7 +12,7 @@
         "showSoulStatueOnKoreen": true
     },
     "name": "Hollow Knight",
-    "version": "1.0.0",
+    "version": "1.0.36",
     "description": "Adds Hollow Knight-style mechanics: Soul system, nail attacks, Monarch Wings (double jump), Mantis Claw (wall cling & wall jump), Mothwing Cloak (dash), Crystal Heart (super dash), and Focus healing.",
     "author": "Parkoreen",
     "color": "#667eea",
@@ -20,8 +21,7 @@
     "scripts": {
         "globals": "js/globals.js",
         "inject": "js/inject.js",
-        "script": "js/script.js",
-        "editorUi": "js/editor-ui.js"
+        "script": "js/script.js"
     },
     "sounds": {
         "dash": "mp3/dash.mp3",
@@ -46,22 +46,6 @@
             "min": 0.1,
             "max": 2
         },
-        "defaultCameraLerpX": {
-            "type": "number",
-            "label": "Camera Horizontal",
-            "description": "Horizontal camera smoothness (lower = smoother)",
-            "default": 0.04,
-            "min": 0.02,
-            "max": 0.5
-        },
-        "defaultCameraLerpY": {
-            "type": "number",
-            "label": "Camera Vertical",
-            "description": "Vertical camera smoothness (lower = smoother)",
-            "default": 0.15,
-            "min": 0.02,
-            "max": 0.5
-        },
         "maxSoul": {
             "type": "number",
             "label": "Max Soul",
@@ -69,6 +53,14 @@
             "default": 99,
             "min": 33,
             "max": 198
+        },
+        "pogoBouncePower": {
+            "type": "number",
+            "label": "Pogo Bounce Strength",
+            "description": "Upward strength after a downward nail hit, relative to normal jump force.",
+            "default": 1.2,
+            "min": 0.5,
+            "max": 2
         },
         "monarchWing": {
             "type": "boolean",
@@ -82,6 +74,15 @@
             "default": 1,
             "min": 1,
             "max": 99,
+            "showIf": "monarchWing"
+        },
+        "monarchWingJumpPower": {
+            "type": "number",
+            "label": "Monarch Wing Jump Strength",
+            "description": "Double-jump upward force as a fraction of the map's normal jump force.",
+            "default": 0.85,
+            "min": 0.5,
+            "max": 2,
             "showIf": "monarchWing"
         },
         "dash": {
@@ -111,6 +112,76 @@
                 { "value": "base", "label": "Base (0.41s)" },
                 { "value": "quickSlash", "label": "Quick Slash (0.25s)" }
             ]
+        },
+        "slashEffects": {
+            "type": "boolean",
+            "label": "Nail Slash Effects",
+            "description": "Draw the animated slash arc during attacks.",
+            "default": true
+        },
+        "impactEffects": {
+            "type": "boolean",
+            "label": "Impact and Landing Effects",
+            "description": "Draw nail-hit sparks, damage flashes, landing dust, and Soul motes released by Soul Statues.",
+            "default": true
+        },
+        "cameraShakeEffects": {
+            "type": "boolean",
+            "label": "Camera Impact Effects",
+            "description": "Add a short camera shake for nail hits, landings, and Super Dash wall impacts.",
+            "default": true
+        },
+        "impactShakeIntensity": {
+            "type": "number",
+            "label": "Hit Shake Strength",
+            "description": "Maximum screen-pixel shake for nail hits and Super Dash wall impacts. Set to 0 to disable hit shake.",
+            "default": 7,
+            "min": 0,
+            "max": 18
+        },
+        "landingShakeIntensity": {
+            "type": "number",
+            "label": "Landing Shake Strength",
+            "description": "Maximum screen-pixel shake for landings. Set to 0 for softer landings.",
+            "default": 2,
+            "min": 0,
+            "max": 8
+        },
+        "dashTrailEffects": {
+            "type": "boolean",
+            "label": "Dash Trails",
+            "description": "Draw afterimages while dashing and super dashing.",
+            "default": true
+        },
+        "abilityAuraEffects": {
+            "type": "boolean",
+            "label": "Charge and Focus Auras",
+            "description": "Draw progress auras while charging Super Dash and healing.",
+            "default": true
+        },
+        "nailEffectColor": {
+            "type": "string",
+            "label": "Nail Effect Color",
+            "description": "Hex color used by slash and nail impact effects.",
+            "default": "#e9fbff"
+        },
+        "dashEffectColor": {
+            "type": "string",
+            "label": "Dash Trail Color",
+            "description": "Hex color used by dash afterimages.",
+            "default": "#9cecff"
+        },
+        "chargeEffectColor": {
+            "type": "string",
+            "label": "Super Dash Charge Color",
+            "description": "Hex color used by the Super Dash charge aura.",
+            "default": "#9cecff"
+        },
+        "healEffectColor": {
+            "type": "string",
+            "label": "Focus Aura Color",
+            "description": "Hex color used by the Focus healing aura.",
+            "default": "#79f2cf"
         }
     },
     "controls": {

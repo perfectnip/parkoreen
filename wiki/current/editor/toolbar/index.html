@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Placement Toolbar — Current — Parkoreen Wiki</title>
+  <title>Placement Toolbar — Current — Parkoreen Guide</title>
   <link rel="stylesheet" href="../../../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -11,7 +11,7 @@
   <div class="topbar">
     <a class="topbar-logo" href="../../../../">Parkoreen</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-logo topbar-wiki" href="../../../">Wiki</a>
+    <a class="topbar-logo topbar-wiki" href="../../../">Guide</a>
     <span class="topbar-sep">/</span>
     <a class="topbar-crumb" href="../..">Current</a>
     <span class="topbar-sep">/</span>
@@ -34,7 +34,7 @@
       <li><span class="opt-name">Color</span><span class="opt-default">#787878</span><span class="opt-desc">Fill color of the block.</span></li>
       <li><span class="opt-name">Texture</span><span class="opt-default">none</span><span class="opt-desc">Optional visual texture overlay: <code>none</code>, <code>solid</code>, <code>brick</code>.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
       <li><span class="opt-name">Collision</span><span class="opt-default">On</span><span class="opt-desc">Toggle collision.</span></li>
     </ul>
 
@@ -42,7 +42,7 @@
     <ul class="option-list">
       <li><span class="opt-name">Color</span><span class="opt-default">#c45a3f</span><span class="opt-desc">Spike fill color.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Obstacle — Saw Blade</h2>
@@ -51,13 +51,13 @@
       <li><span class="opt-name">Spin Speed</span><span class="opt-default">2</span><span class="opt-desc">Rotational speed in degrees per tick.</span></li>
       <li><span class="opt-name">Spin Direction</span><span class="opt-default">Clockwise</span><span class="opt-desc"><code>Clockwise</code> (1) or <code>Counter-clockwise</code> (-1).</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Game Item — Checkpoint</h2>
     <ul class="option-list">
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Game Item — Zone</h2>
@@ -80,7 +80,7 @@
       <li><span class="opt-name">Coin Amount</span><span class="opt-default">1</span><span class="opt-desc">How many coins this pickup awards.</span></li>
       <li><span class="opt-name">Coin Activity Scope</span><span class="opt-default">global</span><span class="opt-desc"><code>global</code> — collected once for everyone. <code>player</code> — each player collects independently.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Game Item — Bouncer</h2>
@@ -89,7 +89,7 @@
       <li><span class="opt-name">Bouncer Direction</span><span class="opt-default">0° (up)</span><span class="opt-desc">Launch angle: <code>0</code> = up, <code>90</code> = right, <code>180</code> = down, <code>270</code> = left.</span></li>
       <li><span class="opt-name">Color</span><span class="opt-default">#461A0C</span><span class="opt-desc">Bouncer pad color.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Game Item — Button</h2>
@@ -100,7 +100,7 @@
       <li><span class="opt-name">Display Description</span><span class="opt-default">(empty)</span><span class="opt-desc">Tooltip description shown when hovering the button.</span></li>
       <li><span class="opt-name">Color</span><span class="opt-default">auto</span><span class="opt-desc">Button body color.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Text</h2>
@@ -114,13 +114,13 @@
       <li><span class="opt-name">Horizontal Spacing</span><span class="opt-default">0</span><span class="opt-desc">Extra letter spacing in pixels.</span></li>
       <li><span class="opt-name">Vertical Spacing</span><span class="opt-default">0</span><span class="opt-desc">Extra line spacing in pixels.</span></li>
       <li><span class="opt-name">Opacity</span><span class="opt-default">100%</span><span class="opt-desc">Transparency 0–100.</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
 
     <h2>Spawn / End</h2>
     <ul class="option-list">
       <li><span class="opt-name">Type</span><span class="opt-default">—</span><span class="opt-desc">Spawn point (player start) or End point (level goal).</span></li>
-      <li><span class="opt-name">Layer</span><span class="opt-default">0</span><span class="opt-desc">Draw order.</span></li>
+      <li><span class="opt-name">Layer</span><span class="opt-default">1</span><span class="opt-desc"><code>0</code> behind the player, <code>1</code> at player depth, or <code>2</code> above the player.</span></li>
     </ul>
   </div>
   <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>

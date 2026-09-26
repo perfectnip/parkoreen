@@ -44,14 +44,6 @@
                 </div>
 
                 <div class="settings-row">
-                    <span class="settings-row-label">Touchscreen Mode</span>
-                    <label class="toggle">
-                        <input type="checkbox" id="touchscreen-toggle">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="settings-row">
                     <span class="settings-row-label">Controllable Jump</span>
                     <label class="toggle">
                         <input type="checkbox" id="controllable-jump-toggle">
@@ -191,7 +183,7 @@
         }
     </script>
 
-    <script src="/parkoreen/runtime.js?v=21"></script>
+    <script src="/parkoreen/runtime.js?v=27"></script>
     <script src="/parkoreen/assets/js/style.js?v=12"></script>
     <script src="/parkoreen/assets/js/spa-router.js"></script>
     
@@ -207,7 +199,6 @@
             var volumeNumber = document.getElementById('volume-number');
             var fontsizeRange = document.getElementById('fontsize-range');
             var fontsizeNumber = document.getElementById('fontsize-number');
-            var touchscreenToggle = document.getElementById('touchscreen-toggle');
 
             var savedVolume = Settings.get('volume');
             volumeRange.value = savedVolume;
@@ -217,7 +208,6 @@
             fontsizeRange.value = savedFontSize;
             fontsizeNumber.value = savedFontSize;
             
-            touchscreenToggle.checked = Settings.get('touchscreenMode');
             var controllableJumpToggle = document.getElementById('controllable-jump-toggle');
             controllableJumpToggle.checked = Settings.get('controllableJumpEnabled');
 
@@ -289,11 +279,6 @@
                 fontsizeRange.value = size;
                 fontsizeNumber.value = size;
                 Settings.set('fontSize', size);
-            };
-
-            // Touchscreen toggle
-            touchscreenToggle.onchange = function(e) {
-                Settings.set('touchscreenMode', e.target.checked);
             };
 
             // Controllable Jump toggle

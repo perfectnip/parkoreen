@@ -3,7 +3,7 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'parkoreen-v28';
+const CACHE_NAME = 'parkoreen-v217';
 const ASSETS_TO_CACHE = [
     '/parkoreen/',
     '/parkoreen/index.html',
@@ -19,6 +19,7 @@ const ASSETS_TO_CACHE = [
     '/parkoreen/signup/index.html',
     '/parkoreen/assets/css/style.css',
     '/parkoreen/assets/js/game.js',
+    '/parkoreen/assets/js/mechanicsData.js',
     '/parkoreen/assets/js/editor.js',
     '/parkoreen/assets/js/style.js',
     '/parkoreen/assets/js/exportImport.js',
@@ -29,6 +30,10 @@ const ASSETS_TO_CACHE = [
     '/parkoreen/assets/svg/spike-512x.svg',
     '/parkoreen/assets/svg/portal-64x.svg',
     '/parkoreen/assets/svg/portal-512x.svg',
+    '/parkoreen/assets/svg/block-brick-pattern.svg',
+    '/parkoreen/assets/svg/block-stone-pattern.svg',
+    '/parkoreen/assets/svg/block-wood-pattern.svg',
+    '/parkoreen/assets/svg/block-moss-pattern.svg',
     // Icons
     '/parkoreen/assets/png/icons/icon-play-32.png',
     '/parkoreen/assets/png/icons/icon-play-64.png',

@@ -1,5 +1,6 @@
 {
     "id": "cj",
+    "apiVersion": 1,
     "cover": "cover.png",
     "name": "Controllable Jump",
     "version": "1.0.0",

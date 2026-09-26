@@ -333,17 +333,19 @@
     
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="runtime.js?v=21"></script>
+    <script src="runtime.js?v=27"></script>
     <script src="assets/js/style.js?v=12"></script>
-    <script src="assets/js/plugins.js?v=1"></script>
-    <script src="assets/js/game.js?v=18"></script>
+    <script src="assets/js/plugins.js?v=16"></script>
+    <script src="assets/js/mechanicsData.js?v=6"></script>
+    <script src="assets/js/game.js?v=65"></script>
     <!-- Code plugin loader (scripts loaded before editor, see DOMContentLoaded) -->
-    <script src="assets/plugins/code/js/loader.js?v=1"></script>
-    <script src="assets/js/exportImport.js?v=12"></script>
+    <script src="assets/plugins/code/js/loader.js?v=16"></script>
+    <script src="assets/js/exportImport.js?v=27"></script>
     <script>
         // Global state
         let engine;
         let editor;
+        let sceneTransitionPromise = null;
         let currentMapId = null;
         let currentMode = 'edit'; // 'edit', 'host', 'play'
         let isHost = false;
@@ -373,6 +375,202 @@
             }
             return window.MapManager.getMap(mapId);
         }
+
+        window.ParkoreenTransitionToMap = async function(mapId) {
+            const id = typeof mapId === 'string' ? mapId.trim() : '';
+            if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error('Choose a valid destination map.');
+            if (sceneTransitionPromise) return sceneTransitionPromise;
+            const canResumeEndedRun = engine?.state === GameState.ENDED &&
+                [GameState.PLAYING, GameState.TESTING].includes(engine._endedFromState);
+            if (!engine || (![GameState.PLAYING, GameState.TESTING].includes(engine.state) && !canResumeEndedRun)) {
+                throw new Error('Transitions are available only during solo Play or Test.');
+            }
+            if (window.MultiplayerManager?.getRoomCode?.()) {
+                throw new Error('Map transitions are not available in multiplayer rooms yet.');
+            }
+            if (engine._sceneTransitionPending) return false;
+
+            sceneTransitionPromise = (async () => {
+                const transitionState = engine.state;
+                const resumeState = transitionState === GameState.ENDED ? engine._endedFromState : transitionState;
+                const testMode = resumeState === GameState.TESTING;
+                const player = engine.localPlayer;
+                if (!player) throw new Error('The local player is not ready to transition.');
+
+                const previousWorldData = engine.world.toJSON();
+                const previousMapName = engine.world.mapName;
+                const previousPlayerState = {
+                    x: player.x, y: player.y, vx: player.vx, vy: player.vy,
+                    isOnGround: player.isOnGround, canJump: player.canJump,
+                    isDead: player.isDead
+                };
+                const previousCheckpoint = engine.lastCheckpoint;
+                const previousCheckpointObject = engine._onCheckpointObj;
+                const previousCoinsCollected = engine.coinsCollected;
+                const previousEditorSceneSnapshot = engine.editorSceneSnapshot;
+                const previousSceneChanged = engine._testSceneChanged;
+                const previousEndedFromState = engine._endedFromState;
+                const previousActiveSceneMapId = window.parkoreenActiveSceneMapId ?? null;
+
+                engine._sceneTransitionPending = true;
+                player._mechanicsDialogueOpen = true;
+                loadingShow('Loading scene...');
+                let transitionSucceeded = false;
+                let sceneMutated = false;
+                try {
+                    const record = await fetchMapForEditor(id);
+                    if (engine.state !== transitionState) throw new Error('The play session ended before the destination loaded.');
+                    let mapData = record?.data;
+                    if (typeof mapData === 'string') {
+                        try { mapData = JSON.parse(mapData); }
+                        catch (_) { throw new Error('The destination map data is not valid JSON.'); }
+                    }
+                    if (!mapData || typeof mapData !== 'object' || Array.isArray(mapData)) {
+                        throw new Error('The destination map has no valid saved data.');
+                    }
+
+                    // Deserialize into a temporary world first so malformed maps never replace the live scene.
+                    const candidateWorld = new World();
+                    candidateWorld.fromJSON(mapData);
+                    const destinationData = candidateWorld.toJSON();
+                    candidateWorld.mapName = typeof record?.name === 'string' && record.name.trim()
+                        ? record.name.trim().slice(0, 120)
+                        : (candidateWorld.mapName || 'Untitled Map');
+
+                    if (!engine.editorSceneSnapshot) engine.editorSceneSnapshot = previousWorldData;
+                    engine._testSceneChanged = true;
+                    sceneMutated = true;
+                    if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+                    player._mechanicsDialogueOpen = true;
+                    window.parkoreenActiveSceneMapId = id;
+                    engine.world.fromJSON({ ...destinationData, mapName: candidateWorld.mapName });
+                    engine.world.resetMechanicsObjectStates();
+
+                    if (typeof Settings !== 'undefined' && Settings.get('controllableJumpEnabled') &&
+                        window.PluginManager && !engine.world.hasPlugin('cj')) {
+                        const enabled = await window.PluginManager.enablePlugin('cj', engine.world);
+                        if (enabled?.success && !engine.world.plugins.enabled.includes('cj')) {
+                            engine.world.plugins.enabled.push('cj');
+                        }
+                    }
+                    if (window.PluginManager) {
+                        const pluginsReady = window.PluginManager.initFromWorld(engine.world);
+                        player._mechanicsDialogueOpen = true;
+                        await pluginsReady;
+                        player._mechanicsDialogueOpen = true;
+                    }
+                    if (engine.state !== transitionState) throw new Error('The play session ended while the destination was loading.');
+
+                    engine.lastCheckpoint = null;
+                    engine._onCheckpointObj = null;
+                    engine.coinsCollected = 0;
+                    for (const object of engine.world.objects) {
+                        if (object.appearanceType === 'coin') object._collected = false;
+                        if (object.appearanceType === 'button') object._triggered = false;
+                        if (object.actingType === 'checkpoint') object.checkpointState = 'default';
+                    }
+
+                    let spawnX = 100;
+                    let spawnY = 100;
+                    const savedCheckpoint = !testMode ? engine.restoreSavedPlayerCheckpoint() : null;
+                    if (savedCheckpoint) {
+                        spawnX = savedCheckpoint.x + savedCheckpoint.width / 2 - player.width / 2;
+                        spawnY = savedCheckpoint.y - player.height;
+                    } else if (engine.world.spawnPoint) {
+                        spawnX = engine.world.spawnPoint.x + engine.world.spawnPoint.width / 2 - player.width / 2;
+                        spawnY = engine.world.spawnPoint.y - player.height;
+                    }
+                    player.x = spawnX;
+                    player.y = spawnY;
+                    player.vx = 0;
+                    player.vy = 0;
+                    player.isOnGround = false;
+                    player.canJump = true;
+                    player.isDead = false;
+                    player._mechanicsDialogueOpen = false;
+                    if (player.input && typeof player.input === 'object') {
+                        for (const key of Object.keys(player.input)) player.input[key] = false;
+                    }
+                    for (const key of Object.keys(engine.keys || {})) engine.keys[key] = false;
+
+                    if (engine.world.infiniteJumps) player.setMaxJumps(999, true);
+                    else player.setMaxJumps(engine.world.maxJumps, engine.world.additionalAirjump);
+                    engine.localPlayer = player;
+                    engine.camera.setZoomLimits(testMode ? 'test' : 'play');
+                    engine.camera.x = player.x - engine.camera.width / 2;
+                    engine.camera.y = player.y - engine.camera.height / 2;
+                    engine.regenerateClouds();
+                    engine.particles = [];
+                    engine._portalParticles = [];
+                    engine.world.buildTileCache();
+                    window.CodePluginRestoreMechanicsObjectStates?.(engine.world);
+                    engine.state = resumeState;
+                    WorldObject._editorMode = false;
+                    engine._endedFromState = null;
+                    window.PluginManager?.executeHook('player.init', { player, world: engine.world });
+                    window.PluginManager?.executeHook('game.sceneLoaded', {
+                        player,
+                        world: engine.world,
+                        mapId: id,
+                        previousMapName,
+                        mapName: engine.world.mapName
+                    });
+                    engine.updateCoinCounterUI();
+
+                    engine._pendingEndGameData = null;
+                    transitionSucceeded = true;
+                    return true;
+                } catch (error) {
+                    console.error('[Scene Transition] Failed:', error);
+                    if (engine.state !== transitionState && engine.state !== resumeState) {
+                        if (window.PluginManager) {
+                            try { await window.PluginManager.initFromWorld(engine.world); }
+                            catch (restoreError) { console.warn('[Scene Transition] Could not restore active map plugins:', restoreError); }
+                        }
+                        throw error;
+                    }
+                    if (!sceneMutated) throw error;
+                    if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+                    player._mechanicsDialogueOpen = true;
+                    engine.world.fromJSON(previousWorldData);
+                    engine.world.mapName = previousMapName;
+                    engine.localPlayer = player;
+                    Object.assign(player, previousPlayerState);
+                    engine.lastCheckpoint = previousCheckpoint;
+                    engine._onCheckpointObj = previousCheckpointObject;
+                    engine.coinsCollected = previousCoinsCollected;
+                    engine.editorSceneSnapshot = previousEditorSceneSnapshot;
+                    engine._testSceneChanged = previousSceneChanged;
+                    window.parkoreenActiveSceneMapId = previousActiveSceneMapId;
+                    engine.state = transitionState;
+                    engine._endedFromState = previousEndedFromState;
+                    WorldObject._editorMode = transitionState !== GameState.EDITOR;
+                    if (window.PluginManager) {
+                        try {
+                            const restorePlugins = window.PluginManager.initFromWorld(engine.world);
+                            player._mechanicsDialogueOpen = true;
+                            await restorePlugins;
+                        }
+                        catch (restoreError) { console.warn('[Scene Transition] Could not restore previous map plugins:', restoreError); }
+                    }
+                    engine.world.buildTileCache();
+                    engine.updateCoinCounterUI();
+                    throw error;
+                } finally {
+                    player._mechanicsDialogueOpen = false;
+                    engine._sceneTransitionPending = false;
+                    loadingHide();
+                    if (!transitionSucceeded && engine.state === GameState.ENDED && engine._pendingEndGameData) {
+                        const endGameData = engine._pendingEndGameData;
+                        engine._pendingEndGameData = null;
+                        engine.onGameEndCallback?.(endGameData);
+                    }
+                }
+            })();
+
+            try { return await sceneTransitionPromise; }
+            finally { sceneTransitionPromise = null; }
+        };
 
         // Show save corrupted popup
         function showSaveCorruptedPopup() {
@@ -880,7 +1078,7 @@
             }
             await new Promise((resolve, reject) => {
                 const s = document.createElement('script');
-                s.src = 'assets/js/editor.js?v=19';
+                s.src = 'assets/js/editor.js?v=55';
                 s.onload = () => resolve();
                 s.onerror = () => reject(new Error('Failed to load editor.js'));
                 document.head.appendChild(s);
@@ -1414,9 +1612,11 @@
             // Start game with user's persistent color
             const user = Auth.getUser();
             engine.startGame(user.name, user.color);
+            if (gameData) engine.applyGlobalCoinCollections(JSON.parse(gameData).globalCoinIds);
+            if (engine.localPlayer) engine.localPlayer.isHost = isHost;
 
-            // Setup touch controls if enabled
-            if (Settings.get('touchscreenMode')) {
+            // Keep touch controls aligned with the detected device.
+            if (engine.touchControlsEnabled) {
                 editor.updateTouchControls();
             }
             
@@ -1811,6 +2011,14 @@
             mp.on('playerPosition', (data) => {
                 engine.updateRemotePlayer(data.playerId, data.x, data.y, data.vx || 0, data.vy || 0);
             });
+
+            mp.on('globalCoinCollected', (data) => {
+                engine.applyGlobalCoinCollection(data.coinId);
+            });
+
+            mp.on('globalCoinCollectionRejected', (data) => {
+                engine.rejectGlobalCoinCollection(data.coinId);
+            });
             
             // Position acknowledgment disabled - was causing lag
 
@@ -1860,6 +2068,8 @@
             mp.on('roomRejoined', (data) => {
                 console.log('[Multiplayer] Rejoined room:', data.roomCode);
                 isHost = data.isHost;
+                if (engine.localPlayer) engine.localPlayer.isHost = data.isHost === true;
+                engine.applyGlobalCoinCollections(data.globalCoinIds);
                 // Add existing players to the game
                 if (data.players) {
                     data.players.forEach(p => {
@@ -1897,9 +2107,10 @@
             // Start the game with user's persistent color
             const user = Auth.getUser();
             engine.startGame(user.name, user.color);
+            if (engine.localPlayer) engine.localPlayer.isHost = true;
             
-            // Setup touch controls if enabled
-            if (Settings.get('touchscreenMode')) {
+            // Keep touch controls aligned with the detected device.
+            if (engine.touchControlsEnabled) {
                 editor.updateTouchControls();
             }
             
@@ -2766,6 +2977,11 @@
         function setupEndGameScreen() {
             // Set up the game end callback
             engine.onGameEndCallback = (data) => {
+                if (engine._sceneTransitionPending) {
+                    engine._pendingEndGameData = data;
+                    return;
+                }
+                engine._pendingEndGameData = null;
                 showEndGameScreen(data);
 
                 // If in multiplayer, notify other players

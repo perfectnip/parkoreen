@@ -8,24 +8,48 @@ const CODE_RESERVED_NAMES = ['player', 'custom', 'trigger'];
 // Trigger Types (sorted alphabetically by label for UI)
 const CODE_TRIGGER_TYPES = {
     GAME_STARTS: 'gameStarts',
+    GAME_ENDS: 'gameEnds',
     PLAYER_ACTION_INPUT: 'playerActionInput',
+    PLAYER_ATTACKS_OBJECT: 'playerAttacksObject',
+    PLAYER_DIES: 'playerDies',
+    PLAYER_JUMPS: 'playerJumps',
+    PLAYER_LANDS: 'playerLands',
+    PLAYER_RESPAWNS: 'playerRespawns',
     PLAYER_ENTER_ZONE: 'playerEnterZone',
+    PLAYER_JOINS_ROOM: 'playerJoinsRoom',
     PLAYER_KEY_INPUT: 'playerKeyInput',
     PLAYER_LEAVE_ZONE: 'playerLeaveZone',
+    PLAYER_LEAVES_ROOM: 'playerLeavesRoom',
     PLAYER_PRESS_BUTTON: 'playerPressButton',
+    PLAYER_TOUCH_OBJECT: 'playerTouchObject',
+    PLAYER_TOUCH_TILEMAP: 'playerTouchTilemap',
     PLAYER_STATS: 'playerStats',
+    PLAYER_HEALTH_CHANGED: 'playerHealthChanged',
+    VARIABLE_CONDITION: 'variableCondition',
     REPEAT: 'repeat'
 };
 
 // Trigger type labels and descriptions (for UI, sorted alphabetically)
 const CODE_TRIGGER_TYPE_INFO = [
     { id: CODE_TRIGGER_TYPES.GAME_STARTS, label: 'Game Starts', description: 'Fires once when the game begins' },
+    { id: CODE_TRIGGER_TYPES.GAME_ENDS, label: 'Game Ends', description: 'Fires once when the player completes the map' },
     { id: CODE_TRIGGER_TYPES.PLAYER_ACTION_INPUT, label: 'Player Action Input', description: 'When player performs a specific action' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT, label: 'Player Attacks Object', description: 'When an HK nail attack hits a selected map object' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_DIES, label: 'Player Dies', description: 'When the player dies from a hazard or gameplay action' },
     { id: CODE_TRIGGER_TYPES.PLAYER_ENTER_ZONE, label: 'Player Enter Zone', description: 'When player enters a zone' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_JOINS_ROOM, label: 'Player Joins Room', description: 'When a guest joins while the host is running this room' },
     { id: CODE_TRIGGER_TYPES.PLAYER_KEY_INPUT, label: 'Player Key Input', description: 'When specific keys are pressed' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_JUMPS, label: 'Player Jumps', description: 'After the player successfully jumps, from the ground or air' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_LANDS, label: 'Player Lands', description: 'When the player lands on a solid surface after being airborne' },
     { id: CODE_TRIGGER_TYPES.PLAYER_LEAVE_ZONE, label: 'Player Leave Zone', description: 'When player leaves a zone' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_LEAVES_ROOM, label: 'Player Leaves Room', description: 'When a guest leaves while the host keeps this room running' },
     { id: CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON, label: 'Player Press Button', description: 'When player presses a button UI' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_RESPAWNS, label: 'Player Respawns', description: 'When the player respawns after death or returns to a checkpoint' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, label: 'Player Touches Object', description: 'When player starts touching a map object using its configured box, circle, or capsule shape' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, label: 'Player Touches Tilemap', description: 'When player starts touching a collidable cell in a selected tilemap' },
     { id: CODE_TRIGGER_TYPES.PLAYER_STATS, label: 'Player Stats', description: 'When player stats match a condition' },
+    { id: CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED, label: 'Player Health Changed', description: 'When the player’s numeric health increases, decreases, or changes' },
+    { id: CODE_TRIGGER_TYPES.VARIABLE_CONDITION, label: 'Variable Condition', description: 'When a map or player variable changes into a matching condition' },
     { id: CODE_TRIGGER_TYPES.REPEAT, label: 'Repeat', description: 'Fires repeatedly at an interval' }
 ].sort((a, b) => a.label.localeCompare(b.label));
 
@@ -33,20 +57,16 @@ const CODE_TRIGGER_TYPE_INFO = [
 const CODE_PLAYER_ACTIONS = [
     { id: 'airJump', label: 'Air Jump' },
     { id: 'die', label: 'Die' },
-    { id: 'doJumpForTime', label: 'Do a [number]s Jump', hasValue: true, valueType: 'number', valuePlaceholder: 'seconds' },
+    { id: 'doJumpForTime', label: 'Do a [number]s Jump', hasValue: true, valueType: 'number', valuePlaceholder: 'seconds', defaultValue: 1 },
     { id: 'fall', label: 'Fall' },
-    { id: 'fallForDistance', label: 'Fall for [distance]', hasValue: true, valueType: 'number', valuePlaceholder: 'pixels' },
-    { id: 'fallForTime', label: 'Fall for [time]', hasValue: true, valueType: 'number', valuePlaceholder: 'seconds' },
+    { id: 'fallForDistance', label: 'Fall for [distance]', hasValue: true, valueType: 'number', valuePlaceholder: 'pixels', defaultValue: 100 },
+    { id: 'fallForTime', label: 'Fall for [time]', hasValue: true, valueType: 'number', valuePlaceholder: 'seconds', defaultValue: 1 },
     { id: 'groundJump', label: 'Ground Jump' },
     { id: 'jump', label: 'Jump' },
     { id: 'move', label: 'Move' },
     { id: 'moveHorizontally', label: 'Move Horizontally' },
     { id: 'moveLeft', label: 'Move Left' },
     { id: 'moveRight', label: 'Move Right' },
-    { id: 'sendMessage', label: 'Send Message' },
-    { id: 'sendMessageContains', label: 'Send Message that Contains Content [text]', hasValue: true, valueType: 'text', valuePlaceholder: 'text to contain' },
-    { id: 'sendMessageExact', label: 'Send Message with Exact Content [text]', hasValue: true, valueType: 'text', valuePlaceholder: 'exact message' },
-    { id: 'sendMessageExcludes', label: 'Send Message that Excludes Content [text]', hasValue: true, valueType: 'text', valuePlaceholder: 'text to exclude' },
     { id: 'teleport', label: 'Teleport' },
     { id: 'touchOtherPlayer', label: 'Touch Other Player' }
 ].sort((a, b) => a.label.localeCompare(b.label));
@@ -59,6 +79,12 @@ const CODE_PLAYER_STATS = [
     { id: 'tag', label: 'Tag' },
     { id: 'username', label: 'Username' }
 ].sort((a, b) => a.label.localeCompare(b.label));
+
+const CODE_HEALTH_CHANGE_DIRECTIONS = [
+    { id: 'any', label: 'Any change' },
+    { id: 'increased', label: 'Health increased' },
+    { id: 'decreased', label: 'Health decreased' }
+];
 
 // Keyboard Keys (organized by category)
 const CODE_KEYBOARD_KEYS = [
@@ -180,6 +206,19 @@ const CODE_TIME_UNITS = [
     { id: 'minutes', label: 'minutes', labelSingular: 'minute' }
 ];
 
+// Shared by trigger preflight and runtime contact checks so tile behavior
+// filters cannot drift between what the editor accepts and what can fire.
+const CODE_TILEMAP_CELL_MATCHES_TRIGGER_FILTER = (cell, filter = 'any') => {
+    if (!cell || cell.collision === false) return false;
+    if (filter === 'any') return true;
+    const collisionType = cell.collisionType ?? cell._tilemapCollisionType;
+    if (collisionType === filter) return true;
+    return filter === 'oneWay' && (
+        ['rampUpRight', 'rampUpLeft'].includes(collisionType) ||
+        (cell.collisionShape === 'polygon' && cell.polygonOneWay !== false)
+    );
+};
+
 // Code Block Types
 const CODE_BLOCK_TYPES = {
     TRIGGER: 'trigger',
@@ -218,8 +257,98 @@ const CODE_DEFAULT_EVENT = {
     name: 'New Event',
     type: CODE_BLOCK_TYPES.EVENT,
     enabled: true,
-    code: ''
+    actions: [],
+    code: '' // Legacy field, retained for map compatibility.
 };
+
+// Declarative actions are the supported, serializable event runtime surface.
+const CODE_EVENT_ACTION_TYPES = [
+    { id: 'setVariable', label: 'Set Variable' },
+    { id: 'addVariable', label: 'Add to Number Variable' },
+    { id: 'calculateVariable', label: 'Calculate Number Variable' },
+    { id: 'toggleVariable', label: 'Toggle Boolean Variable' },
+    { id: 'branchVariable', label: 'Branch on Variable' },
+    { id: 'branchPlayerCount', label: 'Branch on Player Count' },
+    { id: 'appendListItem', label: 'Add Item to List' },
+    { id: 'removeListItem', label: 'Remove Item from List' },
+    { id: 'setInventoryItemEquipped', label: 'Set Inventory Item Equipped' },
+    { id: 'branchInventoryItemEquipped', label: 'Branch on Equipped Item' },
+    { id: 'consumeInventoryItem', label: 'Use Inventory Item' },
+    { id: 'branchListContains', label: 'Branch on List Item' },
+    { id: 'showList', label: 'Show List Panel' },
+    { id: 'showVariablePanel', label: 'Show Variable Panel' },
+    { id: 'setCheckpoint', label: 'Set Player Checkpoint' },
+    { id: 'setTriggerEnabled', label: 'Set Trigger Enabled' },
+    { id: 'setObjectEnabled', label: 'Set Object Enabled' },
+    { id: 'setObjectHealth', label: 'Set Object Health' },
+    { id: 'damageObject', label: 'Damage Object' },
+    { id: 'branchObjectHealth', label: 'Branch on Object Health' },
+    { id: 'spawnObject', label: 'Spawn Object' },
+    { id: 'removeSpawnedObjects', label: 'Remove Spawned Objects' },
+    { id: 'setObjectPosition', label: 'Set Object Position' },
+    { id: 'moveObject', label: 'Move Object (Animated)' },
+    { id: 'setObjectSpriteFrame', label: 'Set Object Sprite Frame' },
+    { id: 'setObjectOpacity', label: 'Set Object Opacity' },
+    { id: 'playObjectSpriteAnimation', label: 'Play Object Sprite Animation' },
+    { id: 'setCameraFollowMode', label: 'Set Camera Follow Axes' },
+    { id: 'setCameraBounds', label: 'Set Camera Bounds' },
+    { id: 'setGravity', label: 'Set Gravity' },
+    { id: 'setJumpForce', label: 'Set Jump Force' },
+    { id: 'setPlayerSpeed', label: 'Set Player Speed' },
+    { id: 'setMovementControl', label: 'Set Movement Control' },
+    { id: 'setTilemapCellBehavior', label: 'Set Tilemap Cell Behavior' },
+    { id: 'startTimer', label: 'Start Timer' },
+    { id: 'stopTimer', label: 'Stop Timer' },
+    { id: 'teleportPlayer', label: 'Teleport Player' },
+    { id: 'teleportPlayerToObject', label: 'Teleport Player Above Object' },
+    { id: 'setVelocity', label: 'Set Player Velocity' },
+    { id: 'damagePlayer', label: 'Damage Player' },
+    { id: 'healPlayer', label: 'Heal Player' },
+    { id: 'playSound', label: 'Play Sound' },
+    { id: 'playPluginSound', label: 'Play Plugin Sound' },
+    { id: 'stopPluginSound', label: 'Stop Plugin Sound' },
+    { id: 'transitionToMap', label: 'Transition to Map' },
+    { id: 'restartScene', label: 'Restart Scene' },
+    { id: 'runEvent', label: 'Run Event' },
+   { id: 'showMessage', label: 'Show Message' },
+    { id: 'showDialogue', label: 'Show Dialogue' },
+    { id: 'showChoice', label: 'Show Choices' },
+    { id: 'showMenu', label: 'Show Menu' }
+];
+
+// Sound names exposed by the core AudioManager. Keep mechanics sound actions
+// symbolic so maps never store arbitrary URLs or plugin asset paths.
+const CODE_CORE_SOUND_NAMES = [
+    'jump', 'coin', 'bounce', 'button', 'checkpoint', 'endpoint'
+];
+const CODE_MAX_EVENT_ACTIONS = 128;
+const CODE_MAX_EVENT_CHAIN_ACTIONS = 256;
+const CODE_MAX_EVENT_DEPTH = 16;
+const CODE_MAX_DIALOGUE_PAGES = 12;
+const CODE_MAX_DIALOGUE_PAGE_LENGTH = 512;
+const CODE_MAX_DIALOGUE_SPEAKER_LENGTH = 64;
+const CODE_MAX_DIALOGUE_CHOICES = 8;
+const CODE_MAX_DIALOGUE_CHOICE_LABEL_LENGTH = 64;
+const CODE_MAX_QUEUED_DIALOGUES = 16;
+const CODE_MAX_ACTIVE_TIMERS = 128;
+const CODE_MAX_TIMER_DELAY_SECONDS = 86400;
+const CODE_MAX_TIMER_FIRES = 10000;
+const CODE_MAX_TIMER_REPEAT_COUNT = 1000;
+const CODE_MAX_VARIABLE_STRING_LENGTH = 512;
+const CODE_MAX_LIST_ITEMS = 100;
+const CODE_MAX_PLAYER_STAT_VALUE_LENGTH = 128;
+const CODE_MAX_PLAYER_TELEPORT_COORDINATE = 10000000;
+const CODE_MAX_PLAYER_VELOCITY = 10000;
+const CODE_MAX_TRIGGER_KEYS = 16;
+const CODE_MAX_OBJECT_MOVE_DURATION_SECONDS = 60;
+const CODE_MAX_MECHANICS_SPAWNED_OBJECTS = 64;
+const CODE_MAX_MECHANICS_SPAWN_LIFETIME_SECONDS = 3600;
+const CODE_OBJECT_MOTION_EASINGS = [
+    { id: 'linear', label: 'Linear' },
+    { id: 'easeIn', label: 'Ease In' },
+    { id: 'easeOut', label: 'Ease Out' },
+    { id: 'easeInOut', label: 'Ease In and Out' }
+];
 
 // Default variable template
 const CODE_DEFAULT_VARIABLE = {
@@ -228,6 +357,8 @@ const CODE_DEFAULT_VARIABLE = {
     type: CODE_BLOCK_TYPES.VARIABLE,
     enabled: true,
     variableType: CODE_VARIABLE_TYPES.VARIABLE, // 'variable' or 'list'
+    scope: 'map', // Map-shared state or a separate value/List for each player.
+    persist: false, // Opt into a browser-local save slot for this variable.
     valueType: 'string', // string, integer, float, boolean
     defaultValue: '',
     // For lists:
@@ -248,13 +379,40 @@ if (typeof window !== 'undefined') {
     window.CODE_TRIGGER_TYPE_INFO = CODE_TRIGGER_TYPE_INFO;
     window.CODE_PLAYER_ACTIONS = CODE_PLAYER_ACTIONS;
     window.CODE_PLAYER_STATS = CODE_PLAYER_STATS;
+    window.CODE_HEALTH_CHANGE_DIRECTIONS = CODE_HEALTH_CHANGE_DIRECTIONS;
     window.CODE_KEYBOARD_KEYS = CODE_KEYBOARD_KEYS;
     window.CODE_TIME_UNITS = CODE_TIME_UNITS;
+    window.CODE_TILEMAP_CELL_MATCHES_TRIGGER_FILTER = CODE_TILEMAP_CELL_MATCHES_TRIGGER_FILTER;
     window.CODE_BLOCK_TYPES = CODE_BLOCK_TYPES;
     window.CODE_VARIABLE_TYPES = CODE_VARIABLE_TYPES;
     window.CODE_VALUE_TYPES = CODE_VALUE_TYPES;
     window.CODE_DEFAULT_TRIGGER = CODE_DEFAULT_TRIGGER;
     window.CODE_DEFAULT_EVENT = CODE_DEFAULT_EVENT;
+    window.CODE_EVENT_ACTION_TYPES = CODE_EVENT_ACTION_TYPES;
+    window.CODE_CORE_SOUND_NAMES = CODE_CORE_SOUND_NAMES;
+    window.CODE_MAX_EVENT_ACTIONS = CODE_MAX_EVENT_ACTIONS;
+    window.CODE_MAX_EVENT_CHAIN_ACTIONS = CODE_MAX_EVENT_CHAIN_ACTIONS;
+    window.CODE_MAX_EVENT_DEPTH = CODE_MAX_EVENT_DEPTH;
+    window.CODE_MAX_DIALOGUE_PAGES = CODE_MAX_DIALOGUE_PAGES;
+    window.CODE_MAX_DIALOGUE_PAGE_LENGTH = CODE_MAX_DIALOGUE_PAGE_LENGTH;
+    window.CODE_MAX_DIALOGUE_SPEAKER_LENGTH = CODE_MAX_DIALOGUE_SPEAKER_LENGTH;
+    window.CODE_MAX_DIALOGUE_CHOICES = CODE_MAX_DIALOGUE_CHOICES;
+    window.CODE_MAX_DIALOGUE_CHOICE_LABEL_LENGTH = CODE_MAX_DIALOGUE_CHOICE_LABEL_LENGTH;
+    window.CODE_MAX_QUEUED_DIALOGUES = CODE_MAX_QUEUED_DIALOGUES;
+    window.CODE_MAX_ACTIVE_TIMERS = CODE_MAX_ACTIVE_TIMERS;
+    window.CODE_MAX_TIMER_DELAY_SECONDS = CODE_MAX_TIMER_DELAY_SECONDS;
+    window.CODE_MAX_TIMER_FIRES = CODE_MAX_TIMER_FIRES;
+    window.CODE_MAX_TIMER_REPEAT_COUNT = CODE_MAX_TIMER_REPEAT_COUNT;
+    window.CODE_MAX_VARIABLE_STRING_LENGTH = CODE_MAX_VARIABLE_STRING_LENGTH;
+    window.CODE_MAX_LIST_ITEMS = CODE_MAX_LIST_ITEMS;
+    window.CODE_MAX_PLAYER_STAT_VALUE_LENGTH = CODE_MAX_PLAYER_STAT_VALUE_LENGTH;
+    window.CODE_MAX_PLAYER_TELEPORT_COORDINATE = CODE_MAX_PLAYER_TELEPORT_COORDINATE;
+    window.CODE_MAX_PLAYER_VELOCITY = CODE_MAX_PLAYER_VELOCITY;
+    window.CODE_MAX_TRIGGER_KEYS = CODE_MAX_TRIGGER_KEYS;
+    window.CODE_MAX_OBJECT_MOVE_DURATION_SECONDS = CODE_MAX_OBJECT_MOVE_DURATION_SECONDS;
+    window.CODE_MAX_MECHANICS_SPAWNED_OBJECTS = CODE_MAX_MECHANICS_SPAWNED_OBJECTS;
+    window.CODE_MAX_MECHANICS_SPAWN_LIFETIME_SECONDS = CODE_MAX_MECHANICS_SPAWN_LIFETIME_SECONDS;
+    window.CODE_OBJECT_MOTION_EASINGS = CODE_OBJECT_MOTION_EASINGS;
     window.CODE_DEFAULT_VARIABLE = CODE_DEFAULT_VARIABLE;
     window.CODE_STATE = CODE_STATE;
 }

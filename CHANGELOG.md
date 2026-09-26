@@ -1,12 +1,180 @@
 # Changelog
 
-The full **Parkoreen** changelog lives in the wiki:
+The full **Parkoreen** changelog is published in the Parkoreen Guide:
 
 **[wiki/changelog/index.html](wiki/changelog/index.html)** — open in a browser from the repo, or from the deployed site at `wiki/changelog/`.
 
 For line-by-line history, use `git log` and `git show <commit>`.
 
-Latest highlights (see wiki changelog for full details):
+Latest highlights (see the Guide changelog for full details):
+- Mechanics cards and Flow map now link Events that set a Trigger's enabled state, with labels for enable and disable actions.
+- Mechanics block cards link to their connected Events and referenced Variables, while Variable cards link back to the triggers and Events that use them.
+- Mechanics Flow map, block-card links, reachability checks, synchronous path warnings, and timer-cycle analysis now share one Event-route catalog while keeping delayed timer and animation paths distinct.
+- Hosted guests can now select Show Choices or Show Menu routes whose shared Mechanics actions execute on the host after it replays the trigger-linked declarative flow in order and records the choices reached. The Worker checks that the selection is a declared route, and the host accepts only a route in its pending record; the prompt remains local.
+- Mechanics Events can branch on an object's current temporary health, including touched objects, with validated comparison routes that synchronize through the room host for supported shared triggers.
+- Sprite-sheet objects can define up to 32 named clips and reuse them from Mechanics Events.
+- Imported object and player sprite sheets now reject fractional metadata and declared rows or frame ranges outside the decoded image instead of silently rounding or clamping them; the editor reports image-bound mismatches so creators can repair the settings.
+- Hollow Knight pogo now aligns against fully solid polygon colliders using the same expanded contact plane as normal player physics.
+- One-shot sprite-sheet object animations can now run a linked Mechanics Event on completion; hosted rooms dispatch it once from the host.
+- Hollow Knight nail attacks now show a traveling glow along the slash arc; the effect follows the existing slash visibility and color settings.
+- Mechanics adds Calculate Number Variable with add, subtract, multiply, and divide operations, validated integer results, and host-synchronized player targeting.
+- The API v1 starter types and Guide now warn plugin authors that `world.queryNear()` can reuse its result array across nested queries.
+- The Guide now explains how to add and customize Tag Game and Hide And Seek mechanics templates, follow their links in Flow map, and check multi-player behavior in a hosted room.
+- Nearby-object scans now keep stable results while checkpoint, endpoint, and button mechanics hooks run nested world queries.
+- Hollow Knight attack checks snapshot nearby objects before dispatching Mechanics hooks, preventing nested event queries from interrupting the active hit scan.
+- Mechanics adds Set Movement Control for room-specific acceleration, air control, and terminal fall speed, with bounded values, host synchronization, and Map Config restore.
+- Mechanics adds a bounded, host-synchronized Set Player Speed action for room-specific traversal and Hollow Knight wall movement; reset restores Map Config speed.
+- Hollow Knight now shows a brief directional shard flash after HP actually decreases; invincibility and damage canceled by another hook do not trigger it.
+- Mechanics now reports missing or disabled zone, object, and tilemap targets from touch/zone triggers once until repaired, making broken imported references diagnosable without repeating the same error every frame.
+- Mechanics adds host-synchronized Set Jump Force alongside Set Gravity. Both affect core and Hollow Knight movement for the current session, then reset to the saved Map Config values.
+- Imported Set Gravity and Set Jump Force actions now report invalid mode or out-of-range values in the Mechanics runtime error history.
+- Mechanics adds a host-synchronized Set Gravity action (0–5, or restore Map Config) shared by core and Hollow Knight movement; session reset restores the saved map gravity.
+- Hollow Knight solid-platform pogo now snaps to the projected contact plane before applying rebound velocity, so fast falls don't turn the skipped fall step into an early midair bounce; the long down-slash hitbox still cannot trigger a platform pogo by itself.
+- Mechanics Events can switch camera follow axes and apply, clear, or restore camera bounds for the current session, enabling authored room framing and side-scroll sections without changing Map Config.
+- World snapshots now detach and normalize Mechanics triggers, events, and variables, keeping Test Game restore and map save data isolated from later in-memory edits.
+- Player Touches Tilemap validation, local contact, and hosted contact/latch checks now agree on one-way ramps and polygon surfaces.
+- Mechanics variable editing preserves invalid or fractional integer input and explicit List lengths for validation instead of silently truncating or inferring replacements; zero and blank numeric values stay distinct in the editor.
+- Character sprite sheets can optionally define Attack, Hurt, and Dash rows for supported plugin states while retaining the four locomotion states.
+- Tilemap atlas animation cycles now support up to eight selected frames per cell, with the existing animated-cell budget unchanged.
+- Mechanics draws a health bar above objects with active temporary health, including the Basic HK Enemy template.
+- Mechanics Basic HK Enemy setup can add a timed left-right patrol that turns sprite-sheet enemies toward travel, plus contact damage alongside nail-hit health and a defeat Event.
+- Mechanics Events can set and damage temporary per-object health, disable defeated objects, run an optional defeat Event, expose health to Event Python, and synchronize health through supported host-authoritative triggers.
+- Mechanics adds a Player Attacks Object trigger for HK nail hits, with object and slash-direction context; the plugin author API types document the matching hit hook.
+- Hollow Knight's Monarch Wing jump strength now matches its default and can be tuned per map from 0.5× to 2× the map jump force.
+- Hollow Knight wall jumps, Monarch Wings, and pogo now share the core engine's valid jump-force fallback, preserving the default jump strength when imported physics data is malformed.
+- Hollow Knight wall cling and wall bounce now use the core gravity and terminal-fall rules, matching pogo's projected physics step on maps with default or custom gravity.
+- Plugin preflight enforces the `.parkplugin` file-count and byte-size bounds before parsing declared JavaScript, so the validator and packager agree on resource limits.
+- `.pkrn` export now applies the shared Mechanics data normalizer at the serialization boundary, keeping exported Events and repaired IDs consistent with the shared load migration.
+- Hollow Knight down-slash pogo now expands the nearby-object query through the player's projected feet sweep, so thin platforms at the end of a fast-fall step can be detected.
+- Hollow Knight pogo removes bounded high-fall penetration before applying the bounce, preventing the following collision pass from treating the platform as a ceiling and canceling the rebound.
+- The API v2 plugin protocol draft now models action-specific gameplay requests and method-specific result payloads in JSON Schema and TypeScript declarations, including separate bounded map/player snapshot reads, compatible plugin ids, and a 32 KiB UTF-8 JSON storage value limit that leaves room for response envelopes.
+- Mechanics Events preserve unknown action types and fields when edited with an older client, and unknown trigger types keep their original config and Event link. Unknown variable and List item types also remain visible and intact through unrelated edits instead of being coerced into strings.
+- Python Events can read bounded, paged snapshots of locally visible players and read or update enabled Player variables and Player Lists by player id; player snapshots omit account usernames, and only the room host can publish shared player-state writes.
+- Python Events can inspect native tilemap summaries, page through bounded cell snapshots, and request validated grid-aligned cell behavior changes that use the host-synchronized Mechanics state.
+- Plugin runtime discovery now enforces the same API v1 manifest constraints as author preflight, including JavaScript script paths, feature flags, and bounded object guards; the manifest schema now matches those rules.
+- Ground collision now supports solid capsule shapes, with editor previews, player collision, Mechanics object-contact triggers, and `.pkrn` persistence.
+- Hollow Knight down-slash pogo now adds a brief upward rebound flare at contact, controlled by the existing impact-effects setting.
+- Mechanics templates now include a touch-friendly Title Menu that opens on Game Starts and waits before starting solo simulation.
+- Mechanics templates now include a Pause Menu flow with Resume and Restart that pauses solo simulation and Mechanics timers, opened by Escape and optionally by a touch-friendly Button object. The editor prevents duplicate Escape-triggered menus.
+- Mechanics adds Restart Scene for solo Play and Test, returning to the active scene's saved checkpoint or start and running its Game Starts events again.
+- Mechanics adds a titled, centered Show Menu action with one to eight Event options, optional Escape/cancel routing, backdrop dismissal, small-screen scrolling, and an optional full solo-simulation pause that suspends Mechanics timers and game elapsed time.
+- Mechanics choice prompts now support up to eight linked options, with a bounded scrolling option list for small screens.
+- The Mechanics dashboard estimates nested Event depth and total action-chain size, warning when linked paths exceed runtime limits before the map is played.
+- The main and dashboard map import/export pages now load the same mechanics-data normalizer as the editor before deserializing maps, preserving legacy Event migrations consistently across entry points.
+- Runtime errors now identify missing or disabled Events linked from triggers and timers, as well as recursive or over-limit action links; trigger and Event link errors reopen the originating block, and item-use actions report invalid routes before changing a player's inventory.
+- Mechanics can now equip JSON inventory cards by slot and branch on equipped state in a Player List; hosted Events publish the resulting state from the room host.
+- Mechanics can consume stacked inventory cards and route to success or missing-item Events, providing a reusable action/effect pattern for RPG-style items.
+- Item consumption now checks that its required success Event and any configured failure Event are enabled, reachable from the active Event chain, and within execution limits before changing inventory, including for imported map data.
+- Unsupported or malformed action records encountered in imported Events now appear in the per-map runtime error history instead of only the browser console.
+- Inventory cards now reject malformed typed fields, and equipping a duplicate name/slot chooses only one card so a slot cannot acquire multiple equipped entries.
+- Plugin preflight now detects known dependency cycles and warns when dependency chains cannot be resolved from bundled or sibling plugin folders. The map's plugin library identifies unavailable required plugin ids and registered plugins that fail to initialize while preserving saved map configuration.
+- Fixed Hollow Knight down-slash pogo contact using the player's already world-space ground collider, so valid platform hits work at higher map coordinates.
+- Down-slash pogo now sweeps the next bounded fall step against platform surfaces, so the supported 100 px terminal speed cannot skip a thin pogo surface between updates.
+- Solid-platform pogo now also requires a non-upward player velocity, preventing rising overlap with one-way surfaces from triggering a false bounce.
+- Tester touchboxes now outline visible tilemap polygons and ramps using their real collider geometry.
+- Tilemap cells can use validated custom convex polygons for one-way surfaces or fully solid collision; map, `.pkrn`, and hosted tile-contact paths preserve the geometry.
+- Tilemap cells now support left- and right-rising one-way ramps in painted maps, mechanics behavior changes, and hosted tilemap state.
+- Inventory List panels can render optional name, icon, description, count, and equipped fields from JSON string entries while preserving plain typed values.
+- Custom convex polygons can now be configured as one-way walkable surfaces or fully solid colliders that block sides and ceilings.
+- Ground blocks now accept validated custom convex polygon surface points (3–12 normalized vertices), with one-way landing/slope following and map/`.pkrn` persistence.
+- Ground blocks now offer rising left-to-right and right-to-left ramp colliders with one-way landings, walking slope support, drop-through, touchbox visualization, and map/`.pkrn` persistence.
+- Tilemap layers now accept bounded custom sprite atlases; selected frames paint into 32 px cells and can animate in short cycles, with independent collision settings preserved through map and `.pkrn` saves.
+- Hollow Knight down-slash impact sparks now originate at the computed platform contact height, including curved ground colliders.
+- List items offer variable references only when an eligible scalar Map variable exists; broken references show an explicit replacement selector instead of silently appearing to select another variable.
+- The Mechanics dashboard now marks invalid variable defaults and broken typed List references before they reach a play session.
+- Mechanics block deletion now warns about structured links that may need repair in affected flows, including source triggers, events, and Lists.
+- Tilemap cells can cycle through up to eight built-in texture or tile-atlas frames at an authored rate, with collision preserved and a bounded dynamic-cell budget.
+- Hollow Knight down-slash impacts now add lateral nail shards to make pogo hits easier to read; the effect follows the impact-effects toggle.
+- The API v1 plugin starter now declares and loads its sample marker SVG through `getAssetUrl()`.
+- Hollow Knight Focus now releases a configurable-color pulse and radial motes when a heal completes.
+- Mechanics Templates now include a button-bound Save Point flow that sets the player's respawn checkpoint and uses the map's optional Remember Latest Checkpoint persistence.
+- Python event context now exposes player velocity, grounded/dead state, and remaining jumps; `parkoreen.set_player_velocity(vx, vy)` applies bounded local movement changes.
+- Plugin authors can declare named images, atlases, JSON, and other files; preflight and transfer packages validate and include them, and API v1 exposes versioned URLs only for declared assets.
+- Mechanics adds **Set Tilemap Cell Behavior** for changing a fixed or touched tile cell at runtime, with reset restoration and host-validated multiplayer sync.
+- Hosted button-triggered Mechanics events now require a recent guest position inside the configured button; the host also verifies the contacted map button before replaying shared actions.
+- Mechanics adds a **Player Touches Tilemap** trigger for entering collidable cells, with solid/one-way/damage filters and host-side contact checks in multiplayer rooms.
+- The Mechanics dashboard warns about event cycles that cross a Start Timer action, including cycles visible in the Flow map; intentional loops remain allowed and the runtime's 10,000-fire safety cap still applies.
+- The editor now has a native Tilemap Brush with layered 32×32 solid, one-way, damage, and decorative cells, chunk-cache rendering, area erasing, and map/`.pkrn` persistence.
+- Mechanics events can transition between saved maps in solo Play or Test, including from Game Ends to continue a level sequence; destination loading starts that map's Game Starts flow.
+- Mechanics adds a Player Dies trigger and plugin hook at the shared death boundary, with source context for hazards, void falls, and Mechanics damage.
+- Mechanics adds a Game Ends trigger for successful endpoint completion, with elapsed-time and test-run context; completion now runs once per game.
+- Mechanics adds a Player Jumps trigger that fires after successful ground or air jumps and exposes jump origin/source to Python events; guest jumps stay local in hosted rooms.
+- Python Event scripts can now inspect bounded map-object snapshots and request validated object enable/disable and position changes; hosted guest writes remain rejected.
+- Hollow Knight down-slash pogo now uses the platform's actual collider top, including round colliders, and slash hits use collider geometry instead of empty bounding-box corners.
+- Mechanics adds a Player Lands trigger with landing-surface context for Python events; guest landings remain client-local in hosted rooms.
+- Local plugin previews now watch selected plugin folders and reload on changes; a per-server token is required to discover unregistered plugins, fetch their files, and connect the reload stream. Preview code still runs as trusted page code.
+- Hollow Knight pogo now clamps saved bounce strength and falls back to a valid upward jump force when older or imported map physics values are malformed.
+- Hollow Knight settings now include Base and Quick Slash speeds, and the plugin manifest no longer advertises camera tuning that is controlled by the map's general camera settings.
+- Hollow Knight map settings now expose pogo bounce strength and camera shake controls for hit and landing impacts; each value is saved with the map.
+- Plugin authors can preview up to eight unregistered local plugins through the loopback dev server using a random per-run token. The token gates plugin discovery, file delivery, and the reload stream; preview plugins still run as trusted page code, and the production registry stays unchanged.
+- Mechanics event actions can be reordered with accessible up/down controls; changes preserve current field edits and run in the displayed top-to-bottom order.
+- Mechanics Lists can now be Map scoped or Player scoped. Typed list actions, Python List APIs, browser-local solo saves, and host-synchronized per-player snapshots support per-player inventories and collections. Hosted Player List snapshots are visible to every client.
+- Mechanics events can open a live, scrollable List panel for Map or Player Lists, giving creators a local inventory or collection view while play continues.
+- Mechanics events can teleport the triggering player above a selected map object, making authored checkpoints, spawn points, and platforms reusable destination anchors.
+- Mechanics teleport and velocity actions now enforce editor and runtime bounds, preventing extreme saved values from sending the player or physics state far outside the map.
+- Mechanics Templates now include Player Inventory, which creates a Player List and a live panel opener on I, with optional Button-object touch activation, pickup-object collection, and solo local-save setup.
+- Mechanics now has a Player Respawns trigger that runs after checkpoint placement and plugin state restoration; guest respawns stay local in hosted rooms.
+- Mechanics triggers now fire on numeric player health changes, optionally filtered by direction, and expose before/after/delta values to the event Python API. Guest requests using this trigger are rejected by the room Worker.
+- Mechanics events now support bounded dialogue choices that route to linked events, resume parent event Python after the chosen path, and appear in the editor's flow map.
+- Mechanics events now support touch-friendly speaker dialogue with up to 12 pages, a local player pause, and legacy Python resumption after dismissal; the editor validates dialogue yield placement, including linked synchronous events.
+- Hollow Knight now adds configurable, short camera shake for nail hits, landings, and Super Dash wall impacts through a reusable render-camera hook that leaves gameplay camera tracking untouched.
+- Ground blocks can now use circle solid colliders, with axis-aware player resolution, Hollow Knight wall-cling/super-dash and HP safe-ground integration, and tester collision visualization; one-way platforms remain box-only.
+- Player Touches Object mechanics triggers now support box or circular contact detection, with the same geometry checked in hosted rooms.
+- The multiplayer room worker now resolves mixed legacy `actions` and canonical `events` by ID using the same canonical-first rule as map loading.
+- Map loading, `.pkrn` import, the editor, and runtime now share a mechanics-data migration that keeps distinct legacy action records when newer event records are also present.
+- The editor can save selected object groups as map-scoped Object Stamps and place fresh copies; stamps survive saves and `.pkrn` export/import.
+- Object Stamps can now be exported and imported across maps with a versioned, data-only `.pkrstamp` format and a documented schema.
+- Mechanics events can spawn bounded temporary copies of authored map objects, remove copies by tag, expire copies after an optional lifetime, and share those instances from the room host.
+- Map physics now offers optional horizontal acceleration/braking, adjustable air control, and terminal fall speed; legacy defaults preserve instant movement and gravity-scaled falling.
+- The plugin manager now includes each plugin's release version in declared script and sound URLs so updating a plugin refreshes its assets consistently.
+- Python event API v1 can now read and mutate bounded typed map Lists; guest writes are rejected in hosted rooms, where the host publishes accepted changes.
+- Plugin authors can create bounded `.parkplugin` ZIPs for review and transfer; packaging validates first, includes only declared runtime assets plus SHA-256 file metadata, and a verifier checks structure and hashes without extracting or executing code.
+- Plugin preflight now checks controls, editor feature flags, object guards, and boolean configuration dependencies in addition to manifest paths and script syntax.
+- Mechanics triggers now respond to players joining or leaving hosted rooms; the host runs each room event once and shares its map changes.
+- The room Worker checks guest zone transitions, object overlap, and player-to-player contact against recent client-reported positions, derives the contacted player id, and suppresses repeat contact events until separation. Movement is still client-reported, so this does not provide server-authoritative physics or cheat-resistant gameplay.
+- Hollow Knight nail hits now recognize both Soul Statue object representations, so those targets trigger hit feedback and downward pogo consistently.
+- Added a plugin security model with concrete isolation, capability, deterministic gameplay, package compatibility, and release acceptance gates for future community plugins.
+- API v1 now rejects manifest `permissions` declarations in both preflight and runtime discovery; the field is not treated as security enforcement until an isolated capability system exists.
+- Mechanics events can branch on a typed per-player condition and count matching live players; the Hide And Seek template now marks the round complete when the last connected hider is found.
+- Player Stats triggers now use the authenticated account username and the actual multiplayer room role, so host-only mechanics templates assign the host correctly.
+- Plugin authors now have a migration guide explaining plugin release versions versus runtime API versions, legacy API v1 upgrades, and requirements for a future breaking API.
+- Hybrid devices now switch between touch and computer layouts based on the most recently used pointer or physical keyboard; mobile editor toolbars scroll across the top so they do not cover the virtual controls.
+- The API v1 plugin starter now links its manifest schema and includes hook/context type definitions for editor completions while authoring JavaScript.
+- Mechanics events can set an object's X/Y position immediately or move it over time with linear/eased motion; solid ground carries a player on top, play cleanup restores the authored position, and hosted rooms validate and share movement paths.
+- Maps now support custom named draw layers before or after the player; layer definitions and object assignments persist through saves and `.pkrn` import/export.
+- Ground blocks can be configured as one-way platforms: players land from above, pass through from below, and drop through with Down + Jump; the editor exposes the setting and renders a top-edge cue.
+- Switching from touch-first to pointer-first controls now releases any held virtual movement or Hollow Knight ability input; rebuilding ability buttons also clears stale touch state.
+- Mechanics triggers can now run an event when the player begins touching a selected map object, and rearm after contact ends.
+- Mechanics Editor now has a Flow map view that connects triggers, events, and variables and lets creators open blocks from the graph.
+- Mechanics variables can opt into local per-map or per-player save data, and maps can remember the latest checkpoint between visits on the same browser.
+- Set Object Enabled actions can opt into saving object state between solo visits on the same browser; test runs and hosted rooms remain temporary.
+- Map-scoped mechanics Lists now support typed add/remove and contains branches, bounded to 100 items, with optional browser-local saves and host-authoritative room synchronization.
+- Objects saved on the behind-player layer now keep layer `0` through map load, tile caching, gameplay rendering, sorting, and the inspector.
+- Hollow Knight visual effects can now be enabled independently and recolored in Map Config. The plugin manifest no longer declares a missing editor UI script.
+- Hollow Knight impact effects now include a brief landing dust plume alongside nail-hit sparks, controlled by the map's impact-effects setting.
+- Hollow Knight Soul Statues now release configurable rising Soul motes when they restore Soul; the effect follows the map's impact-effects toggle and Focus color.
+- Hollow Knight Soul reward timers now cancel with plugin cleanup, so delayed rewards cannot fire after the plugin or map session ends.
+- Hollow Knight Soul Statues now play the Soul-gain sound only when the delayed reward actually increases Soul.
+- The plugin authoring Guide now documents API v1 hook payloads, synchronous ordering, physics interception, and custom Soul Statue rendering.
+- The API v1 plugin starter now demonstrates a configurable player render hook instead of registering example hooks with no visible effect.
+- Delayed shared mechanics events now retain the originating player's identity, so player-scoped actions target the player who started the timer.
+- Repeat triggers now convert seconds correctly at runtime; the previous branch silently disabled second-based intervals.
+- The `player.land` plugin hook now fires only on a real floor-landing transition, not on respawn or other jump resets.
+- Plugin hook references now distinguish continuous checkpoint contact from one-time landing transitions.
+- Mechanics Editor cards now show clickable trigger-to-event and event-to-event links so creators can inspect a flow and open connected events directly.
+- Map settings now support horizontal, vertical, or two-axis camera following and optional world-space camera bounds. Gameplay and test cameras clamp to the rectangle; existing maps keep their previous camera behavior. Smaller rectangles center within the viewport.
+- Mechanics trigger validation now catches unsupported trigger types, malformed key combinations, invalid Player Stats values, and Repeat intervals that are non-finite, use an unknown unit, or exceed 24 hours; legacy player-action triggers retain explicit 1-second / 100-pixel defaults, and runtime guards skip malformed saved triggers.
+- `.pkrn` import now preserves the **All Spike** hazard mode in both map settings and individual objects instead of silently reverting it.
+- Legacy Python event scripts now expose the versioned `parkoreen` API for event context snapshots, validated map/player variable access, and local messages; Skulpt runs are serialized, cooperatively yield about every 8 ms, stop after 100 ms, and cannot open blocking `input()` prompts.
+- Mechanics Editor offers additive Timed Round, Player Inventory, zone-bound Timed Course, button/object-bound Switch And Door, multiplayer Tag, and basic Hide And Seek templates with fresh linked block ids.
+- Event branches can check the touched player's scoped variable, enabling role-aware mechanics such as only finding hiders who are still hiding.
+- Mechanics events can set the triggering player's respawn checkpoint, and the new Checkpoint Zone template binds that action to a named zone.
+- Plugin preflight now parses declared JavaScript files for syntax errors without executing them; it still does not sandbox or audit plugin behavior.
+- Native checkpoint contacts and mechanics actions now use the same GameEngine checkpoint setter, preserving plugin hooks and effects.
+- Mechanics variables now support map-wide and per-player scope, with player-targeted event actions and host-validated multiplayer snapshots keyed by live room session ids.
+- Plugin authoring now has an unregistered starter generator and a stricter runtime manifest contract; failed plugin loading or initialization is surfaced instead of being reported as enabled.
+- The mechanics editor now validates action and trigger values before play, and the runtime rejects invalid typed values instead of coercing them to zero.
+- Device-specific layouts and the Hollow Knight down-slash pogo/effects are part of the current implementation slice; see the Guide for supported mechanics and plugin limits.
 - Saw blade multi-select now exposes **Width** and **Height** (in blocks), so multiple saw blades can be resized together; **Damage Amount**, **Spin Direction**, and **Spin Speed** continue to apply across the selection.
 - Mechanic block type **Action** has been renamed to **Event** (data, UI labels, default templates). Existing maps with `actions` are auto-migrated to `events` on load.
 - Mechanics editor: fixed a crash when picking the **Player Action Input** trigger type (extra block scoping for `switch`-case `const`s, and a missing `area` reference) so per-action options now render reliably.
@@ -23,3 +191,4 @@ Latest highlights (see wiki changelog for full details):
 - Collected coins now disappear immediately during gameplay (coins are rendered dynamically, not tile-cached).
 - HK plugin updates: wall jump height now matches normal jump height, super dash wall collisions freeze the player briefly, and Mantis Claw no longer clings to teleportal, coin, or bouncer objects.
 - End points now appear gray only when a coin requirement exists and is unmet.
+- Hollow Knight down-slash pogo now tolerates a bounded fall-step overlap on the first platform contact frame while still rejecting hits from below.

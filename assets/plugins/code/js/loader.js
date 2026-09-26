@@ -24,11 +24,13 @@
         'inject.js',
         'editor.js'
     ];
+    const CODE_SCRIPT_VERSION = '22';
 
     function loadOne(url) {
         return new Promise(function (resolve) {
             const s = document.createElement('script');
-            s.src = url;
+            const isMechanicsScript = /\/(pythonCompiler|globals|inject|editor)\.js$/.test(url);
+            s.src = isMechanicsScript ? url + '?v=' + CODE_SCRIPT_VERSION : url;
             s.onload = function () { resolve(); };
             s.onerror = function () {
                 console.warn('[code/loader] failed', url);

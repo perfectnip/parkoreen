@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Player — Current — Parkoreen Wiki</title>
+  <title>Player — Current — Parkoreen Guide</title>
   <link rel="stylesheet" href="../../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -11,7 +11,7 @@
   <div class="topbar">
     <a class="topbar-logo" href="../../../">Parkoreen</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-logo topbar-wiki" href="../../">Wiki</a>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
     <span class="topbar-sep">/</span>
     <a class="topbar-crumb" href="..">Current</a>
     <span class="topbar-sep">/</span>
@@ -41,6 +41,10 @@
       </tbody>
     </table>
     <p>All values are overridable per-map in <a href="../map-config/">Map Config</a>.</p>
+
+    <h2>Character sprite sheet</h2>
+    <p>In the editor, open <strong>Map Config → Player → Character Sprite Sheet</strong> to replace the colored player with a map-specific animation. Upload a PNG, JPEG, or WebP sprite sheet (up to 1 MB); the player still uses the same 32×32 collision and name display.</p>
+    <p>Set the frame width and height, then choose a row, frame count, and playback speed for each state. Frames are read from left to right. The engine selects <strong>Idle</strong> when grounded and still, <strong>Run</strong> when grounded and moving, <strong>Jump</strong> while rising, and <strong>Fall</strong> while descending. Optionally configure <strong>Attack</strong>, <strong>Hurt</strong>, and <strong>Dash</strong> rows. The default optional row numbers are 4, 5, and 6, so a seven-row sheet can use rows 0–3 for locomotion, followed by Attack, Hurt, and Dash. Plugins activate rows through shared player states: Hollow Knight plays Attack during a nail swing and Dash during Dash or Super Dash, while the Health plugin can play Hurt during its damage-stun window. Attack plays once; Hurt and Dash loop while their state is active. If a state is not configured, locomotion continues to display. The sprite faces the player's last movement direction. Maps keep this configuration when saved and in <code>.pkrn</code> exports.</p>
 
     <h2>Hitboxes</h2>
     <table class="wiki-table">

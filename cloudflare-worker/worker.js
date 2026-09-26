@@ -21,6 +21,7 @@ const CORS_HEADERS = {
 
 const JWT_SECRET = 'parkoreen-secret-key-change-in-production';
 const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_MECHANICS_STATE_BYTES = 32 * 1024;
 
 // ============================================
 // UTILITIES
@@ -41,6 +42,34 @@ function generateRoomCode() {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
+}
+
+function normalizeMechanicsPolygon(points) {
+    if (!Array.isArray(points) || points.length < 3 || points.length > 12) return null;
+    const normalized = [];
+    for (const point of points) {
+        if (Array.isArray(point) && point.length !== 2) return null;
+        const x = Array.isArray(point) ? point[0] : point?.x;
+        const y = Array.isArray(point) ? point[1] : point?.y;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+        if (normalized.some(existing => Math.abs(existing[0] - x) < 1e-8 && Math.abs(existing[1] - y) < 1e-8)) return null;
+        normalized.push([x, y]);
+    }
+    let turnSign = 0;
+    let doubledArea = 0;
+    for (let i = 0; i < normalized.length; i++) {
+        const a = normalized[i];
+        const b = normalized[(i + 1) % normalized.length];
+        const c = normalized[(i + 2) % normalized.length];
+        const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(cross) > 1e-8) {
+            const sign = Math.sign(cross);
+            if (turnSign && turnSign !== sign) return null;
+            turnSign = sign;
+        }
+        doubledArea += a[0] * b[1] - b[0] * a[1];
+    }
+    return turnSign && Math.abs(doubledArea) >= 1e-8 ? normalized : null;
 }
 
 // Allowed characters for username: letters, numbers, and specific symbols
@@ -702,7 +731,7 @@ async function handleUpdateSettings(request, env, userId) {
         return errorResponse('settings must be an object', 400);
     }
     // Whitelist allowed keys to prevent KV bloat / injection
-    const allowed = ['volume', 'touchscreenMode', 'fontSize', 'keyboardLayout', 'roleMode', 'testerShowTouchboxes', 'theme'];
+    const allowed = ['volume', 'fontSize', 'keyboardLayout', 'roleMode', 'testerShowTouchboxes', 'theme'];
     const sanitized = {};
     for (const key of allowed) {
         if (key in settings) sanitized[key] = settings[key];
@@ -804,6 +833,10 @@ class GameRoom {
         this.env = env;
         this.sessions = new Map();
         this.roomData = null;
+        this.mechanicsStateQueues = new Map();
+        this.mechanicsTilemapCellIndexes = new Map();
+        this.mechanicsTilemapCellIndexesBuilt = false;
+        this.mechanicsTilemapCellOverrides = Object.create(null);
     }
 
     async fetch(request) {
@@ -885,6 +918,10 @@ class GameRoom {
 
         webSocket.addEventListener('message', async (event) => {
             try {
+                if (typeof event.data !== 'string' || event.data.length > 65536) {
+                    this.send(session, { type: 'error', message: 'Message is too large or invalid' });
+                    return;
+                }
                 const data = JSON.parse(event.data);
                 await this.handleMessage(session, data);
             } catch (error) {
@@ -916,6 +953,15 @@ class GameRoom {
                 break;
             case 'position':
                 this.handlePosition(session, data);
+                break;
+            case 'mechanics_state':
+                await this.handleMechanicsState(session, data);
+                break;
+            case 'mechanics_event_request':
+                await this.handleMechanicsEventRequest(session, data);
+                break;
+            case 'global_coin_collect_request':
+                await this.handleGlobalCoinCollectRequest(session, data);
                 break;
             case 'kick_player':
                 this.handleKickPlayer(session, data);
@@ -964,7 +1010,7 @@ class GameRoom {
         session.playerColor = color;
         session.connectedAt = Date.now();
 
-        this.send(session, { type: 'auth_success' });
+        this.send(session, { type: 'auth_success', playerId: session.id });
     }
 
     async handleCreateRoom(session, data) {
@@ -995,6 +1041,10 @@ class GameRoom {
             (data.mapData && typeof data.mapData === 'object' && data.mapData.mapName) ||
             null;
 
+        this.mechanicsTilemapCellIndexes.clear();
+        this.mechanicsTilemapCellIndexesBuilt = false;
+        this.mechanicsTilemapCellOverrides = Object.create(null);
+
         // Store room data
         const room = {
             code: roomCode,
@@ -1017,6 +1067,7 @@ class GameRoom {
 
         session.roomCode = roomCode;
         session.isHost = true;
+        this.resetMechanicsContactState(session);
         
         // Host gets an optimal color (first player, so it'll be a random vibrant color)
         session.playerColor = generateOptimalPlayerColor([]);
@@ -1039,6 +1090,12 @@ class GameRoom {
             return;
         }
 
+        await this.withMechanicsRoomLock(data.roomCode, async () => {
+        if (session.roomCode) {
+            this.send(session, { type: 'error', message: 'You are already in a room. Leave it first.' });
+            return;
+        }
+
         const roomData = await this.state.storage.get(`room:${data.roomCode}`);
         if (!roomData) {
             this.send(session, { type: 'error', message: 'Room not found. Please check the game code.' });
@@ -1046,6 +1103,8 @@ class GameRoom {
         }
 
         const room = JSON.parse(roomData);
+        const mechanicsData = await this.state.storage.get(`mechanics:${data.roomCode}`);
+        const mechanicsRecord = mechanicsData ? JSON.parse(mechanicsData) : null;
 
         // Check password
         if (room.usePassword && room.password !== data.password) {
@@ -1069,6 +1128,7 @@ class GameRoom {
 
         session.roomCode = data.roomCode;
         session.isHost = false;
+        this.resetMechanicsContactState(session);
         
         // Generate an optimal color that's different from existing players
         const existingColors = playersInRoom.map(p => p.playerColor).filter(c => c);
@@ -1087,13 +1147,19 @@ class GameRoom {
         this.send(session, {
             type: 'room_joined',
             roomCode: data.roomCode,
+            mapId: room.mapId || null,
             mapData: room.mapData,
             players: playersInRoom.map(p => ({
                 id: p.id,
                 name: p.user.name,
                 username: p.user.username,
                 color: p.playerColor
-            }))
+            })),
+            mechanicsState: mechanicsRecord?.state || null,
+            mechanicsRevision: Number.isInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
+            mechanicsServerTimestamp: Date.now(),
+            globalCoinIds: Array.isArray(room.globalCoinIds) ? room.globalCoinIds : []
+        });
         });
     }
 
@@ -1103,6 +1169,7 @@ class GameRoom {
             return;
         }
 
+        await this.withMechanicsRoomLock(data.roomCode, async () => {
         const roomData = await this.state.storage.get(`room:${data.roomCode}`);
         if (!roomData) {
             this.send(session, { type: 'error', message: 'Room no longer exists.' });
@@ -1110,9 +1177,12 @@ class GameRoom {
         }
 
         const room = JSON.parse(roomData);
+        const mechanicsData = await this.state.storage.get(`mechanics:${data.roomCode}`);
+        const mechanicsRecord = mechanicsData ? JSON.parse(mechanicsData) : null;
         
         session.roomCode = data.roomCode;
         session.isHost = room.hostUserId === session.userId;
+        this.resetMechanicsContactState(session);
 
         // Get existing players in room (excluding self)
         const playersInRoom = this.getPlayersInRoom(data.roomCode).filter(p => p.id !== session.id);
@@ -1134,13 +1204,19 @@ class GameRoom {
         this.send(session, {
             type: 'room_rejoined',
             roomCode: data.roomCode,
+            mapId: room.mapId || null,
             isHost: session.isHost,
             players: playersInRoom.map(p => ({
                 id: p.id,
                 name: p.user.name,
                 username: p.user.username,
                 color: p.playerColor
-            }))
+            })),
+            mechanicsState: mechanicsRecord?.state || null,
+            mechanicsRevision: Number.isInteger(mechanicsRecord?.revision) ? mechanicsRecord.revision : 0,
+            mechanicsServerTimestamp: Date.now(),
+            globalCoinIds: Array.isArray(room.globalCoinIds) ? room.globalCoinIds : []
+        });
         });
     }
 
@@ -1152,23 +1228,28 @@ class GameRoom {
 
         session.roomCode = null;
         session.isHost = false;
+        this.resetMechanicsContactState(session);
 
         if (wasHost) {
-            // Close room and kick everyone
-            this.broadcastToRoom(roomCode, {
-                type: 'room_closed',
-                message: 'Host left the room'
-            });
+            await this.withMechanicsRoomLock(roomCode, async () => {
+                // Close room and kick everyone.
+                this.broadcastToRoom(roomCode, {
+                    type: 'room_closed',
+                    message: 'Host left the room'
+                });
 
-            // Clear room data
-            await this.state.storage.delete(`room:${roomCode}`);
+                // Clear room data after any in-flight state publish completes.
+                await this.state.storage.delete(`room:${roomCode}`);
+                await this.state.storage.delete(`mechanics:${roomCode}`);
 
-            // Disconnect all players in room
-            for (const [id, s] of this.sessions) {
-                if (s.roomCode === roomCode) {
-                    s.roomCode = null;
+                // Disconnect all players in room.
+                for (const [id, s] of this.sessions) {
+                    if (s.roomCode === roomCode) {
+                        s.roomCode = null;
+                        this.resetMechanicsContactState(s);
+                    }
                 }
-            }
+            });
         } else {
             // Notify other players
             this.broadcastToRoom(roomCode, {
@@ -1180,15 +1261,247 @@ class GameRoom {
         }
     }
 
+    resetMechanicsContactState(session) {
+        session.x = null;
+        session.y = null;
+        session.vx = 0;
+        session.vy = 0;
+        session.jumps = 1;
+        session.previousPosition = null;
+        session.previousPositionAt = null;
+        session.lastPositionAt = null;
+        session.mechanicsContactLatches = new Map();
+    }
+
+    playerOverlapsMechanicsBounds(position, bounds) {
+        if (!position || !bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) ||
+            !Number.isFinite(bounds.width) || bounds.width <= 0 ||
+            !Number.isFinite(bounds.height) || bounds.height <= 0) return false;
+        const player = { x: position.x, y: position.y, width: 24, height: 24 };
+        if (bounds.shape === 'capsule') {
+            const radius = Math.min(bounds.width, bounds.height) / 2;
+            const horizontal = bounds.width > bounds.height;
+            const middle = horizontal
+                ? { x: bounds.x + radius, y: bounds.y, width: bounds.width - 2 * radius, height: bounds.height }
+                : { x: bounds.x, y: bounds.y + radius, width: bounds.width, height: bounds.height - 2 * radius };
+            const boxIntersects = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x &&
+                a.y < b.y + b.height && a.y + a.height > b.y;
+            const circleIntersects = (cx, cy) => {
+                const closestX = Math.max(player.x, Math.min(cx, player.x + player.width));
+                const closestY = Math.max(player.y, Math.min(cy, player.y + player.height));
+                const dx = cx - closestX;
+                const dy = cy - closestY;
+                return dx * dx + dy * dy <= radius * radius;
+            };
+            const firstCap = horizontal
+                ? { x: bounds.x + radius, y: bounds.y + bounds.height / 2 }
+                : { x: bounds.x + bounds.width / 2, y: bounds.y + radius };
+            const secondCap = horizontal
+                ? { x: bounds.x + bounds.width - radius, y: bounds.y + bounds.height / 2 }
+                : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height - radius };
+            return boxIntersects(player, middle) || circleIntersects(firstCap.x, firstCap.y) ||
+                circleIntersects(secondCap.x, secondCap.y);
+        }
+        if (bounds.shape === 'circle') {
+            const radius = Math.min(bounds.width, bounds.height) / 2;
+            const centerX = bounds.x + bounds.width / 2;
+            const centerY = bounds.y + bounds.height / 2;
+            const closestX = Math.max(player.x, Math.min(centerX, player.x + player.width));
+            const closestY = Math.max(player.y, Math.min(centerY, player.y + player.height));
+            const dx = centerX - closestX;
+            const dy = centerY - closestY;
+            return dx * dx + dy * dy <= radius * radius;
+        }
+        if (bounds.shape === 'polygon') {
+            const points = normalizeMechanicsPolygon(bounds.points)?.map(([x, y]) => ({
+                x: bounds.x + x * bounds.width,
+                y: bounds.y + y * bounds.height
+            }));
+            if (!points) return false;
+            const box = [
+                { x: player.x, y: player.y },
+                { x: player.x + player.width, y: player.y },
+                { x: player.x + player.width, y: player.y + player.height },
+                { x: player.x, y: player.y + player.height }
+            ];
+            const axes = [{ x: 1, y: 0 }, { x: 0, y: 1 }];
+            for (let i = 0; i < points.length; i++) {
+                const next = points[(i + 1) % points.length];
+                axes.push({ x: -(next.y - points[i].y), y: next.x - points[i].x });
+            }
+            for (const axis of axes) {
+                const shapeProjection = points.map(point => point.x * axis.x + point.y * axis.y);
+                const boxProjection = box.map(point => point.x * axis.x + point.y * axis.y);
+                if (Math.max(...shapeProjection) <= Math.min(...boxProjection) ||
+                    Math.max(...boxProjection) <= Math.min(...shapeProjection)) return false;
+            }
+            return true;
+        }
+        return player.x < bounds.x + bounds.width && player.x + player.width > bounds.x &&
+            player.y < bounds.y + bounds.height && player.y + player.height > bounds.y;
+    }
+
+    getMechanicsTilemapCellIndex(mapData) {
+        if (this.mechanicsTilemapCellIndexesBuilt) return this.mechanicsTilemapCellIndexes;
+        this.mechanicsTilemapCellIndexesBuilt = true;
+        const rawTilemaps = Array.isArray(mapData?.tilemaps) ? mapData.tilemaps.slice(0, 4096) : [];
+        const validLayers = new Set([0, 1, 2]);
+        for (const layer of Array.isArray(mapData?.layerDefinitions) ? mapData.layerDefinitions.slice(0, 64) : []) {
+            const rawDepth = layer?.depth;
+            const depth = typeof rawDepth === 'number' ? rawDepth
+                : (typeof rawDepth === 'string' && rawDepth.trim() ? Number(rawDepth) : Number.NaN);
+            if (Number.isSafeInteger(depth) && depth >= -1000 && depth <= 1000) validLayers.add(depth);
+        }
+        const usedLayers = new Set();
+        const usedIds = new Set();
+        let totalCells = 0;
+
+        for (const rawTilemap of rawTilemaps) {
+            if (this.mechanicsTilemapCellIndexes.size >= 64 || totalCells >= 100000) break;
+            if (!rawTilemap || typeof rawTilemap !== 'object' || Array.isArray(rawTilemap)) continue;
+            const rawLayer = rawTilemap.layer;
+            const layer = typeof rawLayer === 'number' ? rawLayer
+                : (typeof rawLayer === 'string' && rawLayer.trim() ? Number(rawLayer) : Number.NaN);
+            if (!Number.isSafeInteger(layer) || layer < -1000 || layer > 1000 ||
+                !validLayers.has(layer) || usedLayers.has(layer)) continue;
+            const rawId = typeof rawTilemap.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(rawTilemap.id)
+                ? rawTilemap.id : `tilemap-${layer}`;
+            let id = rawId;
+            let idSuffix = 1;
+            while (usedIds.has(id)) id = `${rawId}-${idSuffix++}`;
+            usedLayers.add(layer);
+            usedIds.add(id);
+
+            const cells = new Map();
+            const seenCellKeys = new Set();
+            if (Array.isArray(rawTilemap.cells)) {
+                let rawCellCount = 0;
+                for (const rawCell of rawTilemap.cells) {
+                    if (totalCells >= 100000 || rawCellCount++ >= 100000) break;
+                    if (!rawCell || typeof rawCell !== 'object') continue;
+                    const x = rawCell.x;
+                    const y = rawCell.y;
+                    if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x % 32 !== 0 || y % 32 !== 0 ||
+                        Math.abs(x) > 10000000 || Math.abs(y) > 10000000) continue;
+                    const collisionType = ['solid', 'oneWay', 'rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(rawCell.collisionType)
+                        ? rawCell.collisionType
+                        : (rawCell.collision === false ? 'decorative'
+                            : rawCell.oneWayPlatform === true ? 'oneWay'
+                                : rawCell.actingType === 'spike' ? 'hazard' : 'solid');
+                    const collisionPoints = rawCell.collisionShape === 'polygon' &&
+                        !['rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(collisionType)
+                        ? normalizeMechanicsPolygon(rawCell.collisionPoints) : null;
+                    const key = `${x},${y}`;
+                    if (!seenCellKeys.has(key)) {
+                        seenCellKeys.add(key);
+                        totalCells++;
+                    }
+                    cells.set(key, {
+                        id: `tile-${id}-${x}-${y}`,
+                        x,
+                        y,
+                        collisionType,
+                        ...(collisionPoints ? {
+                            collisionShape: 'polygon', collisionPoints,
+                            polygonOneWay: rawCell.polygonOneWay !== false
+                        } : collisionType === 'rampUpRight' ? { collisionShape: 'slopeUpRight' }
+                            : collisionType === 'rampUpLeft' ? { collisionShape: 'slopeUpLeft' } : {})
+                    });
+                }
+            }
+            this.mechanicsTilemapCellIndexes.set(id, cells);
+        }
+        return this.mechanicsTilemapCellIndexes;
+    }
+
+    mechanicsTilemapCellMatchesTriggerFilter(cellCollisionType, filter, polygonOneWay = false) {
+        if (!['any', 'solid', 'oneWay', 'hazard'].includes(filter) || cellCollisionType === 'decorative') return false;
+        if (filter === 'any') return true;
+        if (filter === 'oneWay') {
+            return ['oneWay', 'rampUpRight', 'rampUpLeft'].includes(cellCollisionType) || polygonOneWay === true;
+        }
+        return cellCollisionType === filter;
+    }
+
+    findMechanicsTilemapContact(mapData, tilemapId, collisionType, position, mechanicsState = {}) {
+        if (typeof tilemapId !== 'string' || !position ||
+            !['any', 'solid', 'oneWay', 'hazard'].includes(collisionType || 'any')) return null;
+        const filter = collisionType || 'any';
+        const cells = this.getMechanicsTilemapCellIndex(mapData).get(tilemapId);
+        if (!cells) return null;
+        const width = 24;
+        const height = 24;
+        const firstX = Math.floor(position.x / 32) * 32;
+        const lastX = (Math.ceil((position.x + width) / 32) - 1) * 32;
+        const firstY = Math.floor(position.y / 32) * 32;
+        const lastY = (Math.ceil((position.y + height) / 32) - 1) * 32;
+        for (let y = firstY; y <= lastY; y += 32) {
+            for (let x = firstX; x <= lastX; x += 32) {
+                const savedCell = cells.get(`${x},${y}`);
+                if (!savedCell) continue;
+                const effectiveCollisionType = mechanicsState.tilemapCells?.[savedCell.id] || savedCell.collisionType;
+                const polygonOneWay = savedCell.collisionShape === 'polygon' && savedCell.polygonOneWay !== false;
+                if (!this.mechanicsTilemapCellMatchesTriggerFilter(effectiveCollisionType, filter, polygonOneWay)) continue;
+                const points = effectiveCollisionType === 'rampUpRight' ? [[0, 1], [1, 0], [1, 1]]
+                    : effectiveCollisionType === 'rampUpLeft' ? [[0, 0], [0, 1], [1, 1]]
+                        : savedCell.collisionShape === 'polygon' ? savedCell.collisionPoints : null;
+                const bounds = { x, y, width: 32, height: 32, ...(points ? { shape: 'polygon', points } : {}) };
+                if (this.playerOverlapsMechanicsBounds(position, bounds)) {
+                    return { ...savedCell, collisionType: effectiveCollisionType, bounds };
+                }
+            }
+        }
+        return null;
+    }
+
+    refreshMechanicsContactLatches(roomCode) {
+        const roomSessions = Array.from(this.sessions.values()).filter(session => session.roomCode === roomCode);
+        for (const session of roomSessions) {
+            const latches = session.mechanicsContactLatches;
+            if (!(latches instanceof Map) || !Number.isFinite(session.x) || !Number.isFinite(session.y)) continue;
+            for (const [triggerId, latch] of latches) {
+                let stillActive = false;
+                if (latch.kind === 'zone-group-inside') {
+                    stillActive = latch.bounds.some(bounds => this.playerOverlapsMechanicsBounds(session, bounds));
+                } else if (latch.kind === 'zone-group-outside') {
+                    stillActive = !latch.bounds.some(bounds => this.playerOverlapsMechanicsBounds(session, bounds));
+                } else if (latch.kind === 'zone-inside' || latch.kind === 'object-inside') {
+                    stillActive = this.playerOverlapsMechanicsBounds(session, latch.bounds);
+                } else if (latch.kind === 'zone-outside') {
+                    stillActive = !this.playerOverlapsMechanicsBounds(session, latch.bounds);
+                } else if (latch.kind === 'tilemap-cell-contact') {
+                    const effectiveType = this.mechanicsTilemapCellOverrides[latch.objectId] || latch.cellCollisionType;
+                    stillActive = this.mechanicsTilemapCellMatchesTriggerFilter(
+                        effectiveType, latch.collisionType, latch.polygonOneWay
+                    ) &&
+                        this.playerOverlapsMechanicsBounds(session, latch.bounds);
+                } else if (latch.kind === 'player-contact') {
+                    stillActive = roomSessions.some(other => other !== session &&
+                        Number.isFinite(other.x) && Number.isFinite(other.y) &&
+                        this.playerOverlapsMechanicsBounds(session, { x: other.x, y: other.y, width: 24, height: 24 }));
+                }
+                if (!stillActive) latches.delete(triggerId);
+            }
+        }
+    }
+
     handlePosition(session, data) {
         if (!session.roomCode) return;
+        if (typeof data.x !== 'number' || !Number.isFinite(data.x) || Math.abs(data.x) > 10000000 ||
+            typeof data.y !== 'number' || !Number.isFinite(data.y) || Math.abs(data.y) > 10000000) return;
 
-        // Store server-authoritative position
+        // Retain recent position samples for room mechanics contact checks.
+        session.previousPosition = Number.isFinite(session.x) && Number.isFinite(session.y)
+            ? { x: session.x, y: session.y }
+            : null;
+        session.previousPositionAt = session.lastPositionAt || null;
         session.x = data.x;
         session.y = data.y;
-        session.vx = data.vx || 0;
-        session.vy = data.vy || 0;
-        session.jumps = data.jumps ?? 1;
+        session.vx = typeof data.vx === 'number' && Number.isFinite(data.vx) ? data.vx : 0;
+        session.vy = typeof data.vy === 'number' && Number.isFinite(data.vy) ? data.vy : 0;
+        session.jumps = Number.isSafeInteger(data.jumps) && data.jumps >= 0 && data.jumps <= 100 ? data.jumps : 1;
+        session.lastPositionAt = Date.now();
+        this.refreshMechanicsContactLatches(session.roomCode);
 
         // Broadcast to other players
         this.broadcastToRoom(session.roomCode, {
@@ -1196,9 +1509,9 @@ class GameRoom {
             playerId: session.id,
             x: data.x,
             y: data.y,
-            vx: data.vx || 0,
-            vy: data.vy || 0,
-            jumps: data.jumps ?? 1
+            vx: session.vx,
+            vy: session.vy,
+            jumps: session.jumps
         }, session.id);
 
         // Echo back to sender for reconciliation
@@ -1206,10 +1519,678 @@ class GameRoom {
             type: 'position_ack',
             x: data.x,
             y: data.y,
-            vx: data.vx || 0,
-            vy: data.vy || 0,
-            jumps: data.jumps ?? 1,
+            vx: session.vx,
+            vy: session.vy,
+            jumps: session.jumps,
             timestamp: Date.now()
+        });
+    }
+
+    async withMechanicsRoomLock(roomCode, operation) {
+        const previous = this.mechanicsStateQueues.get(roomCode) || Promise.resolve();
+        const current = previous.catch(() => {}).then(operation);
+        this.mechanicsStateQueues.set(roomCode, current);
+        try {
+            return await current;
+        } finally {
+            if (this.mechanicsStateQueues.get(roomCode) === current) this.mechanicsStateQueues.delete(roomCode);
+        }
+    }
+
+    sanitizeMechanicsState(mapData, state, validPlayerIds = new Set()) {
+        if (!mapData || typeof mapData !== 'object' || !state || typeof state !== 'object' || Array.isArray(state)) return null;
+        if (Object.keys(state).some(key => !['variables', 'lists', 'objects', 'positions', 'motions', 'objectHealth', 'objectSpriteFrames', 'objectSpriteAnimations', 'objectOpacities', 'playerVariables', 'playerLists', 'spawnedObjects', 'tilemapCells', 'triggers', 'gravity', 'jumpForce', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed'].includes(key))) return null;
+        if (state.gravity !== undefined && state.gravity !== null && (typeof state.gravity !== 'number' || !Number.isFinite(state.gravity) || state.gravity < 0 || state.gravity > 5)) return null;
+        if (state.jumpForce !== undefined && state.jumpForce !== null && (typeof state.jumpForce !== 'number' || !Number.isFinite(state.jumpForce) || state.jumpForce < -100 || state.jumpForce > -0.1)) return null;
+        if (state.playerSpeed !== undefined && state.playerSpeed !== null && (typeof state.playerSpeed !== 'number' || !Number.isFinite(state.playerSpeed) || state.playerSpeed < 0.1 || state.playerSpeed > 100)) return null;
+        if (state.horizontalAcceleration !== undefined && state.horizontalAcceleration !== null && (typeof state.horizontalAcceleration !== 'number' || !Number.isFinite(state.horizontalAcceleration) || state.horizontalAcceleration < 0 || state.horizontalAcceleration > 20)) return null;
+        if (state.airControl !== undefined && state.airControl !== null && (typeof state.airControl !== 'number' || !Number.isFinite(state.airControl) || state.airControl < 0 || state.airControl > 1)) return null;
+        if (state.terminalFallSpeed !== undefined && state.terminalFallSpeed !== null && (typeof state.terminalFallSpeed !== 'number' || !Number.isFinite(state.terminalFallSpeed) || state.terminalFallSpeed < 1 || state.terminalFallSpeed > 100)) return null;
+        if (state.variables !== undefined && (!state.variables || typeof state.variables !== 'object' || Array.isArray(state.variables))) return null;
+        if (state.lists !== undefined && (!state.lists || typeof state.lists !== 'object' || Array.isArray(state.lists))) return null;
+        if (state.objects !== undefined && (!state.objects || typeof state.objects !== 'object' || Array.isArray(state.objects))) return null;
+        if (state.positions !== undefined && (!state.positions || typeof state.positions !== 'object' || Array.isArray(state.positions))) return null;
+        if (state.motions !== undefined && (!state.motions || typeof state.motions !== 'object' || Array.isArray(state.motions))) return null;
+        if (state.objectHealth !== undefined && (!state.objectHealth || typeof state.objectHealth !== 'object' || Array.isArray(state.objectHealth))) return null;
+        if (state.objectSpriteFrames !== undefined && (!state.objectSpriteFrames || typeof state.objectSpriteFrames !== 'object' || Array.isArray(state.objectSpriteFrames))) return null;
+        if (state.objectSpriteAnimations !== undefined && (!state.objectSpriteAnimations || typeof state.objectSpriteAnimations !== 'object' || Array.isArray(state.objectSpriteAnimations))) return null;
+        if (state.objectOpacities !== undefined && (!state.objectOpacities || typeof state.objectOpacities !== 'object' || Array.isArray(state.objectOpacities))) return null;
+        if (state.playerVariables !== undefined && (!state.playerVariables || typeof state.playerVariables !== 'object' || Array.isArray(state.playerVariables))) return null;
+        if (state.playerLists !== undefined && (!state.playerLists || typeof state.playerLists !== 'object' || Array.isArray(state.playerLists))) return null;
+        if (state.spawnedObjects !== undefined && (!state.spawnedObjects || typeof state.spawnedObjects !== 'object' || Array.isArray(state.spawnedObjects))) return null;
+        if (state.tilemapCells !== undefined && (!state.tilemapCells || typeof state.tilemapCells !== 'object' || Array.isArray(state.tilemapCells))) return null;
+        if (state.triggers !== undefined && (!state.triggers || typeof state.triggers !== 'object' || Array.isArray(state.triggers))) return null;
+        const variables = state.variables || {};
+        const lists = state.lists || {};
+        const objects = state.objects || {};
+        const positions = state.positions || {};
+        const motions = state.motions || {};
+        const objectHealth = state.objectHealth || {};
+        const objectSpriteFrames = state.objectSpriteFrames || {};
+        const objectSpriteAnimations = state.objectSpriteAnimations || {};
+        const objectOpacities = state.objectOpacities || {};
+        const playerVariables = state.playerVariables || {};
+        const playerLists = state.playerLists || {};
+        const spawnedObjects = state.spawnedObjects || {};
+        const tilemapCells = state.tilemapCells || {};
+        const triggers = state.triggers || {};
+        const gravity = state.gravity ?? null;
+        const jumpForce = state.jumpForce ?? null;
+        const playerSpeed = state.playerSpeed ?? null;
+        const horizontalAcceleration = state.horizontalAcceleration ?? null;
+        const airControl = state.airControl ?? null;
+        const terminalFallSpeed = state.terminalFallSpeed ?? null;
+        const codeData = mapData.codeData && typeof mapData.codeData === 'object' ? mapData.codeData : {};
+        const eventDefs = new Map((Array.isArray(codeData.events) ? codeData.events : [])
+            .filter(event => event && typeof event.id === 'string' && event.id)
+            .map(event => [event.id, event]));
+        const triggerDefs = new Map((Array.isArray(codeData.triggers) ? codeData.triggers : [])
+            .filter(trigger => trigger && typeof trigger.id === 'string' && trigger.id)
+            .map(trigger => [trigger.id, trigger]));
+        const variableDefs = new Map((Array.isArray(codeData.variables) ? codeData.variables : [])
+            .filter(variable => variable && variable.enabled !== false && variable.variableType !== 'list' && variable.scope !== 'player')
+            .map(variable => [String(variable.id), variable]));
+        const playerVariableDefs = new Map((Array.isArray(codeData.variables) ? codeData.variables : [])
+            .filter(variable => variable && variable.enabled !== false && variable.variableType !== 'list' && variable.scope === 'player')
+            .map(variable => [String(variable.id), variable]));
+        const playerListVariableDefs = new Map((Array.isArray(codeData.variables) ? codeData.variables : [])
+            .filter(variable => variable && variable.enabled !== false && variable.variableType === 'list' && variable.scope === 'player')
+            .map(variable => [String(variable.id), variable]));
+        const listVariableDefs = new Map((Array.isArray(codeData.variables) ? codeData.variables : [])
+            .filter(variable => variable && variable.enabled !== false && variable.variableType === 'list' && variable.scope !== 'player')
+            .map(variable => [String(variable.id), variable]));
+        const mapObjects = Array.isArray(mapData.objects) ? mapData.objects : [];
+        const tilemapCellIds = new Set();
+        for (const cells of this.getMechanicsTilemapCellIndex(mapData).values()) {
+            for (const cell of cells.values()) tilemapCellIds.add(cell.id);
+        }
+        const objectIds = new Set(mapObjects
+            .map(object => object?.id).filter(id => typeof id === 'string' && id.length > 0));
+        const spawnableTemplates = new Set(mapObjects
+            .filter(object => object && typeof object.id === 'string' && object.id.length > 0 &&
+                object.type !== 'teleportal' && object.appearanceType !== 'teleportal' &&
+                !['zone', 'button', 'checkpoint', 'spawnpoint', 'endpoint'].includes(object.appearanceType) &&
+                !['checkpoint', 'spawnpoint', 'endpoint'].includes(object.actingType))
+            .map(object => object.id));
+        if (Object.keys(variables).length > 1000 || Object.keys(lists).length > 1000 || Object.keys(objects).length > 2000 || Object.keys(positions).length > 2000 || Object.keys(motions).length > 2000 || Object.keys(objectHealth).length > 512 || Object.keys(objectSpriteFrames).length > 2000 || Object.keys(objectSpriteAnimations).length > 2000 || Object.keys(objectOpacities).length > 2000 || Object.keys(playerVariables).length > 100 || Object.keys(playerLists).length > 100 || Object.keys(spawnedObjects).length > 64 || Object.keys(tilemapCells).length > 2000 || Object.keys(triggers).length > 1000) return null;
+
+        const cleanVariables = Object.create(null);
+        for (const [id, value] of Object.entries(variables)) {
+            const variable = variableDefs.get(id);
+            if (!variable) return null;
+            if (variable.valueType === 'boolean') {
+                if (typeof value !== 'boolean') return null;
+                cleanVariables[id] = value;
+            } else if (variable.valueType === 'integer') {
+                if (typeof value !== 'number' || !Number.isSafeInteger(value)) return null;
+                cleanVariables[id] = value;
+            } else if (variable.valueType === 'float') {
+                if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+                cleanVariables[id] = value;
+            } else if (variable.valueType === 'string') {
+                if (typeof value !== 'string' || value.length > 512) return null;
+                cleanVariables[id] = value;
+            } else {
+                return null;
+            }
+        }
+
+        const cleanLists = Object.create(null);
+        let totalListItemCount = 0;
+        for (const [id, value] of Object.entries(lists)) {
+            const variable = listVariableDefs.get(id);
+            if (!variable || !Array.isArray(value) || value.length > 100 || (totalListItemCount += value.length) > 2000) return null;
+            const items = [];
+            for (const item of value) {
+                if (!item || typeof item !== 'object' || Array.isArray(item) ||
+                    Object.keys(item).some(key => !['valueType', 'value'].includes(key))) return null;
+                if (item.valueType === 'boolean') {
+                    if (typeof item.value !== 'boolean') return null;
+                } else if (item.valueType === 'integer') {
+                    if (typeof item.value !== 'number' || !Number.isSafeInteger(item.value)) return null;
+                } else if (item.valueType === 'float') {
+                    if (typeof item.value !== 'number' || !Number.isFinite(item.value)) return null;
+                } else if (item.valueType === 'string') {
+                    if (typeof item.value !== 'string' || item.value.length > 512) return null;
+                } else {
+                    return null;
+                }
+                items.push({ valueType: item.valueType, value: item.value });
+            }
+            cleanLists[id] = items;
+        }
+
+        const cleanObjects = Object.create(null);
+        for (const [id, enabled] of Object.entries(objects)) {
+            if (!objectIds.has(id) || typeof enabled !== 'boolean') return null;
+            cleanObjects[id] = enabled;
+        }
+        const cleanPositions = Object.create(null);
+        for (const [id, position] of Object.entries(positions)) {
+            if (!objectIds.has(id) || !position || typeof position !== 'object' || Array.isArray(position) ||
+                Object.keys(position).some(key => !['x', 'y'].includes(key)) ||
+                typeof position.x !== 'number' || !Number.isFinite(position.x) || Math.abs(position.x) > 10000000 ||
+                typeof position.y !== 'number' || !Number.isFinite(position.y) || Math.abs(position.y) > 10000000) return null;
+            cleanPositions[id] = { x: position.x, y: position.y };
+        }
+        const cleanMotions = Object.create(null);
+        const allowedMotionEasings = new Set(['linear', 'easeIn', 'easeOut', 'easeInOut']);
+        for (const [id, motion] of Object.entries(motions)) {
+            if (!objectIds.has(id) || !motion || typeof motion !== 'object' || Array.isArray(motion) ||
+                Object.keys(motion).some(key => !['motionId', 'fromX', 'fromY', 'toX', 'toY', 'startedAt', 'durationMs', 'easing'].includes(key)) ||
+                typeof motion.motionId !== 'string' || motion.motionId.length < 1 || motion.motionId.length > 128 ||
+                !['fromX', 'fromY', 'toX', 'toY'].every(key => typeof motion[key] === 'number' && Number.isFinite(motion[key]) && Math.abs(motion[key]) <= 10000000) ||
+                !Number.isSafeInteger(motion.startedAt) || motion.startedAt <= 0 ||
+                typeof motion.durationMs !== 'number' || !Number.isFinite(motion.durationMs) || motion.durationMs < 10 || motion.durationMs > 60000 ||
+                !allowedMotionEasings.has(motion.easing)) return null;
+            cleanMotions[id] = {
+                motionId: motion.motionId,
+                fromX: motion.fromX,
+                fromY: motion.fromY,
+                toX: motion.toX,
+                toY: motion.toY,
+                startedAt: motion.startedAt,
+                durationMs: motion.durationMs,
+                easing: motion.easing
+            };
+            if (!Object.prototype.hasOwnProperty.call(cleanPositions, id)) return null;
+        }
+        const cleanPlayerVariables = Object.create(null);
+        let totalPlayerVariableCount = 0;
+        for (const [playerId, values] of Object.entries(playerVariables)) {
+            if (typeof playerId !== 'string' || !playerId || playerId.length > 128 || !values || typeof values !== 'object' || Array.isArray(values)) return null;
+            // Drop state for players who have left. Their session ids are not
+            // reusable and are never trusted as map-authored identifiers.
+            if (!validPlayerIds.has(playerId)) continue;
+            const entries = Object.entries(values);
+            if (entries.length > 1000 || (totalPlayerVariableCount += entries.length) > 2000) return null;
+            const cleanValues = Object.create(null);
+            for (const [id, value] of entries) {
+                const variable = playerVariableDefs.get(id);
+                if (!variable) return null;
+                if (variable.valueType === 'boolean') {
+                    if (typeof value !== 'boolean') return null;
+                    cleanValues[id] = value;
+                } else if (variable.valueType === 'integer') {
+                    if (typeof value !== 'number' || !Number.isSafeInteger(value)) return null;
+                    cleanValues[id] = value;
+                } else if (variable.valueType === 'float') {
+                    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+                    cleanValues[id] = value;
+                } else if (variable.valueType === 'string') {
+                    if (typeof value !== 'string' || value.length > 512) return null;
+                    cleanValues[id] = value;
+                } else {
+                    return null;
+                }
+            }
+            cleanPlayerVariables[playerId] = cleanValues;
+        }
+        const cleanPlayerLists = Object.create(null);
+        let totalPlayerListCount = 0;
+        for (const [playerId, values] of Object.entries(playerLists)) {
+            if (typeof playerId !== 'string' || !playerId || playerId.length > 128 || !values || typeof values !== 'object' || Array.isArray(values)) return null;
+            if (!validPlayerIds.has(playerId)) continue;
+            const entries = Object.entries(values);
+            if (entries.length > 1000 || (totalPlayerListCount += entries.length) > 2000) return null;
+            const cleanLists = Object.create(null);
+            for (const [id, value] of entries) {
+                const variable = playerListVariableDefs.get(id);
+                if (!variable || !Array.isArray(value) || value.length > 100 || (totalListItemCount += value.length) > 2000) return null;
+                const items = [];
+                for (const item of value) {
+                    if (!item || typeof item !== 'object' || Array.isArray(item) ||
+                        Object.keys(item).some(key => !['valueType', 'value'].includes(key))) return null;
+                    if (item.valueType === 'boolean') {
+                        if (typeof item.value !== 'boolean') return null;
+                    } else if (item.valueType === 'integer') {
+                        if (typeof item.value !== 'number' || !Number.isSafeInteger(item.value)) return null;
+                    } else if (item.valueType === 'float') {
+                        if (typeof item.value !== 'number' || !Number.isFinite(item.value)) return null;
+                    } else if (item.valueType === 'string') {
+                        if (typeof item.value !== 'string' || item.value.length > 512) return null;
+                    } else {
+                        return null;
+                    }
+                    items.push({ valueType: item.valueType, value: item.value });
+                }
+                cleanLists[id] = items;
+            }
+            cleanPlayerLists[playerId] = cleanLists;
+        }
+        const cleanSpawnedObjects = Object.create(null);
+        for (const [id, instance] of Object.entries(spawnedObjects)) {
+            if (!/^mspawn_[A-Za-z0-9_-]{1,100}$/.test(id) || objectIds.has(id) ||
+                !instance || typeof instance !== 'object' || Array.isArray(instance) ||
+                Object.keys(instance).some(key => !['templateId', 'x', 'y', 'tag'].includes(key)) ||
+                typeof instance.templateId !== 'string' || !spawnableTemplates.has(instance.templateId) ||
+                typeof instance.x !== 'number' || !Number.isFinite(instance.x) || Math.abs(instance.x) > 10000000 ||
+                typeof instance.y !== 'number' || !Number.isFinite(instance.y) || Math.abs(instance.y) > 10000000 ||
+                typeof instance.tag !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(instance.tag)) return null;
+            cleanSpawnedObjects[id] = {
+                templateId: instance.templateId,
+                x: instance.x,
+                y: instance.y,
+                tag: instance.tag
+            };
+        }
+        const cleanObjectHealth = Object.create(null);
+        for (const [id, health] of Object.entries(objectHealth)) {
+            if ((!objectIds.has(id) && !Object.prototype.hasOwnProperty.call(cleanSpawnedObjects, id)) ||
+                !health || typeof health !== 'object' || Array.isArray(health) ||
+                Object.keys(health).some(key => !['current', 'maximum'].includes(key)) ||
+                !Number.isSafeInteger(health.current) || !Number.isSafeInteger(health.maximum) ||
+                health.maximum < 1 || health.maximum > 99999 || health.current < 0 || health.current > health.maximum) return null;
+            cleanObjectHealth[id] = { current: health.current, maximum: health.maximum };
+        }
+        const cleanObjectSpriteFrames = Object.create(null);
+        const mapObjectsById = new Map(mapObjects.filter(object => object && typeof object.id === 'string').map(object => [object.id, object]));
+        for (const [id, frame] of Object.entries(objectSpriteFrames)) {
+            const spriteSheet = mapObjectsById.get(id)?.spriteSheet;
+            if (!spriteSheet || !Number.isSafeInteger(spriteSheet.frameCount) || spriteSheet.frameCount < 1 || spriteSheet.frameCount > 256 ||
+                !Number.isSafeInteger(frame) || frame < 0 || frame >= spriteSheet.frameCount) return null;
+            cleanObjectSpriteFrames[id] = frame;
+        }
+        const cleanObjectSpriteAnimations = Object.create(null);
+        for (const [id, animation] of Object.entries(objectSpriteAnimations)) {
+            const frameLimit = mapObjectsById.get(id)?.spriteSheet?.frameCount;
+            const completionEventId = animation?.completionEventId === undefined ? '' : animation.completionEventId;
+            const completionEventFired = animation?.completionEventFired === undefined ? false : animation.completionEventFired;
+            if (!Number.isSafeInteger(frameLimit) || frameLimit < 1 || frameLimit > 256 ||
+                !animation || typeof animation !== 'object' || Array.isArray(animation) ||
+                Object.keys(animation).some(key => !['startFrame', 'frameCount', 'fps', 'loop', 'startedAtServer', 'completionEventId', 'completionEventFired'].includes(key)) ||
+                !Number.isSafeInteger(animation.startFrame) || animation.startFrame < 0 ||
+                !Number.isSafeInteger(animation.frameCount) || animation.frameCount < 1 || animation.startFrame + animation.frameCount > frameLimit ||
+                typeof animation.fps !== 'number' || !Number.isFinite(animation.fps) || animation.fps < 1 || animation.fps > 30 ||
+                typeof animation.loop !== 'boolean' || !Number.isSafeInteger(animation.startedAtServer) ||
+                typeof completionEventId !== 'string' || completionEventId.length > 128 ||
+                typeof completionEventFired !== 'boolean' ||
+                (completionEventId && (!eventDefs.has(completionEventId) || eventDefs.get(completionEventId).enabled === false || animation.loop)) ||
+                (!completionEventId && completionEventFired)) return null;
+            cleanObjectSpriteAnimations[id] = {
+                startFrame: animation.startFrame,
+                frameCount: animation.frameCount,
+                fps: animation.fps,
+                loop: animation.loop,
+                startedAtServer: animation.startedAtServer,
+                completionEventId,
+                completionEventFired
+            };
+        }
+        const cleanObjectOpacities = Object.create(null);
+        for (const [id, opacity] of Object.entries(objectOpacities)) {
+            if (!objectIds.has(id) || typeof opacity !== 'number' || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) return null;
+            cleanObjectOpacities[id] = opacity;
+        }
+        const cleanTilemapCells = Object.create(null);
+        for (const [id, collisionType] of Object.entries(tilemapCells)) {
+            if (!tilemapCellIds.has(id) || !['solid', 'oneWay', 'rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(collisionType)) return null;
+            cleanTilemapCells[id] = collisionType;
+        }
+        const cleanTriggers = Object.create(null);
+        for (const [id, enabled] of Object.entries(triggers)) {
+            if (!triggerDefs.has(id) || typeof enabled !== 'boolean') return null;
+            cleanTriggers[id] = enabled;
+        }
+        const cleanState = { variables: cleanVariables, lists: cleanLists, objects: cleanObjects, positions: cleanPositions, motions: cleanMotions, objectHealth: cleanObjectHealth, objectSpriteFrames: cleanObjectSpriteFrames, objectSpriteAnimations: cleanObjectSpriteAnimations, objectOpacities: cleanObjectOpacities, playerVariables: cleanPlayerVariables, playerLists: cleanPlayerLists, spawnedObjects: cleanSpawnedObjects, tilemapCells: cleanTilemapCells, triggers: cleanTriggers, gravity, jumpForce, playerSpeed, horizontalAcceleration, airControl, terminalFallSpeed };
+        if (new TextEncoder().encode(JSON.stringify(cleanState)).byteLength > MAX_MECHANICS_STATE_BYTES) return null;
+        return cleanState;
+    }
+
+    async handleMechanicsState(session, data) {
+        if (!session.roomCode || !session.isHost) {
+            this.send(session, { type: 'error', message: 'Only the room host can publish mechanics state' });
+            return;
+        }
+        const roomCode = session.roomCode;
+
+        await this.withMechanicsRoomLock(roomCode, async () => {
+            if (session.roomCode !== roomCode || !session.isHost) return;
+            const roomData = await this.state.storage.get(`room:${roomCode}`);
+            if (!roomData) return;
+            const room = JSON.parse(roomData);
+            if (room.hostUserId !== session.userId) {
+                this.send(session, { type: 'error', message: 'Only the room owner can publish mechanics state' });
+                return;
+            }
+            const validPlayerIds = new Set(this.getPlayersInRoom(roomCode).map(player => player.id));
+            const state = this.sanitizeMechanicsState(room.mapData, data.state, validPlayerIds);
+            if (!state) {
+                this.send(session, { type: 'error', message: 'Mechanics state does not match the map schema or size limits' });
+                return;
+            }
+            const previousData = await this.state.storage.get(`mechanics:${roomCode}`);
+            if (session.roomCode !== roomCode || !session.isHost) return;
+            const previous = previousData ? JSON.parse(previousData) : null;
+            const serverTimestamp = Date.now();
+            const previousMotions = previous?.state?.motions && typeof previous.state.motions === 'object'
+                ? previous.state.motions : {};
+            for (const [objectId, motion] of Object.entries(state.motions)) {
+                const previousMotion = previousMotions[objectId];
+                const isSameMotion = previousMotion?.motionId === motion.motionId &&
+                    previousMotion.fromX === motion.fromX && previousMotion.fromY === motion.fromY &&
+                    previousMotion.toX === motion.toX && previousMotion.toY === motion.toY &&
+                    previousMotion.durationMs === motion.durationMs && previousMotion.easing === motion.easing;
+                motion.startedAt = isSameMotion && Number.isSafeInteger(previousMotion.startedAt)
+                    ? previousMotion.startedAt
+                    : serverTimestamp;
+            }
+            const revision = (Number.isInteger(previous?.revision) ? previous.revision : 0) + 1;
+            await this.state.storage.put(`mechanics:${roomCode}`, JSON.stringify({ revision, updatedAt: serverTimestamp, state }));
+            this.mechanicsTilemapCellOverrides = state.tilemapCells;
+            this.refreshMechanicsContactLatches(roomCode);
+            this.broadcastToRoom(roomCode, {
+                type: 'mechanics_state',
+                revision,
+                state,
+                serverTimestamp
+            });
+        });
+    }
+
+    async handleMechanicsEventRequest(session, data) {
+        if (!session.roomCode || session.isHost) return;
+        const roomCode = session.roomCode;
+        const triggerId = typeof data.triggerId === 'string' ? data.triggerId : '';
+        const eventId = typeof data.eventId === 'string' ? data.eventId : '';
+        const choiceParentEventId = typeof data.choiceParentEventId === 'string' ? data.choiceParentEventId : '';
+        if (!triggerId || triggerId.length > 128 || !eventId || eventId.length > 128 || choiceParentEventId.length > 128) return;
+
+        const now = Date.now();
+        if (!session.mechanicsRequestWindow || now - session.mechanicsRequestWindow.startedAt >= 1000) {
+            session.mechanicsRequestWindow = { startedAt: now, count: 0 };
+        }
+        session.mechanicsRequestWindow.count++;
+        if (session.mechanicsRequestWindow.count > 20) {
+            this.send(session, { type: 'error', message: 'Mechanics event request limit reached' });
+            return;
+        }
+
+        const roomData = await this.state.storage.get(`room:${roomCode}`);
+        if (!roomData) return;
+        if (session.roomCode !== roomCode || session.isHost) return;
+        const room = JSON.parse(roomData);
+        const codeData = room.mapData?.codeData || {};
+        const triggers = Array.isArray(codeData.triggers) ? codeData.triggers : [];
+        const eventsById = new Map();
+        // Older room maps can contain both fields after a partial migration.
+        // Use canonical events first, then fill gaps from legacy actions so a
+        // valid guest request is not rejected just because another event exists.
+        for (const records of [codeData.events, codeData.actions]) {
+            if (!Array.isArray(records)) continue;
+            for (const event of records) {
+                if (typeof event?.id === 'string' && event.id && !eventsById.has(event.id)) {
+                    eventsById.set(event.id, event);
+                }
+            }
+        }
+        const roomPlayers = this.getPlayersInRoom(roomCode);
+        const trigger = triggers.find(item => item?.id === triggerId);
+        if (['gameStarts', 'gameEnds', 'playerDies', 'repeat', 'playerJumps', 'playerLands', 'playerRespawns'].includes(trigger?.triggerType)) return;
+        if (trigger?.triggerType === 'playerHealthChanged') return;
+        if (trigger?.triggerType === 'variableCondition') {
+            const variable = (Array.isArray(codeData.variables) ? codeData.variables : [])
+                .find(item => item?.id === trigger.config?.variableId && item.enabled !== false &&
+                    (item.scope === undefined || ['map', 'player'].includes(item.scope)) && item.variableType !== 'list');
+            if (!variable) return;
+        }
+        const linkedEventId = trigger?.config?.eventId || trigger?.config?.actionId;
+        const event = eventsById.get(eventId);
+        const choiceParentEvent = choiceParentEventId ? eventsById.get(choiceParentEventId) : null;
+        const isDirectChoiceRoute = (Array.isArray(choiceParentEvent?.actions) ? choiceParentEvent.actions : []).some(action =>
+            (action?.type === 'showChoice' || action?.type === 'showMenu') &&
+            ((Array.isArray(action.choices) ? action.choices : []).some(choice => choice?.eventId === eventId) ||
+                (action.type === 'showMenu' && action.cancelEventId === eventId))
+        );
+        const isRootEventRequest = linkedEventId === eventId && !choiceParentEventId;
+        if (!event || event.enabled === false || (!isRootEventRequest &&
+            (!choiceParentEvent || choiceParentEvent.enabled === false || !isDirectChoiceRoute))) return;
+
+        // Recheck trigger conditions instead of trusting a trigger id alone.
+        // Position and keyboard samples remain client-reported; full server-
+        // side physics and input remain separate requirements for cheat-
+        // resistant play.
+        const currentPosition = Number.isFinite(session.x) && Number.isFinite(session.y)
+            ? { x: session.x, y: session.y }
+            : null;
+        const positionIsRecent = currentPosition && Number.isSafeInteger(session.lastPositionAt) &&
+            now >= session.lastPositionAt && now - session.lastPositionAt <= 3000;
+        let touchedPlayerId = null;
+        const playerBounds = position => position && ({ x: position.x, y: position.y, width: 24, height: 24 });
+        let contactLatch = null;
+        const overlaps = (position, bounds) => {
+            return this.playerOverlapsMechanicsBounds(position, bounds);
+        };
+        let mechanicsState = {};
+        try {
+            const mechanicsData = await this.state.storage.get(`mechanics:${roomCode}`);
+            mechanicsState = mechanicsData ? JSON.parse(mechanicsData).state || {} : {};
+        } catch (_) {
+            return;
+        }
+        const triggerOverride = mechanicsState.triggers?.[triggerId];
+        if (triggerOverride === false || (triggerOverride !== true && trigger.enabled === false)) return;
+        this.mechanicsTilemapCellOverrides = mechanicsState.tilemapCells && typeof mechanicsState.tilemapCells === 'object'
+            ? mechanicsState.tilemapCells : Object.create(null);
+        const mapObjects = Array.isArray(room.mapData?.objects) ? room.mapData.objects : [];
+        const objectById = new Map(mapObjects.map(object => [object?.id, object]).filter(([id, object]) => id && object));
+        const getBounds = object => {
+            if (!object || mechanicsState.objects?.[object.id] === false) return null;
+            const position = mechanicsState.positions?.[object.id] || object;
+            return {
+                x: position.x,
+                y: position.y,
+                width: object.width ?? object.w,
+                height: object.height ?? object.h
+            };
+        };
+        const triggerConfig = trigger.config && typeof trigger.config === 'object' ? trigger.config : {};
+        const triggerType = trigger.triggerType;
+        if (!['playerEnterZone', 'playerLeaveZone', 'playerTouchObject', 'playerPressButton',
+            'playerTouchTilemap', 'playerKeyInput', 'playerActionInput', 'variableCondition'].includes(triggerType)) return;
+        if (triggerType === 'playerActionInput' && triggerConfig.action !== 'touchOtherPlayer') return;
+
+        if (triggerType === 'variableCondition') {
+            const variable = (Array.isArray(codeData.variables) ? codeData.variables : [])
+                .find(item => item?.id === triggerConfig.variableId && item.enabled !== false &&
+                    (item.scope === undefined || ['map', 'player'].includes(item.scope)) && item.variableType !== 'list');
+            const operator = triggerConfig.operator || 'equals';
+            if (!variable || !['equals', 'notEquals', 'truthy', 'falsy', 'greaterThan', 'lessThan'].includes(operator) ||
+                (['greaterThan', 'lessThan'].includes(operator) && !['integer', 'float'].includes(variable.valueType))) return;
+
+            const normalizeValue = value => {
+                if (variable.valueType === 'integer') {
+                    const number = Number(value);
+                    return Number.isSafeInteger(number) ? number : null;
+                }
+                if (variable.valueType === 'float') {
+                    const number = Number(value);
+                    return Number.isFinite(number) ? number : null;
+                }
+                if (variable.valueType === 'boolean') return value === true || value === 'true';
+                if (variable.valueType === 'string' && typeof value === 'string' && value.length <= 512) return value;
+                return null;
+            };
+            const actualValues = variable.scope === 'player'
+                ? mechanicsState.playerVariables?.[session.id] || {}
+                : mechanicsState.variables || {};
+            const actual = Object.prototype.hasOwnProperty.call(actualValues, variable.id)
+                ? actualValues[variable.id]
+                : normalizeValue(variable.defaultValue);
+            const expected = normalizeValue(triggerConfig.value);
+            if (actual === null || (!['truthy', 'falsy'].includes(operator) && expected === null)) return;
+            const matches = operator === 'truthy' ? Boolean(actual)
+                : operator === 'falsy' ? !actual
+                    : operator === 'notEquals' ? actual !== expected
+                        : operator === 'greaterThan' ? actual > expected
+                            : operator === 'lessThan' ? actual < expected
+                                : actual === expected;
+            if (!matches) return;
+        }
+
+        if (triggerType === 'playerKeyInput') {
+            const configuredKeys = triggerConfig.keys;
+            const inputKeys = Array.isArray(data.inputKeys) ? data.inputKeys : [];
+            if (!Array.isArray(configuredKeys) || !configuredKeys.length || configuredKeys.length > 16 ||
+                configuredKeys.some(key => typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(key) || key === 'other') ||
+                new Set(configuredKeys).size !== configuredKeys.length || inputKeys.length > 16 ||
+                inputKeys.some(key => typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(key)) ||
+                new Set(inputKeys).size !== inputKeys.length) return;
+            const pressed = new Set(inputKeys);
+            const allPressed = configuredKeys.every(key => key === 'any' || key === 'all'
+                ? pressed.size > 0
+                    : key === 'allAlphabet'
+                        ? Array.from(pressed).some(code => /^Key[A-Z]$/.test(code))
+                        : key === 'allNumbers'
+                            ? Array.from(pressed).some(code => /^Digit[0-9]$/.test(code))
+                            : key === 'allAlphanumeric'
+                                ? Array.from(pressed).some(code => /^(Key[A-Z]|Digit[0-9])$/.test(code))
+                    : pressed.has(key));
+            if (!allPressed) return;
+        }
+
+        if (['playerEnterZone', 'playerLeaveZone'].includes(triggerType)) {
+            const zoneBounds = mapObjects
+                .filter(object => object?.appearanceType === 'zone' && object.zoneName === triggerConfig.zoneName)
+                .map(getBounds)
+                .filter(Boolean);
+            const previousPosition = session.previousPosition;
+            const previousIsRecent = previousPosition && Number.isSafeInteger(session.previousPositionAt) &&
+                now >= session.previousPositionAt && now - session.previousPositionAt <= 3000;
+            if (!positionIsRecent || !previousIsRecent || !zoneBounds.length) return;
+            const wasInside = zoneBounds.some(bounds => overlaps(previousPosition, bounds));
+            const isInside = zoneBounds.some(bounds => overlaps(currentPosition, bounds));
+            if (triggerType === 'playerEnterZone' ? (wasInside || !isInside) : (!wasInside || isInside)) return;
+            contactLatch = {
+                kind: triggerType === 'playerEnterZone' ? 'zone-group-inside' : 'zone-group-outside',
+                bounds: zoneBounds
+            };
+        } else if (triggerType === 'playerTouchObject') {
+            const object = objectById.get(triggerConfig.objectId);
+            if (!positionIsRecent || !object) return;
+            const candidates = [];
+            const contactShape = ['circle', 'capsule'].includes(triggerConfig.shape) ? triggerConfig.shape : 'box';
+            const staticBounds = getBounds(object);
+            if (staticBounds) candidates.push({ id: object.id, bounds: { ...staticBounds, shape: contactShape } });
+            for (const [spawnId, instance] of Object.entries(mechanicsState.spawnedObjects || {})) {
+                if (instance?.templateId !== object.id || !Number.isFinite(instance.x) || !Number.isFinite(instance.y)) continue;
+                candidates.push({
+                    id: spawnId,
+                    bounds: {
+                        x: instance.x,
+                        y: instance.y,
+                        width: object.width ?? object.w,
+                        height: object.height ?? object.h,
+                        shape: contactShape
+                    }
+                });
+            }
+            const touched = candidates.find(candidate => overlaps(currentPosition, candidate.bounds));
+            if (!touched) return;
+            contactLatch = { kind: 'object-inside', bounds: touched.bounds, objectId: touched.id };
+        } else if (triggerType === 'playerPressButton') {
+            if (!positionIsRecent || typeof triggerConfig.buttonName !== 'string' || !triggerConfig.buttonName) return;
+            const button = mapObjects.find(object => object?.appearanceType === 'button' &&
+                object.actingType === 'button' && object.name === triggerConfig.buttonName &&
+                overlaps(currentPosition, getBounds(object)));
+            if (!button) return;
+            contactLatch = { kind: 'object-inside', bounds: getBounds(button), objectId: button.id };
+        } else if (triggerType === 'playerTouchTilemap') {
+            if (!positionIsRecent) return;
+            const collisionType = triggerConfig.collisionType === undefined ? 'any' : triggerConfig.collisionType;
+            if (!['any', 'solid', 'oneWay', 'hazard'].includes(collisionType)) return;
+            const touched = this.findMechanicsTilemapContact(room.mapData, triggerConfig.tilemapId, collisionType, currentPosition, mechanicsState);
+            if (!touched) return;
+            const previousIsRecent = session.previousPosition && Number.isSafeInteger(session.previousPositionAt) &&
+                now >= session.previousPositionAt && now - session.previousPositionAt <= 3000;
+            if (previousIsRecent && this.findMechanicsTilemapContact(
+                room.mapData, triggerConfig.tilemapId, collisionType, session.previousPosition, mechanicsState
+            )) return;
+            contactLatch = {
+                kind: 'tilemap-cell-contact',
+                bounds: touched.bounds,
+                objectId: touched.id,
+                collisionType,
+                cellCollisionType: touched.collisionType,
+                polygonOneWay: touched.polygonOneWay === true
+            };
+        } else if (triggerType === 'playerActionInput' && triggerConfig.action === 'touchOtherPlayer') {
+            if (!positionIsRecent) return;
+            const touchedPlayer = roomPlayers.find(other => other.id !== session.id &&
+                Number.isSafeInteger(other.lastPositionAt) && now >= other.lastPositionAt && now - other.lastPositionAt <= 3000 &&
+                overlaps(currentPosition, playerBounds(other)));
+            if (!touchedPlayer) return;
+            touchedPlayerId = touchedPlayer.id;
+            contactLatch = { kind: 'player-contact' };
+        }
+
+        const hostSession = this.getPlayersInRoom(roomCode).find(player =>
+            player.isHost && player.userId === room.hostUserId
+        );
+        if (!hostSession) return;
+        if (contactLatch) {
+            this.refreshMechanicsContactLatches(roomCode);
+            if (!(session.mechanicsContactLatches instanceof Map)) session.mechanicsContactLatches = new Map();
+            if (session.mechanicsContactLatches.has(triggerId) || session.mechanicsContactLatches.size >= 256) return;
+            session.mechanicsContactLatches.set(triggerId, contactLatch);
+        }
+        this.send(hostSession, {
+            type: 'mechanics_event_request',
+            triggerId,
+            eventId,
+            choiceParentEventId: choiceParentEventId || null,
+            playerId: session.id,
+            touchedPlayerId,
+            touchedObjectId: contactLatch?.objectId || null,
+            playerName: String(session.user?.name || 'Player').slice(0, 50)
+        });
+    }
+
+    async handleGlobalCoinCollectRequest(session, data) {
+        const roomCode = session.roomCode;
+        const coinId = typeof data.coinId === 'string' ? data.coinId : '';
+        if (!roomCode || !coinId || coinId.length > 128) return;
+        const now = Date.now();
+        if (!session.coinRequestWindow || now - session.coinRequestWindow.startedAt >= 1000) {
+            session.coinRequestWindow = { startedAt: now, count: 0 };
+        }
+        if (++session.coinRequestWindow.count > 10) {
+            this.send(session, { type: 'global_coin_collection_rejected', coinId });
+            return;
+        }
+
+        await this.withMechanicsRoomLock(roomCode, async () => {
+            if (session.roomCode !== roomCode) return;
+            const validationTime = Date.now();
+            const reject = () => this.send(session, { type: 'global_coin_collection_rejected', coinId });
+            const roomData = await this.state.storage.get(`room:${roomCode}`);
+            if (!roomData) return reject();
+            const room = JSON.parse(roomData);
+            const coins = Array.isArray(room.mapData?.objects) ? room.mapData.objects : [];
+            const coin = coins.find(object => object?.id === coinId && object.appearanceType === 'coin' &&
+                object.coinActivityScope !== 'player');
+            if (!coin || !Number.isFinite(session.x) || !Number.isFinite(session.y) ||
+                !Number.isSafeInteger(session.lastPositionAt) || validationTime < session.lastPositionAt ||
+                validationTime - session.lastPositionAt > 3000) return reject();
+
+            const mechanicsData = await this.state.storage.get(`mechanics:${roomCode}`);
+            const mechanicsState = mechanicsData ? JSON.parse(mechanicsData).state || {} : {};
+            if (mechanicsState.objects?.[coinId] === false) return reject();
+            const position = mechanicsState.positions?.[coinId] || coin;
+            const width = Number(coin.width ?? coin.w);
+            const height = Number(coin.height ?? coin.h);
+            if (![position.x, position.y, width, height].every(Number.isFinite) || width <= 0 || height <= 0 ||
+                !this.playerOverlapsMechanicsBounds(session, { x: position.x, y: position.y, width, height })) return reject();
+
+            const collected = new Set(Array.isArray(room.globalCoinIds) ? room.globalCoinIds : []);
+            if (collected.has(coinId)) {
+                this.send(session, { type: 'global_coin_collected', coinId });
+                return;
+            }
+            collected.add(coinId);
+            room.globalCoinIds = Array.from(collected).slice(0, 10000);
+            await this.state.storage.put(`room:${roomCode}`, JSON.stringify(room));
+            this.broadcastToRoom(roomCode, { type: 'global_coin_collected', coinId });
         });
     }
 

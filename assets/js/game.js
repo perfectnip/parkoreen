@@ -13,10 +13,152 @@ const GRID_SIZE = 32;
 const DEFAULT_GRAVITY = 0.71;
 const DEFAULT_JUMP_FORCE = -13.2;
 const DEFAULT_MOVE_SPEED = 5;
+const DEFAULT_HORIZONTAL_ACCELERATION = 0;
+const DEFAULT_AIR_CONTROL = 1;
+const MAX_HORIZONTAL_ACCELERATION = 20;
+const DEFAULT_TERMINAL_FALL_SPEED = 16;
+const MAX_TERMINAL_FALL_SPEED = 100;
+const WORLD_TILEMAP_MAX_COUNT = 64;
+const WORLD_TILEMAP_MAX_CELLS = 100000;
+const WORLD_TILEMAP_MAX_ANIMATED_CELLS = 2048;
+const WORLD_TILEMAP_MAX_POSITION = 10000000;
+const WORLD_TILEMAP_ATLAS_MAX_DATA_URL_LENGTH = 1500000;
+const WORLD_TILEMAP_ATLAS_MAX_PIXELS = 16000000;
+const WORLD_TILEMAP_ATLAS_TOTAL_MAX_PIXELS = 32000000;
+const WORLD_TILEMAP_CELL_BEHAVIORS = new Set(['solid', 'oneWay', 'rampUpRight', 'rampUpLeft', 'hazard', 'decorative']);
 const FLY_SPEED = 8;
 const CAMERA_LERP_X = 0.12;
 const CAMERA_LERP_Y = 0.12;
 const PLAYER_SIZE = 32;
+const WORLD_LAYER_MIN_DEPTH = -1000;
+const WORLD_LAYER_MAX_DEPTH = 1000;
+const WORLD_LAYER_MAX_COUNT = 64;
+const WORLD_COLLISION_POLYGON_MAX_POINTS = 12;
+const DEFAULT_WORLD_COLLISION_POLYGON = [
+    [0, 0.25], [0.25, 0], [0.75, 0], [1, 0.25], [1, 1], [0, 1]
+];
+const DEFAULT_WORLD_LAYER_DEFINITIONS = [
+    { id: 'behind-player', name: 'Behind Player', depth: 0, builtin: true, parallaxX: 1, parallaxY: 1 },
+    { id: 'player-depth', name: 'Same Layer', depth: 1, builtin: true, parallaxX: 1, parallaxY: 1 },
+    { id: 'above-player', name: 'Above Player', depth: 2, builtin: true, parallaxX: 1, parallaxY: 1 }
+];
+const normalizeWorldLayerParallax = value => {
+    const factor = typeof value === 'number'
+        ? value
+        : (typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN);
+    return Number.isFinite(factor) ? Math.max(0, Math.min(2, factor)) : 1;
+};
+
+const normalizeWorldLayerDepth = value => {
+    const depth = typeof value === 'number'
+        ? value
+        : (typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN);
+    return Number.isSafeInteger(depth) && depth >= WORLD_LAYER_MIN_DEPTH && depth <= WORLD_LAYER_MAX_DEPTH
+        ? depth
+        : null;
+};
+
+const normalizeWorldCollisionPolygon = points => {
+    if (!Array.isArray(points) || points.length < 3 || points.length > WORLD_COLLISION_POLYGON_MAX_POINTS) return null;
+    const normalized = [];
+    for (const point of points) {
+        if (Array.isArray(point) && point.length !== 2) return null;
+        const x = Array.isArray(point) ? point[0] : point?.x;
+        const y = Array.isArray(point) ? point[1] : point?.y;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+        normalized.push([x, y]);
+    }
+    const pointEqual = (a, b) => Math.abs(a[0] - b[0]) < 1e-8 && Math.abs(a[1] - b[1]) < 1e-8;
+    for (let i = 0; i < normalized.length; i++) {
+        for (let j = i + 1; j < normalized.length; j++) {
+            if (pointEqual(normalized[i], normalized[j])) return null;
+        }
+    }
+    const orientation = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const onSegment = (a, b, p) => p[0] >= Math.min(a[0], b[0]) - 1e-8 && p[0] <= Math.max(a[0], b[0]) + 1e-8 &&
+        p[1] >= Math.min(a[1], b[1]) - 1e-8 && p[1] <= Math.max(a[1], b[1]) + 1e-8;
+    const segmentsIntersect = (a, b, c, d) => {
+        const abC = orientation(a, b, c);
+        const abD = orientation(a, b, d);
+        const cdA = orientation(c, d, a);
+        const cdB = orientation(c, d, b);
+        if (((abC > 1e-8 && abD < -1e-8) || (abC < -1e-8 && abD > 1e-8)) &&
+            ((cdA > 1e-8 && cdB < -1e-8) || (cdA < -1e-8 && cdB > 1e-8))) return true;
+        return (Math.abs(abC) <= 1e-8 && onSegment(a, b, c)) || (Math.abs(abD) <= 1e-8 && onSegment(a, b, d)) ||
+            (Math.abs(cdA) <= 1e-8 && onSegment(c, d, a)) || (Math.abs(cdB) <= 1e-8 && onSegment(c, d, b));
+    };
+    for (let i = 0; i < normalized.length; i++) {
+        const nextI = (i + 1) % normalized.length;
+        for (let j = i + 1; j < normalized.length; j++) {
+            const nextJ = (j + 1) % normalized.length;
+            if (i === j || nextI === j || nextJ === i) continue;
+            if (segmentsIntersect(normalized[i], normalized[nextI], normalized[j], normalized[nextJ])) return null;
+        }
+    }
+    let turnSign = 0;
+    let doubledArea = 0;
+    for (let i = 0; i < normalized.length; i++) {
+        const a = normalized[i];
+        const b = normalized[(i + 1) % normalized.length];
+        const c = normalized[(i + 2) % normalized.length];
+        const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(cross) > 1e-8) {
+            const sign = Math.sign(cross);
+            if (turnSign && sign !== turnSign) return null;
+            turnSign = sign;
+        }
+        doubledArea += a[0] * b[1] - b[0] * a[1];
+    }
+    if (!turnSign || Math.abs(doubledArea) < 1e-8) return null;
+    return normalized;
+};
+
+const normalizeWorldLayerDefinitions = (definitions, objectConfigs = []) => {
+    const result = DEFAULT_WORLD_LAYER_DEFINITIONS.map(layer => ({ ...layer }));
+    const ids = new Set(result.map(layer => layer.id));
+    const depths = new Set(result.map(layer => layer.depth));
+    const names = new Set(result.map(layer => layer.name.toLocaleLowerCase()));
+
+    const addLayer = layer => {
+        if (!layer || typeof layer !== 'object' || Array.isArray(layer) || result.length >= WORLD_LAYER_MAX_COUNT) return;
+        const depth = normalizeWorldLayerDepth(layer.depth);
+        const id = typeof layer.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(layer.id) ? layer.id : '';
+        const name = typeof layer.name === 'string' ? layer.name.trim().slice(0, 40) : '';
+        const normalizedName = name.toLocaleLowerCase();
+        if (depth === null || depth === 0 || depth === 1 || depth === 2 ||
+            depths.has(depth) || !id || ids.has(id) || !name || names.has(normalizedName)) return;
+        result.push({
+            id,
+            name,
+            depth,
+            builtin: false,
+            parallaxX: normalizeWorldLayerParallax(layer.parallaxX),
+            parallaxY: normalizeWorldLayerParallax(layer.parallaxY)
+        });
+        ids.add(id);
+        depths.add(depth);
+        names.add(normalizedName);
+    };
+
+    if (Array.isArray(definitions)) {
+        for (const layer of definitions) addLayer(layer);
+    }
+
+    if (Array.isArray(objectConfigs)) {
+        for (const object of objectConfigs) {
+            const depth = normalizeWorldLayerDepth(object?.layer);
+            if (depth === null || depths.has(depth) || result.length >= WORLD_LAYER_MAX_COUNT) continue;
+            let id = `legacy-layer-${depth}`;
+            let name = `Layer ${depth}`;
+            let suffix = 1;
+            while (ids.has(id)) id = `legacy-layer-${depth}-${suffix++}`;
+            while (names.has(name.toLocaleLowerCase())) name = `Layer ${depth} (${suffix++})`;
+            addLayer({ id, name, depth });
+        }
+    }
+
+    return result.sort((a, b) => a.depth - b.depth);
+};
 
 // ============================================
 // GAME STATE
@@ -100,6 +242,7 @@ class AudioManager {
 // ============================================
 class Player {
     constructor(x, y, name, color) {
+        this.id = null;
         this.x = x;
         this.y = y;
         this.vx = 0;
@@ -107,10 +250,16 @@ class Player {
         this.width = PLAYER_SIZE;
         this.height = PLAYER_SIZE;
         this.name = name || 'Player';
+        this.displayName = this.name;
+        this.username = '';
+        this.tag = '';
+        this.isHost = null;
         this.color = color || this.generateRandomColor();
         
         // States
         this.isOnGround = false;
+        this._groundedCircleObjectId = null;
+        this._groundedSlopeObjectId = null;
         this.canJump = true;
         this.jumpsRemaining = 1;
         this.maxJumps = 1;
@@ -141,6 +290,7 @@ class Player {
         
         this.isLocal = false;
         this.isDead = false;
+        this._world = null;
         
         // Direction change tracking for checkpoint jump reset
         this.lastDirection = 0; // -1 left, 0 none, 1 right
@@ -166,7 +316,8 @@ class Player {
     }
 
     update(world, audioManager, editorMode = false) {
-        if (this.isDead) return;
+        if (this.isDead || this._mechanicsDialogueOpen) return;
+        this._world = world || this._world || null;
 
         if (this.isFlying) {
             this.updateFlying(world, editorMode);
@@ -204,23 +355,44 @@ class Player {
 
     updatePhysics(world, audioManager, editorMode = false) {
         // Get physics settings from world or use defaults
-        const moveSpeed = world?.playerSpeed ?? DEFAULT_MOVE_SPEED;
-        const gravity = world?.gravity ?? DEFAULT_GRAVITY;
-        const jumpForce = world?.jumpForce ?? DEFAULT_JUMP_FORCE;
+        const moveSpeed = Number.isFinite(world?._mechanicsPlayerSpeed)
+            ? world._mechanicsPlayerSpeed
+            : (world?.playerSpeed ?? DEFAULT_MOVE_SPEED);
+        const gravity = Number.isFinite(world?._mechanicsGravity)
+            ? world._mechanicsGravity
+            : (world?.gravity ?? DEFAULT_GRAVITY);
+        const jumpForce = Number.isFinite(world?._mechanicsJumpForce)
+            ? world._mechanicsJumpForce
+            : (world?.jumpForce ?? DEFAULT_JUMP_FORCE);
+        const horizontalAcceleration = Number.isFinite(world?._mechanicsHorizontalAcceleration)
+            ? world._mechanicsHorizontalAcceleration
+            : (world?.horizontalAcceleration ?? DEFAULT_HORIZONTAL_ACCELERATION);
+        const airControl = Number.isFinite(world?._mechanicsAirControl)
+            ? world._mechanicsAirControl
+            : (world?.airControl ?? DEFAULT_AIR_CONTROL);
+        const configuredTerminalFallSpeed = Number.isFinite(world?._mechanicsTerminalFallSpeed)
+            ? world._mechanicsTerminalFallSpeed
+            : world?.terminalFallSpeed;
+        const terminalFallSpeed = Number.isFinite(configuredTerminalFallSpeed) &&
+            configuredTerminalFallSpeed > 0 && configuredTerminalFallSpeed <= MAX_TERMINAL_FALL_SPEED
+            ? configuredTerminalFallSpeed
+            : DEFAULT_TERMINAL_FALL_SPEED * (gravity / DEFAULT_GRAVITY);
         
         // Horizontal movement
         let currentDirection = 0;
-        if (this.input.left && this.input.right) {
-            // Both pressed - stay in place
-            this.vx = 0;
-        } else if (this.input.left) {
-            this.vx = -moveSpeed;
-            currentDirection = -1;
-        } else if (this.input.right) {
-            this.vx = moveSpeed;
-            currentDirection = 1;
+        if (this.input.left !== this.input.right) currentDirection = this.input.left ? -1 : 1;
+        if (horizontalAcceleration > 0) {
+            const isGrounded = this.isOnGround || this.grounded;
+            const control = isGrounded ? 1 : airControl;
+            if (control > 0) {
+                const targetVelocity = currentDirection * moveSpeed;
+                const velocityDelta = targetVelocity - this.vx;
+                const maxDelta = horizontalAcceleration * control;
+                this.vx += Math.sign(velocityDelta) * Math.min(Math.abs(velocityDelta), maxDelta);
+            }
         } else {
-            this.vx = 0;
+            // Zero acceleration preserves the original instant-start movement.
+            this.vx = currentDirection * moveSpeed;
         }
         
         // Track direction changes for checkpoint jump reset
@@ -244,15 +416,18 @@ class Player {
         this.vy += gravity;
         
         // Cap fall speed (scaled with gravity)
-        const maxFallSpeed = 16 * (gravity / DEFAULT_GRAVITY);
-        if (this.vy > maxFallSpeed) this.vy = maxFallSpeed;
+        if (this.vy > terminalFallSpeed) this.vy = terminalFallSpeed;
 
         // Handle jump - infinite jumps in editor mode
         // Check coyote time - if within grace period, the jump counts as a ground jump
         const inCoyoteTime = this.coyoteTimeStart !== null && (now - this.coyoteTimeStart) <= this.COYOTE_TIME;
         const canJumpNow = editorMode ? true : (this.jumpsRemaining > 0 || inCoyoteTime);
         
-        if (this.input.jump && this.canJump && canJumpNow) {
+        const droppedThroughPlatform = !editorMode && this.input.down && this.input.jump &&
+            this.isOnGround && this.dropThroughOneWayPlatform(world);
+
+        if (!droppedThroughPlatform && this.input.jump && this.canJump && canJumpNow) {
+            const wasGrounded = this.isOnGround || this.grounded || inCoyoteTime;
             this.vy = jumpForce;
             if (!editorMode) {
                 // If jumping during coyote time, it counts as ground jump (use full jumps minus 1)
@@ -268,6 +443,14 @@ class Player {
             this.canJump = false;
             this.isOnGround = false;
             if (audioManager) audioManager.play('jump');
+            if (window.PluginManager) {
+                window.PluginManager.executeHook('player.jumped', {
+                    player: this,
+                    world,
+                    wasGrounded: Boolean(wasGrounded),
+                    source: 'core'
+                });
+            }
         } else if (this.input.jump && this.canJump && !canJumpNow && !editorMode) {
             // Can't jump normally - let plugins handle (e.g., monarch wings)
             if (window.PluginManager) {
@@ -277,6 +460,12 @@ class Player {
                 });
                 if (result.didJump) {
                     this.canJump = false;
+                    window.PluginManager.executeHook('player.jumped', {
+                        player: this,
+                        world,
+                        wasGrounded: false,
+                        source: 'plugin'
+                    });
                 }
             }
         }
@@ -298,17 +487,41 @@ class Player {
         const CORNER_TOLERANCE = 6;
 
         // Move horizontally
+        const previousX = this.x;
+        const previousGroundSurfaceId = this.isOnGround ? this._groundedSlopeObjectId : null;
         this.x += this.vx;
         
         // Check horizontal collisions
-        const hCollisions = this.checkCollisions(world, 'horizontal');
+        const hCollisions = this.checkCollisions(world, 'horizontal', this.y, previousX, null, previousGroundSurfaceId);
         for (const obj of hCollisions) {
             if (obj.collision) {
                 // Corner correction: if player barely clips a block vertically,
                 // nudge them into an adjacent gap instead of stopping
-                if (this._tryCornerNudgeVertical(obj, world, CORNER_TOLERANCE)) continue;
+                if (!['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape) &&
+                    this._tryCornerNudgeVertical(obj, world, CORNER_TOLERANCE)) continue;
 
-                if (this.vx > 0) {
+                if (obj.collisionShape === 'polygon' && obj.polygonOneWay === false) {
+                    const contactX = this.getPolygonAxisContact(obj, this.getGroundTouchbox(), 'x', this.vx);
+                    if (contactX !== null && this.vx !== 0) {
+                        this.x = contactX - this.groundTouchbox.x - this.groundTouchbox.width / 2;
+                    }
+                } else if (obj.collisionShape === 'circle') {
+                    const box = this.getGroundTouchbox();
+                    const contactX = this.getCircleHorizontalContact(obj, box, this.vx);
+                    if (contactX !== null && this.vx !== 0) {
+                        this.x = this.vx > 0
+                            ? contactX - this.groundTouchbox.x - this.groundTouchbox.width
+                            : contactX - this.groundTouchbox.x;
+                    }
+                } else if (obj.collisionShape === 'capsule') {
+                    const box = this.getGroundTouchbox();
+                    const contactX = this.getCapsuleHorizontalContact(obj, box, this.vx);
+                    if (contactX !== null && this.vx !== 0) {
+                        this.x = this.vx > 0
+                            ? contactX - this.groundTouchbox.x - this.groundTouchbox.width
+                            : contactX - this.groundTouchbox.x;
+                    }
+                } else if (this.vx > 0) {
                     this.x = obj.x - this.width;
                 } else if (this.vx < 0) {
                     this.x = obj.x + obj.width;
@@ -318,23 +531,97 @@ class Player {
         }
 
         // Move vertically
+        const previousY = this.y;
         this.y += this.vy;
         
         // Check vertical collisions
         const wasOnGround = this.isOnGround;
+        const previousGroundCircleId = wasOnGround ? this._groundedCircleObjectId : null;
+        const previousGroundSlopeId = wasOnGround ? this._groundedSlopeObjectId : null;
         this.isOnGround = false;
+        this._groundedCircleObjectId = null;
+        this._groundedSlopeObjectId = null;
         
-        const vCollisions = this.checkCollisions(world, 'vertical');
+        const vCollisions = this.checkCollisions(world, 'vertical', previousY, this.x, previousGroundCircleId, previousGroundSlopeId);
         for (const obj of vCollisions) {
             if (obj.collision) {
                 // Corner correction: nudge horizontally into an adjacent gap
-                if (this._tryCornerNudgeHorizontal(obj, world, CORNER_TOLERANCE)) continue;
+                if (!['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape) &&
+                    this._tryCornerNudgeHorizontal(obj, world, CORNER_TOLERANCE)) continue;
 
-                if (this.vy > 0) {
+                if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape)) {
+                    const box = this.getGroundTouchbox();
+                    const contactY = obj.collisionShape === 'polygon' && obj.polygonOneWay === false
+                        ? this.getPolygonAxisContact(obj, box, 'y', this.vy)
+                        : this.getSlopeSurfaceY(obj, box.x + box.width / 2);
+                    if (contactY !== null && this.vy >= 0) {
+                        const centerOffset = obj.collisionShape === 'polygon' && obj.polygonOneWay === false
+                            ? this.groundTouchbox.height / 2 : this.groundTouchbox.height;
+                        this.y = contactY - this.groundTouchbox.y - centerOffset;
+                        if (this.vy > 0 || obj.collisionShape !== 'polygon' || obj.polygonOneWay !== false) {
+                            this.isOnGround = true;
+                            this._groundedSlopeObjectId = obj.id;
+                            this.resetJumps();
+                            if (!wasOnGround && window.PluginManager) {
+                                if (!this._landData) this._landData = {};
+                                this._landData.player = this;
+                                this._landData.world = world;
+                                this._landData.surface = obj;
+                                window.PluginManager.executeHook('player.land', this._landData);
+                            }
+                        }
+                    } else if (contactY !== null && this.vy < 0 && obj.collisionShape === 'polygon' && obj.polygonOneWay === false) {
+                        this.y = contactY - this.groundTouchbox.y - this.groundTouchbox.height / 2;
+                    }
+                } else if (obj.collisionShape === 'circle') {
+                    const box = this.getGroundTouchbox();
+                    const contactY = this.getCircleVerticalContact(obj, box, this.vy);
+                    if (contactY !== null && this.vy > 0) {
+                        this.y = contactY - this.groundTouchbox.y - this.groundTouchbox.height;
+                        this.isOnGround = true;
+                        this._groundedCircleObjectId = obj.id;
+                        this.resetJumps();
+                        if (!wasOnGround && window.PluginManager) {
+                            if (!this._landData) this._landData = {};
+                            this._landData.player = this;
+                            this._landData.world = world;
+                            this._landData.surface = obj;
+                            window.PluginManager.executeHook('player.land', this._landData);
+                        }
+                    } else if (contactY !== null && this.vy < 0) {
+                        this.y = contactY - this.groundTouchbox.y;
+                    }
+                } else if (obj.collisionShape === 'capsule') {
+                    const box = this.getGroundTouchbox();
+                    const contactY = this.getCapsuleVerticalContact(obj, box, this.vy);
+                    if (contactY !== null && this.vy > 0) {
+                        this.y = contactY - this.groundTouchbox.y - this.groundTouchbox.height;
+                        this.isOnGround = true;
+                        this._groundedCircleObjectId = obj.id;
+                        this.resetJumps();
+                        if (!wasOnGround && window.PluginManager) {
+                            if (!this._landData) this._landData = {};
+                            this._landData.player = this;
+                            this._landData.world = world;
+                            this._landData.surface = obj;
+                            window.PluginManager.executeHook('player.land', this._landData);
+                        }
+                    } else if (contactY !== null && this.vy < 0) {
+                        this.y = contactY - this.groundTouchbox.y;
+                    }
+                } else if (this.vy > 0) {
                     // Landing on ground
                     this.y = obj.y - this.height;
                     this.isOnGround = true;
+                    this._groundedCircleObjectId = null;
                     this.resetJumps();
+                    if (!wasOnGround && window.PluginManager) {
+                        if (!this._landData) this._landData = {};
+                        this._landData.player = this;
+                        this._landData.world = world;
+                        this._landData.surface = obj;
+                        window.PluginManager.executeHook('player.land', this._landData);
+                    }
                 } else if (this.vy < 0) {
                     // Hitting ceiling
                     this.y = obj.y + obj.height;
@@ -367,7 +654,7 @@ class Player {
             const o = near[i];
             if (!o.collision || o.actingType === 'spike' || o.actingType === 'text' || o.type === 'teleportal') continue;
             if (o.type === 'spinner' || o.appearanceType === 'spinner') continue;
-            if (this.boxIntersects(this._blockCheckBox, o)) return true;
+            if (this.collisionShapeIntersectsBox(this._blockCheckBox, o)) return true;
         }
         return false;
     }
@@ -418,7 +705,7 @@ class Player {
         return false;
     }
 
-    checkCollisions(world, direction) {
+    checkCollisions(world, direction, previousY = this.y, previousX = this.x, previousGroundCircleId = null, previousGroundSlopeId = null) {
         if (!this._collisionsH) { this._collisionsH = []; this._collisionsV = []; }
         const collisions = direction === 'horizontal' ? this._collisionsH : this._collisionsV;
         collisions.length = 0;
@@ -429,12 +716,48 @@ class Player {
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
             if (!obj.collision) continue;
+            if (obj.oneWayPlatform &&
+                (direction !== 'vertical' || this.vy <= 0 || previousY + this.height > obj.y + 1)) continue;
             if (obj.actingType === 'text') continue;
             if (obj.type === 'teleportal') continue;
             
             // Spinners (saw blades) acting as spikes have no ground collision
             // They only damage - player should not stand on them
             if ((obj.type === 'spinner' || obj.appearanceType === 'spinner') && obj.actingType === 'spike') {
+                continue;
+            }
+
+            if (obj.collisionShape === 'polygon' && obj.polygonOneWay === false) {
+                if (!this.collisionShapeIntersectsBox(box, obj)) continue;
+                const axis = direction === 'horizontal' ? 'x' : 'y';
+                const movement = axis === 'x' ? this.vx : this.vy;
+                if (movement === 0) continue;
+                if (axis === 'x' && previousGroundSlopeId === obj.id && this.isOnGround) continue;
+                const contact = this.getPolygonAxisContact(obj, box, axis, movement);
+                if (contact === null) continue;
+                const halfExtent = axis === 'x' ? this.groundTouchbox.width / 2 : this.groundTouchbox.height / 2;
+                const centerOffset = axis === 'x' ? this.groundTouchbox.x + halfExtent : this.groundTouchbox.y + halfExtent;
+                const previousCenter = (axis === 'x' ? previousX : previousY) + centerOffset;
+                const currentCenter = (axis === 'x' ? box.x : box.y) + halfExtent;
+                const crossed = movement > 0
+                    ? previousCenter <= contact + 1 && currentCenter >= contact - 1
+                    : previousCenter >= contact - 1 && currentCenter <= contact + 1;
+                const supportedOnTop = axis === 'y' && movement > 0 && previousGroundSlopeId === obj.id;
+                if (crossed || supportedOnTop) collisions.push(obj);
+                continue;
+            }
+
+            if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape)) {
+                if (direction !== 'vertical' || this.vy < 0) continue;
+                const centerX = box.x + box.width / 2;
+                const contactY = this.getSlopeSurfaceY(obj, centerX);
+                if (contactY === null) continue;
+                const previousFeet = previousY + this.groundTouchbox.y + this.groundTouchbox.height;
+                const currentFeet = box.y + box.height;
+                const wasSupportedBySlope = previousGroundSlopeId === obj.id;
+                if (currentFeet >= contactY - 1 && (previousFeet <= contactY + 1 || wasSupportedBySlope)) {
+                    collisions.push(obj);
+                }
                 continue;
             }
             
@@ -470,8 +793,40 @@ class Player {
                 }
                 continue;
             }
+
+            if (obj.collisionShape === 'circle' || obj.collisionShape === 'capsule') {
+                if (!this.collisionShapeIntersectsBox(box, obj)) continue;
+                if (direction === 'horizontal' && this.vx !== 0) {
+                    const contactX = obj.collisionShape === 'capsule'
+                        ? this.getCapsuleHorizontalContact(obj, box, this.vx)
+                        : this.getCircleHorizontalContact(obj, box, this.vx);
+                    if (contactX === null) continue;
+                    const oldLeft = previousX + this.groundTouchbox.x;
+                    const oldRight = oldLeft + this.groundTouchbox.width;
+                    const approachedFromSide = this.vx > 0
+                        ? oldRight <= contactX + 1
+                        : oldLeft >= contactX - 1;
+                    if (!approachedFromSide) continue;
+                } else if (direction === 'vertical' && this.vy !== 0) {
+                    const contactY = obj.collisionShape === 'capsule'
+                        ? this.getCapsuleVerticalContact(obj, box, this.vy)
+                        : this.getCircleVerticalContact(obj, box, this.vy);
+                    if (contactY === null) continue;
+                    const oldTop = previousY + this.groundTouchbox.y;
+                    const oldBottom = oldTop + this.groundTouchbox.height;
+                    const approachedFromFace = this.vy > 0
+                        ? oldBottom <= contactY + 1
+                        : oldTop >= contactY - 1;
+                    const followingGroundedCircle = this.vy >= 0 && previousGroundCircleId === obj.id;
+                    if (!approachedFromFace && !followingGroundedCircle) continue;
+                } else {
+                    continue;
+                }
+                collisions.push(obj);
+                continue;
+            }
             
-            if (this.boxIntersects(box, obj)) {
+            if (this.collisionShapeIntersectsBox(box, obj)) {
                 collisions.push(obj);
             }
         }
@@ -562,7 +917,7 @@ class Player {
                             return; // Plugin handled the damage
                         }
                     }
-                    this.die();
+                    this.die(world, obj);
                     return;
                 }
             }
@@ -611,7 +966,7 @@ class Player {
             if (!o.collision) continue;
             if (o.actingType === 'spike' || o.actingType === 'text' || o.type === 'teleportal') continue;
             if (o.type === 'spinner' || o.appearanceType === 'spinner') continue;
-            if (this.boxIntersects(p, o)) return true;
+            if (this.collisionShapeIntersectsBox(p, o)) return true;
         }
         return false;
     }
@@ -705,6 +1060,235 @@ class Player {
                a.y + a.height > b.y;
     }
 
+    collisionShapeIntersectsBox(box, object) {
+        if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(object?.collisionShape)) {
+            const points = this.getCollisionPolygonPoints(object);
+            if (!points || !Number.isFinite(box.x) || !Number.isFinite(box.y) || box.width <= 0 || box.height <= 0) return false;
+            const axes = [{ x: 1, y: 0 }, { x: 0, y: 1 }];
+            for (let i = 0; i < points.length; i++) {
+                const next = points[(i + 1) % points.length];
+                const dx = next.x - points[i].x;
+                const dy = next.y - points[i].y;
+                axes.push({ x: -dy, y: dx });
+            }
+            const boxPoints = [
+                { x: box.x, y: box.y }, { x: box.x + box.width, y: box.y },
+                { x: box.x + box.width, y: box.y + box.height }, { x: box.x, y: box.y + box.height }
+            ];
+            for (const axis of axes) {
+                const triangleProjection = points.map(point => point.x * axis.x + point.y * axis.y);
+                const boxProjection = boxPoints.map(point => point.x * axis.x + point.y * axis.y);
+                if (Math.max(...triangleProjection) <= Math.min(...boxProjection) ||
+                    Math.max(...boxProjection) <= Math.min(...triangleProjection)) return false;
+            }
+            return true;
+        }
+        if (object?.collisionShape === 'capsule') {
+            if (!Number.isFinite(object.x) || !Number.isFinite(object.y) ||
+                !Number.isFinite(object.width) || object.width <= 0 ||
+                !Number.isFinite(object.height) || object.height <= 0 ||
+                !Number.isFinite(box?.x) || !Number.isFinite(box?.y) || box.width <= 0 || box.height <= 0) return false;
+            const radius = Math.min(object.width, object.height) / 2;
+            const horizontal = object.width > object.height;
+            const middle = horizontal
+                ? { x: object.x + radius, y: object.y, width: object.width - 2 * radius, height: object.height }
+                : { x: object.x, y: object.y + radius, width: object.width, height: object.height - 2 * radius };
+            const firstCap = horizontal
+                ? { x: object.x + radius, y: object.y + object.height / 2 }
+                : { x: object.x + object.width / 2, y: object.y + radius };
+            const secondCap = horizontal
+                ? { x: object.x + object.width - radius, y: object.y + object.height / 2 }
+                : { x: object.x + object.width / 2, y: object.y + object.height - radius };
+            return this.boxIntersects(box, middle) ||
+                this.circleIntersectsBox(firstCap.x, firstCap.y, radius, box) ||
+                this.circleIntersectsBox(secondCap.x, secondCap.y, radius, box);
+        }
+        if (object?.collisionShape !== 'circle') return this.boxIntersects(box, object);
+        if (!Number.isFinite(object.width) || object.width <= 0 ||
+            !Number.isFinite(object.height) || object.height <= 0) return false;
+        const radius = Math.min(object.width, object.height) / 2;
+        if (!Number.isFinite(radius) || radius <= 0) return false;
+        const centerX = object.x + object.width / 2;
+        const centerY = object.y + object.height / 2;
+        const closestX = Math.max(box.x, Math.min(centerX, box.x + box.width));
+        const closestY = Math.max(box.y, Math.min(centerY, box.y + box.height));
+        const dx = centerX - closestX;
+        const dy = centerY - closestY;
+        return dx * dx + dy * dy < radius * radius;
+    }
+
+    getCapsuleVerticalContact(object, box, direction) {
+        if (!Number.isFinite(object?.x) || !Number.isFinite(object?.y) ||
+            !Number.isFinite(object?.width) || object.width <= 0 ||
+            !Number.isFinite(object?.height) || object.height <= 0 ||
+            !Number.isFinite(box?.x) || !Number.isFinite(box?.width) || box.width <= 0) return null;
+        if (object.width > object.height) return direction > 0 ? object.y : object.y + object.height;
+        const radius = object.width / 2;
+        const centerX = object.x + radius;
+        const closestX = Math.max(box.x, Math.min(centerX, box.x + box.width));
+        const dx = centerX - closestX;
+        const reachSquared = radius * radius - dx * dx;
+        if (reachSquared < 0) return null;
+        const reach = Math.sqrt(reachSquared);
+        return direction > 0 ? object.y + radius - reach : object.y + object.height - radius + reach;
+    }
+
+    getCapsuleHorizontalContact(object, box, direction) {
+        if (!Number.isFinite(object?.x) || !Number.isFinite(object?.y) ||
+            !Number.isFinite(object?.width) || object.width <= 0 ||
+            !Number.isFinite(object?.height) || object.height <= 0 ||
+            !Number.isFinite(box?.y) || !Number.isFinite(box?.height) || box.height <= 0) return null;
+        const radius = Math.min(object.width, object.height) / 2;
+        if (object.width <= object.height) {
+            const segmentTop = object.y + radius;
+            const segmentBottom = object.y + object.height - radius;
+            let distanceY = 0;
+            if (box.y + box.height < segmentTop) distanceY = segmentTop - (box.y + box.height);
+            else if (box.y > segmentBottom) distanceY = box.y - segmentBottom;
+            const reachSquared = radius * radius - distanceY * distanceY;
+            if (reachSquared < 0) return null;
+            const extent = Math.sqrt(reachSquared);
+            return direction > 0 ? object.x + radius + extent : object.x + radius - extent;
+        }
+        const centerY = object.y + radius;
+        const closestY = Math.max(box.y, Math.min(centerY, box.y + box.height));
+        const dy = centerY - closestY;
+        const reachSquared = radius * radius - dy * dy;
+        if (reachSquared < 0) return null;
+        const reach = Math.sqrt(reachSquared);
+        return direction > 0 ? object.x + object.width - radius + reach : object.x + radius - reach;
+    }
+
+    getCollisionPolygonPoints(object) {
+        if (!object || !Number.isFinite(object.x) || !Number.isFinite(object.y) ||
+            !Number.isFinite(object.width) || !Number.isFinite(object.height) || object.width <= 0 || object.height <= 0) return null;
+        if (object.collisionShape === 'slopeUpRight') {
+            return [
+                { x: object.x, y: object.y + object.height },
+                { x: object.x + object.width, y: object.y },
+                { x: object.x + object.width, y: object.y + object.height }
+            ];
+        }
+        if (object.collisionShape === 'slopeUpLeft') {
+            return [
+                { x: object.x, y: object.y },
+                { x: object.x, y: object.y + object.height },
+                { x: object.x + object.width, y: object.y + object.height }
+            ];
+        }
+        if (object.collisionShape !== 'polygon') return null;
+        const points = normalizeWorldCollisionPolygon(object.collisionPoints);
+        return points?.map(([x, y]) => ({ x: object.x + x * object.width, y: object.y + y * object.height })) || null;
+    }
+
+    getSlopeSurfaceY(object, x) {
+        if (!Number.isFinite(x) || !Number.isFinite(object?.x) || !Number.isFinite(object?.y) ||
+            !Number.isFinite(object?.width) || !Number.isFinite(object?.height) || object.width <= 0 || object.height <= 0 ||
+            !['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(object.collisionShape) ||
+            x < object.x || x > object.x + object.width) return null;
+        const points = this.getCollisionPolygonPoints(object);
+        if (!points) return null;
+        let highestSurface = Infinity;
+        for (let i = 0; i < points.length; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
+            const minX = Math.min(a.x, b.x);
+            const maxX = Math.max(a.x, b.x);
+            if (x < minX || x > maxX) continue;
+            const dx = b.x - a.x;
+            const y = Math.abs(dx) < 1e-8
+                ? Math.min(a.y, b.y)
+                : a.y + (x - a.x) * (b.y - a.y) / dx;
+            if (Number.isFinite(y)) highestSurface = Math.min(highestSurface, y);
+        }
+        return Number.isFinite(highestSurface) ? highestSurface : null;
+    }
+
+    getPolygonAxisContact(object, box, axis, direction) {
+        if (!['x', 'y'].includes(axis) || !Number.isFinite(direction) || direction === 0 ||
+            !Number.isFinite(box?.width) || !Number.isFinite(box?.height) || box.width <= 0 || box.height <= 0) return null;
+        const polygon = this.getCollisionPolygonPoints(object);
+        if (!polygon) return null;
+        const halfWidth = box.width / 2;
+        const halfHeight = box.height / 2;
+        const expanded = [];
+        for (const point of polygon) {
+            expanded.push(
+                { x: point.x - halfWidth, y: point.y - halfHeight },
+                { x: point.x + halfWidth, y: point.y - halfHeight },
+                { x: point.x + halfWidth, y: point.y + halfHeight },
+                { x: point.x - halfWidth, y: point.y + halfHeight }
+            );
+        }
+        expanded.sort((a, b) => a.x - b.x || a.y - b.y);
+        const cross = (origin, a, b) => (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+        const unique = expanded.filter((point, index) => index === 0 ||
+            Math.abs(point.x - expanded[index - 1].x) >= 1e-8 || Math.abs(point.y - expanded[index - 1].y) >= 1e-8);
+        const lower = [];
+        for (const point of unique) {
+            while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 1e-8) lower.pop();
+            lower.push(point);
+        }
+        const upper = [];
+        for (let i = unique.length - 1; i >= 0; i--) {
+            const point = unique[i];
+            while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 1e-8) upper.pop();
+            upper.push(point);
+        }
+        const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+        if (hull.length < 3) return null;
+
+        const scanValue = axis === 'x' ? box.y + halfHeight : box.x + halfWidth;
+        const values = [];
+        for (let i = 0; i < hull.length; i++) {
+            const a = hull[i];
+            const b = hull[(i + 1) % hull.length];
+            const aScan = axis === 'x' ? a.y : a.x;
+            const bScan = axis === 'x' ? b.y : b.x;
+            const aResult = axis === 'x' ? a.x : a.y;
+            const bResult = axis === 'x' ? b.x : b.y;
+            if (Math.abs(aScan - bScan) < 1e-8) {
+                if (Math.abs(scanValue - aScan) < 1e-8) values.push(aResult, bResult);
+                continue;
+            }
+            if (scanValue < Math.min(aScan, bScan) || scanValue > Math.max(aScan, bScan)) continue;
+            const progress = (scanValue - aScan) / (bScan - aScan);
+            values.push(aResult + (bResult - aResult) * progress);
+        }
+        if (!values.length) return null;
+        return direction > 0 ? Math.min(...values) : Math.max(...values);
+    }
+
+    getCircleHorizontalContact(object, box, direction) {
+        if (!Number.isFinite(object.width) || object.width <= 0 ||
+            !Number.isFinite(object.height) || object.height <= 0) return null;
+        const radius = Math.min(object.width, object.height) / 2;
+        if (!Number.isFinite(radius) || radius <= 0) return null;
+        const centerX = object.x + object.width / 2;
+        const centerY = object.y + object.height / 2;
+        const closestY = Math.max(box.y, Math.min(centerY, box.y + box.height));
+        const dy = centerY - closestY;
+        const reachSquared = radius * radius - dy * dy;
+        if (reachSquared < 0) return null;
+        const reachX = Math.sqrt(reachSquared);
+        return direction > 0 ? centerX - reachX : centerX + reachX;
+    }
+
+    getCircleVerticalContact(object, box, direction) {
+        if (!Number.isFinite(object.width) || object.width <= 0 ||
+            !Number.isFinite(object.height) || object.height <= 0) return null;
+        const radius = Math.min(object.width, object.height) / 2;
+        if (!Number.isFinite(radius) || radius <= 0) return null;
+        const centerX = object.x + object.width / 2;
+        const centerY = object.y + object.height / 2;
+        const closestX = Math.max(box.x, Math.min(centerX, box.x + box.width));
+        const dx = centerX - closestX;
+        const reachSquared = radius * radius - dx * dx;
+        if (reachSquared < 0) return null;
+        const reachY = Math.sqrt(reachSquared);
+        return direction > 0 ? centerY - reachY : centerY + reachY;
+    }
+
     circleIntersectsBox(cx, cy, r, box) {
         const closestX = Math.max(box.x, Math.min(cx, box.x + box.width));
         const closestY = Math.max(box.y, Math.min(cy, box.y + box.height));
@@ -714,19 +1298,54 @@ class Player {
     }
 
     resetJumps() {
-            this.jumpsRemaining = this.maxJumps;
+        this.jumpsRemaining = this.maxJumps;
         this.coyoteTimeStart = null;
-        if (window.PluginManager) {
-            if (!this._landData) this._landData = {};
-            this._landData.player = this;
-            window.PluginManager.executeHook('player.land', this._landData);
-        }
         this.monarchWingsUsed = 0;
     }
 
-    die() {
+    dropThroughOneWayPlatform(world) {
+        if (!world) return false;
+        const groundBox = this.getGroundTouchbox();
+        const playerBottom = this.y + this.height;
+        const candidates = world.queryNear
+            ? world.queryNear(groundBox.x - 2, playerBottom - 4, groundBox.width + 4, 8)
+            : (world.objects || []);
+        const platform = candidates.find(object => (object.oneWayPlatform || ['slopeUpRight', 'slopeUpLeft'].includes(object.collisionShape) ||
+            (object.collisionShape === 'polygon' && object.polygonOneWay !== false)) && object.collision !== false &&
+            Math.abs(playerBottom - (['slopeUpRight', 'slopeUpLeft'].includes(object.collisionShape) ||
+                (object.collisionShape === 'polygon' && object.polygonOneWay !== false)
+                ? this.getSlopeSurfaceY(object, groundBox.x + groundBox.width / 2) ?? Infinity
+                : object.y)) <= 2 &&
+            groundBox.x < object.x + object.width && groundBox.x + groundBox.width > object.x);
+        if (!platform) return false;
+
+        // Step past the top plane before normal collision runs this frame.
+        // The one-way collision check will then ignore this surface while the
+        // player is below it, while lower platforms remain eligible for landings.
+        this.y += 2;
+        this.vy = Math.max(this.vy, 0);
+        this.isOnGround = false;
+        this.canJump = false;
+        if (!this.additionalAirjump && this.jumpsRemaining === this.maxJumps) {
+            this.coyoteTimeStart = Date.now();
+            this.jumpsRemaining = Math.max(0, this.maxJumps - 1);
+        }
+        return true;
+    }
+
+    die(world = this._world || (typeof window !== 'undefined' ? window.engine?.world : null), source = null) {
+        if (this.isDead) return false;
         this.isDead = true;
+        this._world = world || this._world || null;
+        if (this._world && typeof window !== 'undefined' && window.PluginManager) {
+            window.PluginManager.executeHook('player.died', {
+                player: this,
+                world: this._world,
+                source: source || null
+            });
+        }
         // Will respawn at checkpoint or spawn
+        return true;
     }
 
     respawn(x, y) {
@@ -736,6 +1355,8 @@ class Player {
         this.vy = 0;
         this.isDead = false;
         this.isOnGround = false;
+        this._groundedCircleObjectId = null;
+        this._groundedSlopeObjectId = null;
         this.resetJumps();
     }
 
@@ -745,22 +1366,21 @@ class Player {
         this.resetJumps();
     }
 
-    render(ctx, camera, showPosition = false) {
+    render(ctx, camera, showPosition = false, world = this._world) {
         if (this.isDead) return;
 
         const screenX = this.x - camera.x;
         const screenY = this.y - camera.y;
-        
-        ctx.fillStyle = this.color;
-        ctx.fillRect(screenX, screenY, this.width, this.height);
-        
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.fillRect(screenX + this.width - 4, screenY + 4, 4, this.height - 4);
-        ctx.fillRect(screenX + 4, screenY + this.height - 4, this.width - 4, 4);
-        
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fillRect(screenX, screenY, this.width - 4, 4);
-        ctx.fillRect(screenX, screenY, 4, this.height - 4);
+        if (!this.renderSpriteSheet(ctx, screenX, screenY, world?.playerSpriteSheet)) {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(screenX, screenY, this.width, this.height);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(screenX + this.width - 4, screenY + 4, 4, this.height - 4);
+            ctx.fillRect(screenX + 4, screenY + this.height - 4, this.width - 4, 4);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(screenX, screenY, this.width - 4, 4);
+            ctx.fillRect(screenX, screenY, 4, this.height - 4);
+        }
         
         // Cache font strings to avoid per-frame string concatenation + font parsing
         if (!this._cachedFonts) {
@@ -794,7 +1414,60 @@ class Player {
         ctx.fillText(this.name, nameX, nameY);
         ctx.restore();
     }
+
+    renderSpriteSheet(ctx, x, y, spriteSheet) {
+        if (!spriteSheet) return false;
+        let image = Player._spriteSheetImageCache.get(spriteSheet.data);
+        if (!image) {
+            image = new Image();
+            image.src = spriteSheet.data;
+            Player._spriteSheetImageCache.set(spriteSheet.data, image);
+            if (Player._spriteSheetImageCache.size > 32) {
+                Player._spriteSheetImageCache.delete(Player._spriteSheetImageCache.keys().next().value);
+            }
+        }
+        if (!image.complete || !image.naturalWidth || !image.naturalHeight ||
+            image.naturalWidth > 4096 || image.naturalHeight > 4096 || image.naturalWidth * image.naturalHeight > 16000000) return false;
+
+        const columns = Math.floor(image.naturalWidth / spriteSheet.frameWidth);
+        const rows = Math.floor(image.naturalHeight / spriteSheet.frameHeight);
+        if (columns < 1 || rows < 1) return false;
+        if (Object.values(spriteSheet.animations || {}).some(animation =>
+            !animation || !Number.isInteger(animation.row) || animation.row < 0 || animation.row >= rows ||
+            !Number.isInteger(animation.frameCount) || animation.frameCount < 1 || animation.frameCount > columns ||
+            !Number.isFinite(animation.fps) || animation.fps < 1 || animation.fps > 30)) return false;
+        const grounded = this.isOnGround || this.grounded;
+        const locomotionAnimationName = !grounded ? (this.vy < 0 ? 'jump' : 'fall')
+            : Math.abs(this.vx) > 0.5 ? 'run' : 'idle';
+        const now = Date.now();
+        const requestedActionAnimation = this.damageStunUntil > now ? 'hurt'
+            : this.isAttacking === true ? 'attack'
+                : this.isDashing === true || this.isSuperDashing === true ? 'dash' : null;
+        const actionAnimation = requestedActionAnimation && spriteSheet.animations[requestedActionAnimation];
+        const useActionAnimation = actionAnimation && actionAnimation.row < rows;
+        const animation = useActionAnimation
+            ? actionAnimation
+            : spriteSheet.animations[locomotionAnimationName] || spriteSheet.animations.idle;
+        if (!animation) return false;
+        const row = animation.row;
+        const frameCount = animation.frameCount;
+        const frame = useActionAnimation && requestedActionAnimation === 'attack'
+            ? Math.min(frameCount - 1, Math.floor(Math.max(0, Date.now() - (Number(this.attackStartTime) || Date.now())) / 1000 * animation.fps))
+            : Math.floor(performance.now() / 1000 * animation.fps) % frameCount;
+        const centerX = x + this.width / 2;
+        ctx.save();
+        if (this.lastDirection < 0) {
+            ctx.translate(centerX, 0);
+            ctx.scale(-1, 1);
+            ctx.translate(-centerX, 0);
+        }
+        ctx.drawImage(image, frame * spriteSheet.frameWidth, row * spriteSheet.frameHeight,
+            spriteSheet.frameWidth, spriteSheet.frameHeight, x, y, this.width, this.height);
+        ctx.restore();
+        return true;
+    }
 }
+Player._spriteSheetImageCache = new Map();
 
 // ============================================
 // CAMERA CLASS
@@ -832,15 +1505,51 @@ class Camera {
         this.zoom = this.defaultZoom;
     }
 
-    follow(target) {
-        this.targetX = target.x + target.width / 2 - this.width / 2 / this.zoom;
-        this.targetY = target.y + target.height / 2 - this.height / 2 / this.zoom;
+    follow(target, mode = 'both') {
+        if (mode === 'both' || mode === 'horizontal') {
+            this.targetX = target.x + target.width / 2 - this.width / 2 / this.zoom;
+        }
+        if (mode === 'both' || mode === 'vertical') {
+            this.targetY = target.y + target.height / 2 - this.height / 2 / this.zoom;
+        }
     }
 
-    update(lerpX = CAMERA_LERP_X, lerpY = CAMERA_LERP_Y) {
+    clampPositionToBounds(x, y, bounds) {
+        const viewWidth = this.width / this.zoom;
+        const viewHeight = this.height / this.zoom;
+        const clampAxis = (position, start, length, viewLength) => {
+            if (length <= viewLength) return start + (length - viewLength) / 2;
+            return Math.max(start, Math.min(start + length - viewLength, position));
+        };
+
+        return {
+            x: clampAxis(x, bounds.x, bounds.width, viewWidth),
+            y: clampAxis(y, bounds.y, bounds.height, viewHeight)
+        };
+    }
+
+    update(lerpX = CAMERA_LERP_X, lerpY = CAMERA_LERP_Y, bounds = null) {
+        const validBounds = bounds &&
+            Number.isFinite(bounds.x) && Number.isFinite(bounds.y) &&
+            Number.isFinite(bounds.width) && bounds.width > 0 &&
+            Number.isFinite(bounds.height) && bounds.height > 0 &&
+            Number.isFinite(bounds.x + bounds.width) && Number.isFinite(bounds.y + bounds.height);
+
+        if (validBounds) {
+            const target = this.clampPositionToBounds(this.targetX, this.targetY, bounds);
+            this.targetX = target.x;
+            this.targetY = target.y;
+        }
+
         // Smooth camera movement (separate horizontal/vertical smoothness)
         this.x += (this.targetX - this.x) * lerpX;
         this.y += (this.targetY - this.y) * lerpY;
+
+        if (validBounds) {
+            const position = this.clampPositionToBounds(this.x, this.y, bounds);
+            this.x = position.x;
+            this.y = position.y;
+        }
     }
 
     setZoom(zoom, centerX = null, centerY = null) {
@@ -943,18 +1652,22 @@ const BouncerImage = {
     }
 };
 
-// Block Textures
-const BlockTextures = {
-    brick: {
-        image: null,
-        loaded: false,
-        load() {
-            if (this.image) return;
-            this.image = new Image();
-            this.image.onload = () => { this.loaded = true; };
-            this.image.src = 'assets/svg/block-brick-pattern.svg';
-        }
+// Repeating built-in surfaces are shared by regular blocks and tilemap cells.
+const createBlockTexture = path => ({
+    image: null,
+    loaded: false,
+    load() {
+        if (this.image) return;
+        this.image = new Image();
+        this.image.onload = () => { this.loaded = true; };
+        this.image.src = path;
     }
+});
+const BlockTextures = {
+    brick: createBlockTexture('assets/svg/block-brick-pattern.svg'),
+    stone: createBlockTexture('assets/svg/block-stone-pattern.svg'),
+    wood: createBlockTexture('assets/svg/block-wood-pattern.svg'),
+    moss: createBlockTexture('assets/svg/block-moss-pattern.svg')
 };
 
 /**
@@ -1005,12 +1718,96 @@ PortalImage.load();
 SpinnerImage.load();
 CoinImage.load();
 BouncerImage.load();
-BlockTextures.brick.load();
+Object.values(BlockTextures).forEach(texture => texture.load());
 CloudImages.load();
 
 // ============================================
 // WORLD OBJECT CLASS
 // ============================================
+const WORLD_OBJECT_SPRITE_MAX_DATA_URL_LENGTH = 1500000;
+const WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH = 8 * 1024 * 1024;
+const normalizeWorldObjectSpriteAnimations = (animations, frameCount) => {
+    if (animations === undefined) return [];
+    if (!Array.isArray(animations) || animations.length > 32) return null;
+    const names = new Set();
+    const normalized = [];
+    for (const animation of animations) {
+        if (!animation || typeof animation !== 'object' || Array.isArray(animation) ||
+            typeof animation.name !== 'string' || !/^[A-Za-z][A-Za-z0-9 _-]{0,31}$/.test(animation.name.trim()) ||
+            !Number.isSafeInteger(animation.startFrame) || animation.startFrame < 0 ||
+            !Number.isSafeInteger(animation.frameCount) || animation.frameCount < 1 ||
+            animation.startFrame + animation.frameCount > frameCount ||
+            !Number.isFinite(animation.fps) || animation.fps < 1 || animation.fps > 30 ||
+            typeof animation.loop !== 'boolean') return null;
+        const name = animation.name.trim();
+        const normalizedName = name.toLocaleLowerCase('en-US');
+        if (names.has(normalizedName)) return null;
+        names.add(normalizedName);
+        normalized.push({
+            name,
+            startFrame: animation.startFrame,
+            frameCount: animation.frameCount,
+            fps: animation.fps,
+            loop: animation.loop
+        });
+    }
+    return normalized;
+};
+const normalizeWorldObjectSpriteSheet = (spriteSheet) => {
+    if (!spriteSheet || typeof spriteSheet !== 'object' || Array.isArray(spriteSheet)) return null;
+    const data = typeof spriteSheet.data === 'string' ? spriteSheet.data : '';
+    if (data.length > WORLD_OBJECT_SPRITE_MAX_DATA_URL_LENGTH ||
+        !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)) return null;
+    const frameWidth = Number(spriteSheet.frameWidth);
+    const frameHeight = Number(spriteSheet.frameHeight);
+    const frameCount = Number(spriteSheet.frameCount);
+    const fps = Number(spriteSheet.fps);
+    if (!Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 4096 ||
+        !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 4096 ||
+        !Number.isInteger(frameCount) || frameCount < 1 || frameCount > 256 ||
+        !Number.isFinite(fps) || fps < 1 || fps > 30) return null;
+    const animations = normalizeWorldObjectSpriteAnimations(spriteSheet.animations, frameCount);
+    if (!animations) return null;
+    return { data, frameWidth, frameHeight, frameCount, fps, animations };
+};
+
+const PLAYER_SPRITE_ANIMATIONS = ['idle', 'run', 'jump', 'fall'];
+const PLAYER_SPRITE_ACTION_ANIMATIONS = ['attack', 'hurt', 'dash'];
+const normalizeWorldPlayerSpriteSheet = (spriteSheet) => {
+    if (!spriteSheet || typeof spriteSheet !== 'object' || Array.isArray(spriteSheet)) return null;
+    const data = typeof spriteSheet.data === 'string' ? spriteSheet.data : '';
+    if (data.length > WORLD_OBJECT_SPRITE_MAX_DATA_URL_LENGTH ||
+        !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)) return null;
+    const frameWidth = Number(spriteSheet.frameWidth);
+    const frameHeight = Number(spriteSheet.frameHeight);
+    if (!Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 4096 ||
+        !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 4096) return null;
+    if (spriteSheet.animations !== undefined &&
+        (!spriteSheet.animations || typeof spriteSheet.animations !== 'object' || Array.isArray(spriteSheet.animations))) return null;
+    const animations = {};
+    for (const [index, name] of PLAYER_SPRITE_ANIMATIONS.entries()) {
+        const source = spriteSheet.animations?.[name];
+        if (source !== undefined && (!source || typeof source !== 'object' || Array.isArray(source) ||
+            (source.row !== undefined && (!Number.isInteger(source.row) || source.row < 0 || source.row > 127)) ||
+            (source.frameCount !== undefined && (!Number.isInteger(source.frameCount) || source.frameCount < 1 || source.frameCount > 256)) ||
+            (source.fps !== undefined && (!Number.isFinite(source.fps) || source.fps < 1 || source.fps > 30)))) return null;
+        const row = source?.row ?? index;
+        const frameCount = source?.frameCount ?? 1;
+        const fps = source?.fps ?? 8;
+        animations[name] = { row, frameCount, fps };
+    }
+    for (const name of PLAYER_SPRITE_ACTION_ANIMATIONS) {
+        const animation = spriteSheet.animations?.[name];
+        if (animation === undefined) continue;
+        if (!animation || typeof animation !== 'object' || Array.isArray(animation) ||
+            !Number.isInteger(animation.row) || animation.row < 0 || animation.row > 127 ||
+            !Number.isInteger(animation.frameCount) || animation.frameCount < 1 || animation.frameCount > 256 ||
+            !Number.isFinite(animation.fps) || animation.fps < 1 || animation.fps > 30) return null;
+        animations[name] = { row: animation.row, frameCount: animation.frameCount, fps: animation.fps };
+    }
+    return { data, frameWidth, frameHeight, animations };
+};
+
 class WorldObject {
     constructor(config) {
         this.id = config.id || this.generateId();
@@ -1022,12 +1819,26 @@ class WorldObject {
         this.appearanceType = config.appearanceType || 'ground'; // ground, spike, checkpoint, spawnpoint, endpoint
         this.actingType = config.actingType || 'ground'; // ground, spike, checkpoint, spawnpoint, endpoint, text
         this.collision = config.collision !== undefined ? config.collision : true;
+        this.collisionShape = ['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(config.collisionShape) &&
+            this.type === 'block' && this.appearanceType === 'ground' && this.actingType === 'ground' &&
+            Number.isFinite(this.width) && this.width > 0 && Number.isFinite(this.height) && this.height > 0
+            ? config.collisionShape : 'box';
+        this.collisionPoints = this.collisionShape === 'polygon'
+            ? (normalizeWorldCollisionPolygon(config.collisionPoints) || DEFAULT_WORLD_COLLISION_POLYGON).map(point => point.slice())
+            : null;
+        this.polygonOneWay = this.collisionShape === 'polygon' ? config.polygonOneWay !== false : false;
+        this.oneWayPlatform = config.oneWayPlatform === true &&
+            this.type === 'block' && this.appearanceType === 'ground' && this.actingType === 'ground' &&
+            this.collisionShape === 'box';
         this.color = config.color || '#787878';
         this.opacity = config.opacity !== undefined ? config.opacity : 1;
-        this.layer = config.layer || 1; // 0: behind, 1: same, 2: above player
+        this.layer = normalizeWorldLayerDepth(config.layer) ?? 1; // Draw depth; 0/1 render below the player and 2 renders above.
         this.rotation = config.rotation || 0;
         this.flipHorizontal = config.flipHorizontal || false;
         this.texture = config.texture || 'solid'; // solid, brick, etc.
+        this.spriteSheet = normalizeWorldObjectSpriteSheet(config.spriteSheet);
+        this._spriteSheetImage = null;
+        this._spriteSheetImageData = null;
         
         // Text specific
         this.content = config.content || '';
@@ -1145,6 +1956,7 @@ class WorldObject {
     }
 
     render(ctx, camera, checkpointColors = null, world = null) {
+        if (this._mechanicsEnabled === false) return;
         const screenX = this.x - camera.x;
         const screenY = this.y - camera.y;
         const width = this.width;
@@ -1152,13 +1964,15 @@ class WorldObject {
 
         const at = this.appearanceType;
         const isSpinner = at === 'spinner' || this.type === 'spinner';
+        const effectiveOpacity = Number.isFinite(this._mechanicsOpacity)
+            ? Math.max(0, Math.min(1, this._mechanicsOpacity)) : this.opacity;
 
         // Saw blade: editor rotation + spin animation must share one pivot. The generic
         // translate(center)-rotate-translate(-center) wrapper breaks inner translate(center)
         // because nested translates use the already-rotated axes — blade "unpins" from hitbox.
         if (isSpinner) {
             ctx.save();
-            if (this.opacity !== 1) ctx.globalAlpha = this.opacity;
+            if (effectiveOpacity !== 1) ctx.globalAlpha = effectiveOpacity;
             ctx.translate(screenX + width / 2, screenY + height / 2);
             if (this.rotation !== 0) ctx.rotate(this.rotation * Math.PI / 180);
             if (this.flipHorizontal) ctx.scale(-1, 1);
@@ -1169,12 +1983,12 @@ class WorldObject {
 
         const isBouncer = at === 'bouncer';
         const needsTransform = !isBouncer && (this.rotation !== 0 || this.flipHorizontal);
-        const needsAlpha = this.opacity !== 1;
+        const needsAlpha = effectiveOpacity !== 1;
         
         // Only save/restore when we actually change state
         if (needsTransform || needsAlpha) {
             ctx.save();
-            if (needsAlpha) ctx.globalAlpha = this.opacity;
+            if (needsAlpha) ctx.globalAlpha = effectiveOpacity;
             if (needsTransform) {
                 ctx.translate(screenX + width / 2, screenY + height / 2);
                 if (this.rotation !== 0) ctx.rotate(this.rotation * Math.PI / 180);
@@ -1183,7 +1997,10 @@ class WorldObject {
             }
         }
 
-        if (this.type === 'text') {
+        if (this.spriteSheet && this.renderSpriteSheet(ctx, screenX, screenY, width, height)) {
+            // The custom sprite replaces artwork while leaving this object's
+            // collision and mechanic behavior intact.
+        } else if (this.type === 'text') {
             this.renderText(ctx, screenX, screenY, width, height);
         } else if (at === 'spike') {
             this.renderSpike(ctx, screenX, screenY, width, height);
@@ -1200,7 +2017,10 @@ class WorldObject {
         } else if (at === 'bouncer') {
             this.renderBouncer(ctx, screenX, screenY, width, height);
         } else if (at === 'coin') {
-            if (!this._collected) this.renderCoin(ctx, screenX, screenY, width, height);
+            const collected = typeof window !== 'undefined'
+                ? window.engine?.isCoinCollectedForLocalPlayer?.(this, world) ?? this._collected
+                : this._collected;
+            if (!collected) this.renderCoin(ctx, screenX, screenY, width, height);
         } else if (at === 'teleportal' || this.type === 'teleportal') {
             this.renderTeleportal(ctx, screenX, screenY, width, height);
         } else if (at === 'soulStatue') {
@@ -1228,6 +2048,63 @@ class WorldObject {
         }
     }
 
+    renderSpriteSheet(ctx, x, y, width, height) {
+        const sprite = this.spriteSheet;
+        if (!sprite) return false;
+        if (!this._spriteSheetImage || this._spriteSheetImageData !== sprite.data) {
+            let image = WorldObject._spriteSheetImageCache.get(sprite.data);
+            if (!image) {
+                image = new Image();
+                image.src = sprite.data;
+                WorldObject._spriteSheetImageCache.set(sprite.data, image);
+                if (WorldObject._spriteSheetImageCache.size > 32) {
+                    WorldObject._spriteSheetImageCache.delete(WorldObject._spriteSheetImageCache.keys().next().value);
+                }
+            }
+            this._spriteSheetImage = image;
+            this._spriteSheetImageData = sprite.data;
+        }
+        const image = this._spriteSheetImage;
+        if (!image.complete || !image.naturalWidth || !image.naturalHeight) return false;
+        const columns = Math.floor(image.naturalWidth / sprite.frameWidth);
+        const rows = Math.floor(image.naturalHeight / sprite.frameHeight);
+        const availableFrames = columns * rows;
+        if (columns < 1 || rows < 1 || availableFrames < 1) return false;
+        if (sprite.frameCount > availableFrames) return false;
+        const frameCount = sprite.frameCount;
+        const animation = this._mechanicsSpriteAnimation;
+        const animationIsValid = animation && Number.isSafeInteger(animation.startFrame) &&
+            Number.isSafeInteger(animation.frameCount) && Number.isFinite(animation.fps) &&
+            typeof animation.loop === 'boolean' && Number.isFinite(animation.startedAt) &&
+            animation.startFrame >= 0 && animation.frameCount >= 1 && animation.fps >= 1 && animation.fps <= 30 &&
+            animation.startFrame + animation.frameCount <= frameCount;
+        let animationFrame = null;
+        if (animationIsValid) {
+            const elapsedFrames = Math.floor(Math.max(0, Date.now() - animation.startedAt) / 1000 * animation.fps);
+            animationFrame = animation.startFrame + (animation.loop
+                ? elapsedFrames % animation.frameCount
+                : Math.min(animation.frameCount - 1, elapsedFrames));
+        }
+        const requestedFrame = Number.isSafeInteger(this._mechanicsSpriteFrame) &&
+            this._mechanicsSpriteFrame >= 0 && this._mechanicsSpriteFrame < frameCount
+            ? this._mechanicsSpriteFrame : null;
+        const frame = WorldObject._editorMode
+            ? 0
+            : requestedFrame ?? animationFrame ?? Math.floor((performance.now() / 1000) * sprite.fps) % frameCount;
+        const sourceX = (frame % columns) * sprite.frameWidth;
+        const sourceY = Math.floor(frame / columns) * sprite.frameHeight;
+        const faceLeft = this._mechanicsMotionDirection < 0;
+        if (faceLeft) {
+            ctx.save();
+            ctx.translate(x + width / 2, 0);
+            ctx.scale(-1, 1);
+            ctx.translate(-(x + width / 2), 0);
+        }
+        ctx.drawImage(image, sourceX, sourceY, sprite.frameWidth, sprite.frameHeight, x, y, width, height);
+        if (faceLeft) ctx.restore();
+        return true;
+    }
+
     renderBlock(ctx, x, y, w, h) {
         const texture = this.texture || 'solid';
         
@@ -1249,6 +2126,11 @@ class WorldObject {
             ctx.rect(x, y, w - 4, 4);
             ctx.rect(x, y, 4, h - 4);
             ctx.fill();
+        }
+
+        if (this.oneWayPlatform) {
+            ctx.fillStyle = 'rgba(255, 224, 130, 0.9)';
+            ctx.fillRect(x, y, w, Math.min(3, h));
         }
     }
 
@@ -1341,12 +2223,13 @@ class WorldObject {
         const requireCoins = !!this.endpointRequireCoins;
         let isLocked = false;
         if (requireCoins && world) {
-            const totalCoins = world.objects.filter(o => o.appearanceType === 'coin').length;
+            const totalCoins = world.objects.filter(o => o.appearanceType === 'coin' && o._mechanicsEnabled !== false).length;
             let requiredCoins = Number.isFinite(this.endpointRequiredCoins)
                 ? Math.max(0, Math.floor(this.endpointRequiredCoins))
                 : totalCoins;
             requiredCoins = Math.min(requiredCoins, totalCoins);
-            const collectedCoins = world.objects.filter(o => o.appearanceType === 'coin' && o._collected).length;
+            const collectedCoins = world.objects.filter(o => o.appearanceType === 'coin' && o._mechanicsEnabled !== false &&
+                (window.engine?.isCoinCollectedForLocalPlayer?.(o, world) ?? o._collected)).length;
             isLocked = collectedCoins < requiredCoins;
         }
 
@@ -1914,12 +2797,20 @@ class WorldObject {
             appearanceType: this.appearanceType,
             actingType: this.actingType,
             collision: this.collision,
+            collisionShape: this.collisionShape,
+            collisionPoints: this.collisionShape === 'polygon' ? this.collisionPoints.map(point => point.slice()) : null,
+            polygonOneWay: this.polygonOneWay,
+            oneWayPlatform: this.oneWayPlatform,
             color: this.color,
             opacity: this.opacity,
             layer: this.layer,
             rotation: this.rotation,
             flipHorizontal: this.flipHorizontal,
             texture: this.texture,
+            spriteSheet: this.spriteSheet ? {
+                ...this.spriteSheet,
+                animations: this.spriteSheet.animations.map(animation => ({ ...animation }))
+            } : null,
             content: this.content,
             font: this.font,
             fontSize: this.fontSize,
@@ -1955,7 +2846,72 @@ class WorldObject {
         };
     }
 }
+WorldObject._spriteSheetImageCache = new Map();
 WorldObject._editorMode = true;
+WorldObject.normalizeCollisionPolygon = normalizeWorldCollisionPolygon;
+WorldObject.normalizeSpriteAnimations = normalizeWorldObjectSpriteAnimations;
+WorldObject.DEFAULT_COLLISION_POLYGON = DEFAULT_WORLD_COLLISION_POLYGON.map(point => point.slice());
+
+const normalizeWorldObjectStamps = (stamps, maxSpriteDataLength = WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) => {
+    if (!Array.isArray(stamps)) return [];
+    const result = [];
+    const ids = new Set();
+    const names = new Set();
+    let spriteDataLength = 0;
+
+    for (const rawStamp of stamps.slice(0, 32)) {
+        if (!rawStamp || typeof rawStamp !== 'object' || Array.isArray(rawStamp)) continue;
+        const name = typeof rawStamp.name === 'string' ? rawStamp.name.trim().slice(0, 40) : '';
+        if (!name || names.has(name.toLowerCase()) || !Array.isArray(rawStamp.objects)) continue;
+        const objects = [];
+        for (const rawObject of rawStamp.objects.slice(0, 64)) {
+            if (!rawObject || typeof rawObject !== 'object' || Array.isArray(rawObject) ||
+                !Number.isFinite(rawObject.x) || Math.abs(rawObject.x) > 10000000 ||
+                !Number.isFinite(rawObject.y) || Math.abs(rawObject.y) > 10000000 ||
+                !Number.isFinite(rawObject.width) || rawObject.width <= 0 || rawObject.width > 100000 ||
+                !Number.isFinite(rawObject.height) || rawObject.height <= 0 || rawObject.height > 100000 ||
+                (rawObject.sendTo !== undefined && !Array.isArray(rawObject.sendTo)) ||
+                (rawObject.receiveFrom !== undefined && !Array.isArray(rawObject.receiveFrom))) continue;
+
+            const connectionsAreValid = ['sendTo', 'receiveFrom'].every(key =>
+                (rawObject[key] || []).every(connection =>
+                    typeof connection === 'string' ||
+                    (!!connection && typeof connection === 'object' && !Array.isArray(connection) &&
+                        (connection.name === undefined || typeof connection.name === 'string'))));
+            if (!connectionsAreValid) continue;
+
+            try {
+                const snapshot = new WorldObject({ ...rawObject, id: undefined }).toJSON();
+                if (!Number.isFinite(snapshot.x) || !Number.isFinite(snapshot.y) ||
+                    !Number.isFinite(snapshot.width) || !Number.isFinite(snapshot.height)) continue;
+                delete snapshot.id;
+                if (snapshot.spriteSheet) {
+                    if (spriteDataLength + snapshot.spriteSheet.data.length > maxSpriteDataLength) {
+                        snapshot.spriteSheet = null;
+                    } else {
+                        spriteDataLength += snapshot.spriteSheet.data.length;
+                    }
+                }
+                objects.push(snapshot);
+            } catch (_) {
+                // Skip malformed imported snapshots without rejecting the rest of the map.
+            }
+        }
+        if (objects.length === 0) continue;
+
+        let id = typeof rawStamp.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(rawStamp.id)
+            ? rawStamp.id
+            : '';
+        if (!id || ids.has(id)) {
+            id = `stamp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+            while (ids.has(id)) id += 'x';
+        }
+        ids.add(id);
+        names.add(name.toLowerCase());
+        result.push({ id, name, objects });
+    }
+    return result;
+};
 
 // ============================================
 // WORLD CLASS
@@ -2014,6 +2970,7 @@ class SpatialHash {
                 if (!cell) continue;
                 for (let i = 0; i < cell.length; i++) {
                     const obj = cell[i];
+                    if (obj._mechanicsEnabled === false) continue;
                     if (obj._spatialStamp !== stamp) {
                         obj._spatialStamp = stamp;
                         result.push(obj);
@@ -2025,9 +2982,151 @@ class SpatialHash {
     }
 }
 
+const createMechanicsSaveId = () => {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return `map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const normalizeWorldTilemapAnimation = (animation, atlas = null) => {
+    if (!animation || typeof animation !== 'object' || Array.isArray(animation)) return null;
+    if (atlas && Array.isArray(animation.atlasFrames)) {
+        const atlasFrames = animation.atlasFrames.slice(0, 8).filter(frame =>
+            Number.isInteger(frame) && frame >= 0 && frame < atlas.columns * atlas.rows
+        );
+        if (new Set(atlasFrames).size < 2) return null;
+        const fps = typeof animation.fps === 'number' && Number.isFinite(animation.fps)
+            ? Math.max(1, Math.min(12, Math.round(animation.fps))) : 4;
+        return { atlasFrames, fps };
+    }
+    if (!Array.isArray(animation.textures)) return null;
+    const textures = animation.textures.slice(0, 8).filter(texture =>
+        typeof texture === 'string' && (texture === 'solid' || Object.hasOwn(BlockTextures, texture))
+    );
+    if (textures.length < 2 || new Set(textures).size < 2) return null;
+    const fps = typeof animation.fps === 'number' && Number.isFinite(animation.fps)
+        ? Math.max(1, Math.min(12, Math.round(animation.fps))) : 4;
+    return { textures, fps };
+};
+
+const normalizeWorldTilemapAtlas = atlas => {
+    if (!atlas || typeof atlas !== 'object' || Array.isArray(atlas)) return null;
+    const data = typeof atlas.data === 'string' ? atlas.data : '';
+    const frameWidth = Math.floor(atlas.frameWidth);
+    const frameHeight = Math.floor(atlas.frameHeight);
+    const columns = Math.floor(atlas.columns);
+    const rows = Math.floor(atlas.rows);
+    if (data.length > WORLD_TILEMAP_ATLAS_MAX_DATA_URL_LENGTH ||
+        !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(data) ||
+        !Number.isInteger(frameWidth) || frameWidth < 1 || frameWidth > 512 ||
+        !Number.isInteger(frameHeight) || frameHeight < 1 || frameHeight > 512 ||
+        !Number.isInteger(columns) || columns < 1 || columns > 128 ||
+        !Number.isInteger(rows) || rows < 1 || rows > 128 || columns * rows > 4096 ||
+        frameWidth * columns * frameHeight * rows > WORLD_TILEMAP_ATLAS_MAX_PIXELS) return null;
+    return { data, frameWidth, frameHeight, columns, rows };
+};
+
+const normalizeWorldTilemaps = (tilemaps, layerDefinitions, maxAtlasDataLength = WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) => {
+    if (!Array.isArray(tilemaps)) return [];
+    const normalized = [];
+    const usedLayers = new Set();
+    const usedIds = new Set();
+    let totalCells = 0;
+    let totalAnimatedCells = 0;
+    let totalAtlasDataLength = 0;
+    let totalAtlasPixels = 0;
+    const validLayers = new Set((Array.isArray(layerDefinitions) ? layerDefinitions : [])
+        .map(layer => normalizeWorldLayerDepth(layer?.depth)).filter(depth => depth !== null));
+
+    for (const rawTilemap of tilemaps) {
+        if (normalized.length >= WORLD_TILEMAP_MAX_COUNT || totalCells >= WORLD_TILEMAP_MAX_CELLS) break;
+        if (!rawTilemap || typeof rawTilemap !== 'object' || Array.isArray(rawTilemap)) continue;
+        const layer = normalizeWorldLayerDepth(rawTilemap.layer);
+        if (layer === null || !validLayers.has(layer) || usedLayers.has(layer)) continue;
+        const rawId = typeof rawTilemap.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(rawTilemap.id)
+            ? rawTilemap.id : `tilemap-${layer}`;
+        let id = rawId;
+        let idSuffix = 1;
+        while (usedIds.has(id)) id = `${rawId}-${idSuffix++}`;
+        const name = typeof rawTilemap.name === 'string' && rawTilemap.name.trim()
+            ? rawTilemap.name.trim().slice(0, 40) : `Tilemap ${layer}`;
+        let atlas = normalizeWorldTilemapAtlas(rawTilemap.atlas);
+        if (atlas && totalAtlasDataLength + atlas.data.length > maxAtlasDataLength) atlas = null;
+        const atlasPixels = atlas ? atlas.frameWidth * atlas.columns * atlas.frameHeight * atlas.rows : 0;
+        if (atlas && totalAtlasPixels + atlasPixels > WORLD_TILEMAP_ATLAS_TOTAL_MAX_PIXELS) atlas = null;
+        if (atlas) totalAtlasDataLength += atlas.data.length;
+        if (atlas) totalAtlasPixels += atlasPixels;
+        const cellsByPosition = new Map();
+        if (Array.isArray(rawTilemap.cells)) {
+            let rawCellCount = 0;
+            for (const rawCell of rawTilemap.cells) {
+                if (totalCells >= WORLD_TILEMAP_MAX_CELLS || rawCellCount++ >= WORLD_TILEMAP_MAX_CELLS) break;
+                if (!rawCell || typeof rawCell !== 'object') continue;
+                const x = rawCell.x;
+                const y = rawCell.y;
+                if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+                    x % GRID_SIZE !== 0 || y % GRID_SIZE !== 0 ||
+                    Math.abs(x) > WORLD_TILEMAP_MAX_POSITION || Math.abs(y) > WORLD_TILEMAP_MAX_POSITION) continue;
+                const color = typeof rawCell.color === 'string' && /^#[0-9a-f]{6}$/i.test(rawCell.color)
+                    ? rawCell.color : '#787878';
+                const texture = typeof rawCell.texture === 'string' &&
+                    (rawCell.texture === 'solid' || Object.hasOwn(BlockTextures, rawCell.texture)) ? rawCell.texture : 'solid';
+                const numericOpacity = rawCell.opacity;
+                const opacity = typeof numericOpacity === 'number' && Number.isFinite(numericOpacity)
+                    ? Math.max(0, Math.min(1, numericOpacity)) : 1;
+                const key = `${x},${y}`;
+                const collisionType = WORLD_TILEMAP_CELL_BEHAVIORS.has(rawCell.collisionType)
+                    ? rawCell.collisionType
+                    : (rawCell.collision === false ? 'decorative'
+                        : rawCell.oneWayPlatform === true ? 'oneWay'
+                            : rawCell.actingType === 'spike' ? 'hazard' : 'solid');
+                const collisionPoints = rawCell.collisionShape === 'polygon' &&
+                    !['rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(collisionType)
+                    ? normalizeWorldCollisionPolygon(rawCell.collisionPoints) : null;
+                const previousCell = cellsByPosition.get(key);
+                const atlasFrame = atlas && Number.isInteger(rawCell.atlasFrame) &&
+                    rawCell.atlasFrame >= 0 && rawCell.atlasFrame < atlas.columns * atlas.rows
+                    ? rawCell.atlasFrame : null;
+                let animation = normalizeWorldTilemapAnimation(rawCell.animation, atlas);
+                if (animation && !previousCell?.animation && totalAnimatedCells >= WORLD_TILEMAP_MAX_ANIMATED_CELLS) {
+                    animation = null;
+                }
+                const cell = {
+                    x, y, color, texture, opacity,
+                    collisionType,
+                    collision: collisionType !== 'decorative',
+                    oneWayPlatform: collisionType === 'oneWay' && !collisionPoints,
+                    ...(collisionPoints ? {
+                        collisionShape: 'polygon', collisionPoints,
+                        polygonOneWay: collisionType === 'oneWay' || rawCell.polygonOneWay !== false
+                    } : {}),
+                    ...(atlasFrame !== null ? { atlasFrame } : {}),
+                    ...(animation ? { animation } : {})
+                };
+                if (!previousCell) totalCells++;
+                if (!previousCell?.animation && animation) totalAnimatedCells++;
+                else if (previousCell?.animation && !animation) totalAnimatedCells--;
+                cellsByPosition.set(key, cell);
+            }
+        }
+        normalized.push({ id, name, layer, cells: Array.from(cellsByPosition.values()), ...(atlas ? { atlas } : {}) });
+        usedLayers.add(layer);
+        usedIds.add(id);
+    }
+    return normalized;
+};
+
 class World {
     constructor() {
         this.objects = [];
+        this.tilemaps = [];
+        this._tilemapCellCount = 0;
+        this._tilemapCollisionCellCount = 0;
+        this._tilemapAnimatedCellCount = 0;
+        this._tilemapRenderCells = null;
+        this._tilemapRenderDirty = true;
+        this.objectStamps = [];
+        this.playerSpriteSheet = null;
+        this.layerDefinitions = DEFAULT_WORLD_LAYER_DEFINITIONS.map(layer => ({ ...layer }));
         this.spatialHash = new SpatialHash(128);
         this._spatialDirty = true;
         // Tile cache for static object rendering (play/test mode)
@@ -2090,14 +3189,21 @@ class World {
         this.checkpoints = [];
         this.endpoint = null;
         this.mapName = 'Untitled Map';
+        this.mechanicsSaveId = createMechanicsSaveId();
+        this.persistCheckpoints = false;
         this.dieLineY = 1000; // Y position below which players die (void death)
         
         // Physics settings
         this.playerSpeed = DEFAULT_MOVE_SPEED; // Horizontal movement speed (default: 5)
+        this.horizontalAcceleration = DEFAULT_HORIZONTAL_ACCELERATION; // 0 preserves instant horizontal movement
+        this.airControl = DEFAULT_AIR_CONTROL; // Multiplier applied to acceleration while airborne
+        this.terminalFallSpeed = null; // null preserves the legacy gravity-scaled limit
         this.jumpForce = DEFAULT_JUMP_FORCE;   // Jump force/height (default: -14, negative = upward)
         this.gravity = DEFAULT_GRAVITY;         // Gravity strength (default: 0.8)
         this.cameraLerpX = CAMERA_LERP_X;       // Horizontal camera smoothness (default: 0.12)
         this.cameraLerpY = CAMERA_LERP_Y;       // Vertical camera smoothness (default: 0.12)
+        this.cameraFollowMode = 'both';
+        this.cameraBounds = { enabled: false, x: 0, y: 0, width: 2000, height: 1200 };
         
         // Spike touchbox mode
         // 'full' - Entire spike damages player
@@ -2126,7 +3232,8 @@ class World {
         // Code plugin data (triggers and events)
         this.codeData = {
             triggers: [],
-            events: []
+            events: [],
+            variables: []
         };
     }
 
@@ -2140,11 +3247,523 @@ class World {
         this._zoneListDirty = true;
     }
 
+    _rebuildTilemapCellLookups() {
+        this._tilemapCellCount = 0;
+        this._tilemapCollisionCellCount = 0;
+        this._tilemapAnimatedCellCount = 0;
+        for (const tilemap of this.tilemaps) {
+            tilemap._cellLookup = new Map();
+            tilemap._colliderCache = new Map();
+            for (const cell of tilemap.cells) {
+                tilemap._cellLookup.set(`${cell.x},${cell.y}`, cell);
+                this._tilemapCellCount++;
+                if (cell.collision) this._tilemapCollisionCellCount++;
+                if (cell.animation) this._tilemapAnimatedCellCount++;
+            }
+        }
+        this._tilemapRenderCells = null;
+        this._tilemapRenderDirty = true;
+    }
+
+    _getTilemapForLayer(layer, create = false) {
+        const depth = normalizeWorldLayerDepth(layer);
+        if (depth === null) return null;
+        let tilemap = this.tilemaps.find(item => item.layer === depth);
+        if (!tilemap && create && this.tilemaps.length < WORLD_TILEMAP_MAX_COUNT) {
+            const definition = this.getLayerDefinition(depth);
+            tilemap = {
+                id: `tilemap-${depth}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+                name: `${definition?.name || 'Layer'} Tilemap`.slice(0, 40),
+                layer: depth,
+                cells: [],
+                _cellLookup: new Map(),
+                _colliderCache: new Map()
+            };
+            this.tilemaps.push(tilemap);
+        }
+        return tilemap || null;
+    }
+
+    setTilemapCell(x, y, config = {}, layer = 1) {
+        const cellX = Math.round(x / GRID_SIZE) * GRID_SIZE;
+        const cellY = Math.round(y / GRID_SIZE) * GRID_SIZE;
+        if (!Number.isSafeInteger(cellX) || !Number.isSafeInteger(cellY) ||
+            Math.abs(cellX) > WORLD_TILEMAP_MAX_POSITION || Math.abs(cellY) > WORLD_TILEMAP_MAX_POSITION) return false;
+        const color = typeof config.color === 'string' && /^#[0-9a-f]{6}$/i.test(config.color) ? config.color : '#787878';
+        const collisionType = WORLD_TILEMAP_CELL_BEHAVIORS.has(config.collisionType)
+            ? config.collisionType
+            : (config.collision === false ? 'decorative'
+                : config.oneWayPlatform === true ? 'oneWay'
+                    : config.actingType === 'spike' ? 'hazard' : 'solid');
+        const collisionPoints = config.collisionShape === 'polygon' &&
+            !['rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(collisionType)
+            ? normalizeWorldCollisionPolygon(config.collisionPoints) : null;
+        const layerDefinition = this.getLayerDefinition(layer);
+        if (collisionType !== 'decorative' && layerDefinition &&
+            (layerDefinition.parallaxX !== 1 || layerDefinition.parallaxY !== 1)) return false;
+        const tilemap = this._getTilemapForLayer(layer, true);
+        if (!tilemap) return false;
+        const key = `${cellX},${cellY}`;
+        const previous = tilemap._cellLookup.get(key);
+        if (!previous && this._tilemapCellCount >= WORLD_TILEMAP_MAX_CELLS) return false;
+        const animation = normalizeWorldTilemapAnimation(config.animation, tilemap.atlas);
+        if (animation && !previous?.animation && this._tilemapAnimatedCellCount >= WORLD_TILEMAP_MAX_ANIMATED_CELLS) return false;
+        const cell = {
+            x: cellX,
+            y: cellY,
+            color,
+            texture: typeof config.texture === 'string' &&
+                (config.texture === 'solid' || Object.hasOwn(BlockTextures, config.texture)) ? config.texture : 'solid',
+            opacity: Number.isFinite(config.opacity) ? Math.max(0, Math.min(1, config.opacity)) : 1,
+            collisionType,
+            collision: collisionType !== 'decorative',
+            oneWayPlatform: collisionType === 'oneWay' && !collisionPoints,
+            ...(collisionPoints ? {
+                collisionShape: 'polygon',
+                collisionPoints,
+                polygonOneWay: collisionType === 'oneWay' || config.polygonOneWay !== false
+            } : {}),
+            ...(Number.isInteger(config.atlasFrame) && config.atlasFrame >= 0 &&
+                config.atlasFrame < ((tilemap.atlas?.columns || 0) * (tilemap.atlas?.rows || 0))
+                ? { atlasFrame: config.atlasFrame } : {}),
+            ...(animation ? { animation } : {})
+        };
+        if (previous && previous.color === cell.color && previous.texture === cell.texture &&
+            previous.opacity === cell.opacity && previous.collision === cell.collision &&
+            previous.oneWayPlatform === cell.oneWayPlatform && previous.collisionType === cell.collisionType &&
+            previous.collisionShape === cell.collisionShape &&
+            previous.polygonOneWay === cell.polygonOneWay &&
+            JSON.stringify(previous.collisionPoints || null) === JSON.stringify(cell.collisionPoints || null) &&
+            previous.atlasFrame === cell.atlasFrame &&
+            JSON.stringify(previous.animation || null) === JSON.stringify(animation)) return false;
+        if (previous) {
+            this._tilemapCollisionCellCount += Number(cell.collision) - Number(previous.collision);
+            this._tilemapAnimatedCellCount += Number(Boolean(animation)) - Number(Boolean(previous.animation));
+            Object.assign(previous, cell);
+            if (!Object.hasOwn(cell, 'atlasFrame')) delete previous.atlasFrame;
+            if (!Object.hasOwn(cell, 'collisionPoints')) {
+                delete previous.collisionShape;
+                delete previous.collisionPoints;
+                delete previous.polygonOneWay;
+            }
+            if (!animation) delete previous.animation;
+        } else {
+            tilemap.cells.push(cell);
+            tilemap._cellLookup.set(key, cell);
+            this._tilemapCellCount++;
+            if (cell.collision) this._tilemapCollisionCellCount++;
+            if (animation) this._tilemapAnimatedCellCount++;
+        }
+        tilemap._colliderCache.delete(key);
+        this._tilemapRenderDirty = true;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
+    setTilemapAtlas(atlasData, layer = 1) {
+        const normalizedAtlas = normalizeWorldTilemapAtlas(atlasData);
+        if (!normalizedAtlas) return false;
+        const depth = normalizeWorldLayerDepth(layer);
+        if (depth === null || !this.getLayerDefinition(depth)) return false;
+        let tilemap = this.tilemaps.find(item => item.layer === depth) || null;
+        if (!tilemap && this.tilemaps.length >= WORLD_TILEMAP_MAX_COUNT) return false;
+        const currentBytes = this.getSpriteSheetDataLength() - (tilemap?.atlas?.data?.length || 0);
+        if (currentBytes + normalizedAtlas.data.length > WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) return false;
+        const currentPixels = this.tilemaps.reduce((total, item) => total +
+            (item.atlas ? item.atlas.frameWidth * item.atlas.columns * item.atlas.frameHeight * item.atlas.rows : 0), 0) -
+            (tilemap?.atlas ? tilemap.atlas.frameWidth * tilemap.atlas.columns * tilemap.atlas.frameHeight * tilemap.atlas.rows : 0);
+        if (currentPixels + normalizedAtlas.frameWidth * normalizedAtlas.columns * normalizedAtlas.frameHeight * normalizedAtlas.rows >
+            WORLD_TILEMAP_ATLAS_TOTAL_MAX_PIXELS) return false;
+        if (tilemap && JSON.stringify(tilemap.atlas || null) === JSON.stringify(normalizedAtlas)) return true;
+        if (!tilemap) tilemap = this._getTilemapForLayer(depth, true);
+        if (!tilemap) return false;
+        tilemap.atlas = normalizedAtlas;
+        for (const cell of tilemap.cells) {
+            if (cell.animation?.atlasFrames) {
+                const animation = normalizeWorldTilemapAnimation(cell.animation, normalizedAtlas);
+                if (animation) cell.animation = animation;
+                else {
+                    delete cell.animation;
+                    this._tilemapAnimatedCellCount = Math.max(0, this._tilemapAnimatedCellCount - 1);
+                }
+            }
+            if (Number.isInteger(cell.atlasFrame) && cell.atlasFrame >= normalizedAtlas.columns * normalizedAtlas.rows) {
+                delete cell.atlasFrame;
+            }
+        }
+        this._tilemapRenderDirty = true;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
+    clearTilemapAtlas(layer = 1) {
+        const tilemap = this.tilemaps.find(item => item.layer === normalizeWorldLayerDepth(layer));
+        if (!tilemap?.atlas) return false;
+        delete tilemap.atlas;
+        for (const cell of tilemap.cells) {
+            delete cell.atlasFrame;
+            if (cell.animation?.atlasFrames) {
+                delete cell.animation;
+                this._tilemapAnimatedCellCount = Math.max(0, this._tilemapAnimatedCellCount - 1);
+            }
+        }
+        this._tilemapRenderDirty = true;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
+    hasTilemapCellsInArea(x, y, width, height) {
+        if (!(width > 0 && height > 0)) return false;
+        const firstX = Math.floor(x / GRID_SIZE) * GRID_SIZE;
+        const lastX = (Math.ceil((x + width) / GRID_SIZE) - 1) * GRID_SIZE;
+        const firstY = Math.floor(y / GRID_SIZE) * GRID_SIZE;
+        const lastY = (Math.ceil((y + height) / GRID_SIZE) - 1) * GRID_SIZE;
+        for (let cy = firstY; cy <= lastY; cy += GRID_SIZE) {
+            for (let cx = firstX; cx <= lastX; cx += GRID_SIZE) {
+                for (const tilemap of this.tilemaps) {
+                    if (tilemap._cellLookup.has(`${cx},${cy}`)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    removeTilemapCellsInArea(x, y, width, height) {
+        if (!(width > 0 && height > 0)) return 0;
+        const firstX = Math.floor(x / GRID_SIZE) * GRID_SIZE;
+        const lastX = (Math.ceil((x + width) / GRID_SIZE) - 1) * GRID_SIZE;
+        const firstY = Math.floor(y / GRID_SIZE) * GRID_SIZE;
+        const lastY = (Math.ceil((y + height) / GRID_SIZE) - 1) * GRID_SIZE;
+        let removed = 0;
+        const keys = new Set();
+        for (let cy = firstY; cy <= lastY; cy += GRID_SIZE) {
+            for (let cx = firstX; cx <= lastX; cx += GRID_SIZE) {
+                keys.add(`${cx},${cy}`);
+            }
+        }
+        for (const tilemap of this.tilemaps) {
+            const nextCells = [];
+            for (const cell of tilemap.cells) {
+                const key = `${cell.x},${cell.y}`;
+                if (!keys.has(key)) {
+                    nextCells.push(cell);
+                    continue;
+                }
+                tilemap._cellLookup.delete(key);
+                tilemap._colliderCache.delete(key);
+                this._tilemapCellCount--;
+                if (cell.collision) this._tilemapCollisionCellCount--;
+                if (cell.animation) this._tilemapAnimatedCellCount--;
+                removed++;
+            }
+            tilemap.cells = nextCells;
+        }
+        if (removed) {
+            this._tilemapRenderDirty = true;
+            this._editorMergedDirty = true;
+            this.invalidateTileCache();
+        }
+        return removed;
+    }
+
+    _getTilemapCollider(tilemap, cell) {
+        const key = `${cell.x},${cell.y}`;
+        let collider = tilemap._colliderCache.get(key);
+        const config = {
+            id: `tile-${tilemap.id}-${cell.x}-${cell.y}`,
+            x: cell.x,
+            y: cell.y,
+            width: GRID_SIZE,
+            height: GRID_SIZE,
+            type: 'block',
+            appearanceType: cell.collisionType === 'hazard' ? 'spike' : 'ground',
+            actingType: cell.collisionType === 'hazard' ? 'spike' : 'ground',
+            collision: true,
+            collisionShape: cell.collisionType === 'rampUpRight' ? 'slopeUpRight'
+                : cell.collisionType === 'rampUpLeft' ? 'slopeUpLeft'
+                    : cell.collisionShape === 'polygon' ? 'polygon' : 'box',
+            collisionPoints: cell.collisionShape === 'polygon' ? cell.collisionPoints : undefined,
+            polygonOneWay: cell.collisionShape === 'polygon' ? cell.polygonOneWay !== false : false,
+            oneWayPlatform: cell.collisionType === 'oneWay' && cell.collisionShape !== 'polygon',
+            spikeTouchbox: cell.collisionType === 'hazard' ? 'full' : null,
+            color: cell.color,
+            texture: cell.texture,
+            opacity: cell.opacity,
+            layer: tilemap.layer,
+            name: tilemap.name
+        };
+        if (!collider) {
+            collider = new WorldObject(config);
+            collider._tilemapCell = true;
+            collider._tilemapId = tilemap.id;
+            tilemap._colliderCache.set(key, collider);
+        } else {
+            Object.assign(collider, config);
+        }
+        collider._tilemapCollisionType = cell.collisionType;
+        return collider;
+    }
+
+    getTilemapColliderById(id) {
+        if (typeof id !== 'string') return null;
+        for (const tilemap of this.tilemaps) {
+            const prefix = `tile-${tilemap.id}-`;
+            if (!id.startsWith(prefix)) continue;
+            const match = id.slice(prefix.length).match(/^(-?\d+)-(-?\d+)$/);
+            if (!match) continue;
+            const x = Number(match[1]);
+            const y = Number(match[2]);
+            const cell = tilemap._cellLookup.get(`${x},${y}`);
+            if (cell?.collision && `tile-${tilemap.id}-${x}-${y}` === id) {
+                return this._getTilemapCollider(tilemap, cell);
+            }
+        }
+        return null;
+    }
+
+    _renderTilemapCell(ctx, camera, cell, atlas = null) {
+        const x = cell.x - camera.x;
+        const y = cell.y - camera.y;
+        const animationFrames = cell.animation?.textures || cell.animation?.atlasFrames;
+        const frame = cell.animation
+            ? Math.floor(Date.now() * cell.animation.fps / 1000) % animationFrames.length
+            : 0;
+        const texture = cell.animation?.textures?.[frame] || cell.texture;
+        const atlasFrame = cell.animation?.atlasFrames?.[frame] ?? cell.atlasFrame;
+        let atlasDrawn = false;
+        if (atlas && Number.isInteger(atlasFrame) && atlasFrame >= 0 &&
+            atlasFrame < atlas.columns * atlas.rows) {
+            const atlasImageCache = this._tilemapAtlasImages || (this._tilemapAtlasImages = new Map());
+            let image = atlasImageCache.get(atlas.data);
+            if (!image) {
+                image = new Image();
+                image.onload = () => {
+                    this._tilemapRenderDirty = true;
+                    this.invalidateTileCache();
+                };
+                image.src = atlas.data;
+                atlasImageCache.set(atlas.data, image);
+                if (atlasImageCache.size > 24) {
+                    atlasImageCache.delete(atlasImageCache.keys().next().value);
+                }
+            }
+            if (image.complete && image.naturalWidth > 0) {
+                const sourceX = (atlasFrame % atlas.columns) * atlas.frameWidth;
+                const sourceY = Math.floor(atlasFrame / atlas.columns) * atlas.frameHeight;
+                if (sourceX + atlas.frameWidth <= image.naturalWidth && sourceY + atlas.frameHeight <= image.naturalHeight) {
+                    ctx.save();
+                    ctx.globalAlpha = cell.opacity;
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(image, sourceX, sourceY, atlas.frameWidth, atlas.frameHeight, x, y, GRID_SIZE, GRID_SIZE);
+                    ctx.restore();
+                    atlasDrawn = true;
+                }
+            }
+        }
+        if (!atlasDrawn) this._renderMergedBlock(ctx, x, y, GRID_SIZE, GRID_SIZE, cell.color, texture, cell.opacity);
+        if (cell.collisionType === 'oneWay') {
+            ctx.save();
+            ctx.globalAlpha = cell.opacity;
+            ctx.fillStyle = 'rgba(255, 224, 130, 0.95)';
+            ctx.fillRect(x, y, GRID_SIZE, Math.min(3, GRID_SIZE));
+            ctx.restore();
+        } else if (cell.collisionType === 'rampUpRight' || cell.collisionType === 'rampUpLeft') {
+            ctx.save();
+            ctx.globalAlpha = cell.opacity;
+            ctx.strokeStyle = 'rgba(255, 224, 130, 0.95)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (cell.collisionType === 'rampUpRight') {
+                ctx.moveTo(x + 1, y + GRID_SIZE - 1);
+                ctx.lineTo(x + GRID_SIZE - 1, y + 1);
+            } else {
+                ctx.moveTo(x + 1, y + 1);
+                ctx.lineTo(x + GRID_SIZE - 1, y + GRID_SIZE - 1);
+            }
+            ctx.stroke();
+            ctx.restore();
+        } else if (cell.collisionType === 'hazard') {
+            ctx.save();
+            ctx.globalAlpha = cell.opacity;
+            ctx.fillStyle = 'rgba(120, 20, 20, 0.88)';
+            ctx.strokeStyle = '#ffe4e6';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x + GRID_SIZE / 2, y + 5);
+            ctx.lineTo(x + GRID_SIZE - 5, y + GRID_SIZE - 5);
+            ctx.lineTo(x + 5, y + GRID_SIZE - 5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#fff7f7';
+            ctx.font = 'bold 15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('!', x + GRID_SIZE / 2, y + GRID_SIZE / 2 + 4);
+            ctx.restore();
+        }
+    }
+
+    _getTilemapRenderCells() {
+        if (!this._tilemapRenderDirty && this._tilemapRenderCells) return this._tilemapRenderCells;
+        this._tilemapRenderDirty = false;
+        this._tilemapRenderCells = [];
+        for (const tilemap of this.tilemaps) {
+            for (const cell of tilemap.cells) {
+                const renderCell = {
+                    x: cell.x, y: cell.y, width: GRID_SIZE, height: GRID_SIZE,
+                    type: 'block', appearanceType: 'ground', collisionShape: 'box',
+                    rotation: 0, flipHorizontal: false,
+                    color: cell.color, texture: cell.texture, opacity: cell.opacity,
+                    layer: tilemap.layer
+                };
+                if (Number.isInteger(cell.atlasFrame) && tilemap.atlas) {
+                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
+                }
+                if (cell.animation) {
+                    renderCell._tilemapAnimated = true;
+                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
+                } else if (renderCell.render) {
+                    // Atlas cells render into the static tile cache; the draw function
+                    // is kept on the cell to avoid greedy-merging across atlas frames.
+                } else if (['oneWay', 'rampUpRight', 'rampUpLeft', 'hazard'].includes(cell.collisionType)) {
+                    renderCell.oneWayPlatform = true;
+                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell);
+                }
+                this._tilemapRenderCells.push(renderCell);
+            }
+        }
+        return this._tilemapRenderCells;
+    }
+
+    getLayerDefinition(depth) {
+        const normalizedDepth = normalizeWorldLayerDepth(depth);
+        return this.layerDefinitions.find(layer => layer.depth === normalizedDepth) || null;
+    }
+
+    getLayerCamera(camera, depth) {
+        const layer = this.getLayerDefinition(depth);
+        if (!layer || (layer.parallaxX === 1 && layer.parallaxY === 1)) return camera;
+        return {
+            ...camera,
+            x: camera.x * normalizeWorldLayerParallax(layer.parallaxX),
+            y: camera.y * normalizeWorldLayerParallax(layer.parallaxY)
+        };
+    }
+
+    layerHasColliders(depth) {
+        if (this.objects.some(object => object.layer === depth && object.collision !== false &&
+            object.appearanceType !== 'zone' && object.appearanceType !== 'button')) return true;
+        return this.tilemaps.some(tilemap => tilemap.layer === depth && tilemap.cells.some(cell => cell.collision));
+    }
+
+    getRenderLayerDepths() {
+        return {
+            behindPlayer: this.layerDefinitions.filter(layer => layer.depth <= 1).map(layer => layer.depth),
+            abovePlayer: this.layerDefinitions.filter(layer => layer.depth >= 2).map(layer => layer.depth)
+        };
+    }
+
+    addDrawLayer(name, side) {
+        const cleanName = typeof name === 'string' ? name.trim().slice(0, 40) : '';
+        if (!cleanName) throw new Error('Enter a layer name');
+        if (!['behind', 'above'].includes(side)) throw new Error('Choose whether the layer goes behind or above the player');
+        if (this.layerDefinitions.length >= WORLD_LAYER_MAX_COUNT) throw new Error(`A map can have at most ${WORLD_LAYER_MAX_COUNT} draw layers`);
+        if (this.layerDefinitions.some(layer => layer.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase())) {
+            throw new Error('Layer names must be unique');
+        }
+
+        const customLayers = this.layerDefinitions.filter(layer => !layer.builtin);
+        const depth = side === 'behind'
+            ? Math.min(0, ...customLayers.filter(layer => layer.depth < 0).map(layer => layer.depth)) - 1
+            : Math.max(2, ...customLayers.filter(layer => layer.depth > 2).map(layer => layer.depth)) + 1;
+        if (depth < WORLD_LAYER_MIN_DEPTH || depth > WORLD_LAYER_MAX_DEPTH) throw new Error('No more draw depths are available on that side of the player');
+
+        const layer = {
+            id: `layer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+            name: cleanName,
+            depth,
+            builtin: false,
+            parallaxX: 1,
+            parallaxY: 1
+        };
+        this.layerDefinitions.push(layer);
+        this.layerDefinitions.sort((a, b) => a.depth - b.depth);
+        this._editorMergedDirty = true;
+        this._tileCacheReady = false;
+        return layer;
+    }
+
+    setDrawLayerParallax(layerId, parallaxX, parallaxY) {
+        const layer = this.layerDefinitions.find(item => item.id === layerId && !item.builtin);
+        if (!layer) throw new Error('Choose a custom draw layer');
+        const x = parallaxX;
+        const y = parallaxY;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 2 || y < 0 || y > 2) {
+            throw new Error('Parallax values must be between 0 and 2');
+        }
+        if ((x !== 1 || y !== 1) && this.layerHasColliders(layer.depth)) {
+            throw new Error('Move collidable objects and tilemap cells to another layer before enabling parallax');
+        }
+        layer.parallaxX = x;
+        layer.parallaxY = y;
+        return layer;
+    }
+
+    renameDrawLayer(layerId, name) {
+        const layer = this.layerDefinitions.find(item => item.id === layerId && !item.builtin);
+        const cleanName = typeof name === 'string' ? name.trim().slice(0, 40) : '';
+        if (!layer) throw new Error('Built-in draw layers cannot be renamed');
+        if (!cleanName) throw new Error('Enter a layer name');
+        if (this.layerDefinitions.some(item => item.id !== layerId && item.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase())) {
+            throw new Error('Layer names must be unique');
+        }
+        layer.name = cleanName;
+        return layer;
+    }
+
+    removeDrawLayer(layerId) {
+        const index = this.layerDefinitions.findIndex(item => item.id === layerId && !item.builtin);
+        if (index < 0) return false;
+        const [layer] = this.layerDefinitions.splice(index, 1);
+        const fallbackDepth = layer.depth <= 1 ? 1 : 2;
+        for (const object of this.objects) {
+            if (object.layer === layer.depth) object.layer = fallbackDepth;
+        }
+        const movedTilemap = this.tilemaps.find(tilemap => tilemap.layer === layer.depth);
+        if (movedTilemap) {
+            const fallbackTilemap = this.tilemaps.find(tilemap => tilemap.layer === fallbackDepth);
+            if (fallbackTilemap && fallbackTilemap !== movedTilemap) {
+                for (const cell of movedTilemap.cells) {
+                    const key = `${cell.x},${cell.y}`;
+                    const existing = fallbackTilemap._cellLookup.get(key);
+                    if (existing) Object.assign(existing, cell);
+                    else {
+                        const copy = { ...cell };
+                        fallbackTilemap.cells.push(copy);
+                        fallbackTilemap._cellLookup.set(key, copy);
+                    }
+                }
+                this.tilemaps = this.tilemaps.filter(tilemap => tilemap !== movedTilemap);
+            } else {
+                movedTilemap.layer = fallbackDepth;
+            }
+            this._rebuildTilemapCellLookups();
+            this._tilemapRenderDirty = true;
+        }
+        this._editorMergedDirty = true;
+        this._tileCacheReady = false;
+        return true;
+    }
+
     getTeleportals() {
         if (this._teleportalListDirty) {
             this._teleportalList.length = 0;
             for (let i = 0; i < this.objects.length; i++) {
-                if (this.objects[i].type === 'teleportal') {
+                if (this.objects[i].type === 'teleportal' && this.objects[i]._mechanicsEnabled !== false) {
                     this._teleportalList.push(this.objects[i]);
                 }
             }
@@ -2158,7 +3777,7 @@ class World {
             this._zoneList.length = 0;
             for (let i = 0; i < this.objects.length; i++) {
                 const at = this.objects[i].appearanceType;
-                if (at === 'zone' || at === 'button') {
+                if ((at === 'zone' || at === 'button') && this.objects[i]._mechanicsEnabled !== false) {
                     this._zoneList.push(this.objects[i]);
                 }
             }
@@ -2175,10 +3794,37 @@ class World {
 
     queryNear(x, y, w, h) {
         this.rebuildSpatialHash();
-        return this.spatialHash.query(x, y, w, h);
+        const spatialResults = this.spatialHash.query(x, y, w, h);
+        if (!(w > 0 && h > 0) || this._tilemapCollisionCellCount === 0) return spatialResults;
+        // SpatialHash reuses its result buffer. Tilemap queries can nest during
+        // collision resolution, so give this combined result its own array.
+        const nearby = spatialResults.slice();
+        const firstX = Math.floor(x / GRID_SIZE) * GRID_SIZE;
+        const lastX = (Math.ceil((x + w) / GRID_SIZE) - 1) * GRID_SIZE;
+        const firstY = Math.floor(y / GRID_SIZE) * GRID_SIZE;
+        const lastY = (Math.ceil((y + h) / GRID_SIZE) - 1) * GRID_SIZE;
+        for (let cy = firstY; cy <= lastY; cy += GRID_SIZE) {
+            for (let cx = firstX; cx <= lastX; cx += GRID_SIZE) {
+                const key = `${cx},${cy}`;
+                for (const tilemap of this.tilemaps) {
+                    const cell = tilemap._cellLookup.get(key);
+                    if (cell?.collision) nearby.push(this._getTilemapCollider(tilemap, cell));
+                }
+            }
+        }
+        return nearby;
     }
 
     addObject(obj) {
+        if (obj.spriteSheet && this.getSpriteSheetDataLength() + obj.spriteSheet.data.length > WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) {
+            obj.spriteSheet = null;
+        }
+        obj.layer = normalizeWorldLayerDepth(obj.layer) ?? 1;
+        if (!this.layerDefinitions.some(layer => layer.depth === obj.layer)) {
+            this.layerDefinitions = normalizeWorldLayerDefinitions(this.layerDefinitions, [obj]);
+        }
+        const layer = this.getLayerDefinition(obj.layer);
+        if (obj.collision !== false && layer && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) obj.layer = 1;
         this.objects.push(obj);
         this._spatialDirty = true;
         this._tileCacheReady = false;
@@ -2188,6 +3834,45 @@ class World {
         this._zoneListDirty = true;
         this.updateSpecialPoints();
         return obj;
+    }
+
+    getSpriteSheetDataLength() {
+        const objectBytes = this.objects.reduce((total, obj) => total + (obj.spriteSheet?.data?.length || 0), 0);
+        const stampBytes = this.objectStamps.reduce((total, stamp) => total + stamp.objects.reduce(
+            (stampTotal, obj) => stampTotal + (obj.spriteSheet?.data?.length || 0), 0), 0);
+        const tilemapBytes = this.tilemaps.reduce((total, tilemap) => total + (tilemap.atlas?.data?.length || 0), 0);
+        return objectBytes + stampBytes + tilemapBytes + (this.playerSpriteSheet?.data?.length || 0);
+    }
+
+    addObjectStamp(name, objects) {
+        const cleanName = typeof name === 'string' ? name.trim() : '';
+        if (!cleanName || cleanName.length > 40) throw new Error('Stamp names must contain 1 to 40 characters');
+        if (this.objectStamps.length >= 32) throw new Error('This map already has the maximum of 32 Object Stamps');
+        if (this.objectStamps.some(stamp => stamp.name.toLowerCase() === cleanName.toLowerCase())) {
+            throw new Error('A stamp with that name already exists on this map');
+        }
+        if (!Array.isArray(objects) || objects.length < 1 || objects.length > 64) {
+            throw new Error('A portable stamp must contain between 1 and 64 objects');
+        }
+
+        const normalized = normalizeWorldObjectStamps([{ name: cleanName, objects }]);
+        if (normalized.length !== 1 || normalized[0].objects.length !== objects.length) {
+            throw new Error('The stamp contains invalid object data');
+        }
+        const spriteBytes = normalized[0].objects.reduce((total, obj) => total + (obj.spriteSheet?.data?.length || 0), 0);
+        if (this.getSpriteSheetDataLength() + spriteBytes > WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) {
+            throw new Error('Sprite sheets in a map and its Object Stamps are limited to 8 MiB total');
+        }
+
+        let id = `stamp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+        while (this.objectStamps.some(stamp => stamp.id === id)) id += 'x';
+        const stamp = {
+            id,
+            name: cleanName,
+            objects: normalized[0].objects
+        };
+        this.objectStamps.push(stamp);
+        return stamp;
     }
 
     removeObject(id) {
@@ -2207,13 +3892,21 @@ class World {
     }
 
     getObjectAt(x, y) {
-        // Search from top layer to bottom
-        for (let i = this.objects.length - 1; i >= 0; i--) {
-            if (this.objects[i].containsPoint(x, y)) {
-                return this.objects[i];
+        let topmost = null;
+        let topmostIndex = -1;
+        const drawOrder = object => object.appearanceType === 'zone' || object.appearanceType === 'button'
+            ? Number.POSITIVE_INFINITY
+            : (normalizeWorldLayerDepth(object.layer) ?? 1);
+        for (let index = 0; index < this.objects.length; index++) {
+            const object = this.objects[index];
+            if (!object.containsPoint(x, y)) continue;
+            if (!topmost || drawOrder(object) > drawOrder(topmost) ||
+                (drawOrder(object) === drawOrder(topmost) && index > topmostIndex)) {
+                topmost = object;
+                topmostIndex = index;
             }
         }
-        return null;
+        return topmost;
     }
     
     getObjectsAt(x, y) {
@@ -2272,6 +3965,132 @@ class World {
         return this.objects.find(o => o.id === id);
     }
 
+    setMechanicsObjectEnabled(id, enabled) {
+        const object = this.getObjectById(id);
+        if (!object) return false;
+        const nextEnabled = enabled !== false;
+        if ((object._mechanicsEnabled !== false) === nextEnabled) return true;
+        object._mechanicsEnabled = nextEnabled;
+        object._playerInside = false;
+        this._teleportalListDirty = true;
+        this._zoneListDirty = true;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        this.updateSpecialPoints();
+        return true;
+    }
+
+    setMechanicsObjectPosition(id, x, y, options = {}) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10000000 || Math.abs(y) > 10000000) return false;
+        const object = this.getObjectById(id);
+        if (!object) return false;
+        const moving = options?.moving === true;
+        const wasMoving = object._mechanicsMoving === true;
+        if (moving) object._mechanicsMoving = true;
+        else delete object._mechanicsMoving;
+        const oldX = object.x;
+        const oldY = object.y;
+        if (object.x === x && object.y === y) {
+            object._mechanicsPosition = true;
+            if (!object._mechanicsOriginalPosition) object._mechanicsOriginalPosition = { x, y };
+            if (wasMoving !== moving) this.invalidateTileCache();
+            return true;
+        }
+        if (!object._mechanicsOriginalPosition) object._mechanicsOriginalPosition = { x: object.x, y: object.y };
+        object._mechanicsPosition = true;
+        object.x = x;
+        object.y = y;
+        if (!moving && options?.preserveInside !== true) object._playerInside = false;
+        const engine = typeof window !== 'undefined' ? window.engine : null;
+        const player = options?.carryPlayer === true && object.collision && object.actingType === 'ground' &&
+            engine?.world === this && (engine.state === 'playing' || engine.state === 'testing')
+            ? engine.localPlayer : null;
+        let oldSurfaceY = oldY;
+        if (player && ['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(object.collisionShape)) {
+            const footBox = player.getGroundTouchbox();
+            oldSurfaceY = player.getSlopeSurfaceY(object, footBox.x + footBox.width / 2);
+        } else if (player && object.collisionShape === 'capsule') {
+            oldSurfaceY = player.getCapsuleVerticalContact({ ...object, x: oldX, y: oldY }, player.getGroundTouchbox(), 1);
+        } else if (player && object.collisionShape === 'circle') {
+            const footBox = player.getGroundTouchbox();
+            const radius = Math.min(object.width, object.height) / 2;
+            const centerX = oldX + object.width / 2;
+            const centerY = oldY + object.height / 2;
+            const closestX = Math.max(footBox.x, Math.min(centerX, footBox.x + footBox.width));
+            const dx = centerX - closestX;
+            const reachSquared = radius * radius - dx * dx;
+            oldSurfaceY = reachSquared >= 0 ? centerY - Math.sqrt(reachSquared) : null;
+        }
+        if (player && player.isOnGround && Number.isFinite(oldSurfaceY) &&
+            player.y + player.height >= oldSurfaceY - 2 && player.y + player.height <= oldSurfaceY + 3 &&
+            player.x < oldX + object.width && player.x + player.width > oldX) {
+            player.x += x - oldX;
+            player.y += y - oldY;
+        }
+        this._spatialDirty = true;
+        if (!moving) {
+            this._mergedBlockCache = null;
+            this._editorMergedDirty = true;
+            this._teleportalListDirty = true;
+            this._zoneListDirty = true;
+        }
+        if (wasMoving !== moving || !moving) this.invalidateTileCache();
+        if (['spawnpoint', 'checkpoint', 'endpoint'].includes(object.actingType)) this.updateSpecialPoints();
+        return true;
+    }
+
+    resetMechanicsObjectStates() {
+        let changed = false;
+        let positionChanged = false;
+        for (const object of this.objects) {
+            if (object._mechanicsEnabled !== undefined) {
+                delete object._mechanicsEnabled;
+                object._playerInside = false;
+                changed = true;
+            }
+            if (object._mechanicsPosition === true) {
+                const original = object._mechanicsOriginalPosition;
+                if (original && Number.isFinite(original.x) && Number.isFinite(original.y)) {
+                    object.x = original.x;
+                    object.y = original.y;
+                    object._playerInside = false;
+                    positionChanged = true;
+                }
+                delete object._mechanicsPosition;
+                delete object._mechanicsOriginalPosition;
+                delete object._mechanicsMoving;
+                changed = true;
+            }
+            if (object._mechanicsMotionDirection !== undefined) {
+                delete object._mechanicsMotionDirection;
+                changed = true;
+            }
+            if (object._mechanicsSpriteFrame !== undefined) {
+                delete object._mechanicsSpriteFrame;
+                changed = true;
+            }
+            if (object._mechanicsSpriteAnimation !== undefined) {
+                delete object._mechanicsSpriteAnimation;
+                changed = true;
+            }
+            if (object._mechanicsOpacity !== undefined) {
+                delete object._mechanicsOpacity;
+                changed = true;
+            }
+        }
+        if (changed) {
+            if (positionChanged) {
+                this._spatialDirty = true;
+                this._mergedBlockCache = null;
+            }
+            this._teleportalListDirty = true;
+            this._zoneListDirty = true;
+            this._editorMergedDirty = true;
+            this.invalidateTileCache();
+        }
+        this.updateSpecialPoints();
+    }
+
     hasObjectAt(x, y, excludeId = null) {
         return this.objects.some(o => 
             o.id !== excludeId && o.containsPoint(x, y)
@@ -2284,6 +4103,7 @@ class World {
         this.endpoint = null;
         
         for (const obj of this.objects) {
+            if (obj._mechanicsEnabled === false) continue;
             if (obj.actingType === 'spawnpoint') {
                 this.spawnPoint = obj;
             } else if (obj.actingType === 'checkpoint') {
@@ -2302,6 +4122,12 @@ class World {
 
     clear() {
         this.objects = [];
+        this.tilemaps = [];
+        this._tilemapCellCount = 0;
+        this._tilemapCollisionCellCount = 0;
+        this._tilemapAnimatedCellCount = 0;
+        this._tilemapRenderCells = null;
+        this._tilemapRenderDirty = true;
         this._spatialDirty = true;
         this._editorMergedDirty = true;
         this._teleportalListDirty = true;
@@ -2316,10 +4142,13 @@ class World {
 
     _isMergeableBlock(obj) {
         const at = obj.appearanceType;
+        if (typeof obj.render === 'function') return false;
         if (at !== 'ground') return false;
         if (obj.type !== 'block') return false;
+        if (obj.collisionShape !== 'box') return false;
         if (obj.rotation !== 0) return false;
         if (obj.flipHorizontal) return false;
+        if (obj.oneWayPlatform) return false;
         if (obj.width !== GRID_SIZE || obj.height !== GRID_SIZE) return false;
         if (Math.round(obj.x) % GRID_SIZE !== 0 || Math.round(obj.y) % GRID_SIZE !== 0) return false;
         return true;
@@ -2335,6 +4164,7 @@ class World {
 
         for (let i = 0; i < objects.length; i++) {
             const obj = objects[i];
+            if (obj._mechanicsEnabled === false) continue;
             if (this._isMergeableBlock(obj)) {
                 mergeable.push(obj);
             } else {
@@ -2347,7 +4177,7 @@ class World {
         const groups = new Map();
         for (let i = 0; i < mergeable.length; i++) {
             const obj = mergeable[i];
-            const key = `${obj.color}|${obj.texture || 'solid'}|${obj.opacity}|${obj.layer || 1}`;
+            const key = `${obj.color}|${obj.texture || 'solid'}|${obj.opacity}|${obj.layer ?? 1}`;
             let list = groups.get(key);
             if (!list) { list = []; groups.set(key, list); }
             list.push(obj);
@@ -2413,7 +4243,7 @@ class World {
                     color: sample.color,
                     texture: sample.texture || 'solid',
                     opacity: sample.opacity,
-                    layer: sample.layer || 1
+                    layer: sample.layer ?? 1
                 });
             }
         }
@@ -2449,6 +4279,9 @@ class World {
     // ---- Tile cache for static world rendering ----
 
     _isStaticObject(obj) {
+        if (obj._mechanicsEnabled === false) return false;
+        if (obj._mechanicsMoving === true) return false;
+        if (obj.spriteSheet) return false;
         const at = obj.appearanceType;
         if (at === 'zone' || at === 'button') return false;
         if (at === 'coin') return false;
@@ -2461,7 +4294,7 @@ class World {
     _isDynamicRenderable(obj) {
         const at = obj.appearanceType;
         if (at === 'zone' || at === 'button') return false;
-        return !this._isStaticObject(obj);
+        return obj._mechanicsMoving === true || !this._isStaticObject(obj);
     }
 
     invalidateTileCache() {
@@ -2481,6 +4314,7 @@ class World {
         };
 
         this._dynamicObjects = [];
+        this._animatedTilemapCells = [];
 
         const staticObjects = [];
         for (let i = 0; i < this.objects.length; i++) {
@@ -2492,13 +4326,18 @@ class World {
             staticObjects.push(obj);
         }
 
+        for (const cell of this._getTilemapRenderCells()) {
+            if (cell._tilemapAnimated) this._animatedTilemapCells.push(cell);
+            else staticObjects.push(cell);
+        }
+
         const { merged, nonMerged } = this._buildMergedBlocks(staticObjects);
         this._mergedBlockCache = merged;
 
         const fakeCamera = { x: 0, y: 0, width: ts, height: ts, zoom: 1 };
 
         const _getTile = (layer, tx, ty) => {
-            const key = layer * 67108864 + (tx + 32768) * 65536 + (ty + 32768);
+            const key = this._tileKey(layer, tx, ty);
             let tile = this._tiles.get(key);
             if (!tile) {
                 tile = document.createElement('canvas');
@@ -2533,7 +4372,7 @@ class World {
 
         for (let i = 0; i < nonMerged.length; i++) {
             const obj = nonMerged[i];
-            const layer = obj.layer || 1;
+            const layer = obj.layer ?? 1;
             const tx0 = Math.floor(obj.x / ts);
             const ty0 = Math.floor(obj.y / ts);
             const tx1 = Math.floor((obj.x + obj.width - 1) / ts);
@@ -2553,27 +4392,27 @@ class World {
     }
 
     _tileKey(layer, tx, ty) {
-        return layer * 67108864 + (tx + 32768) * 65536 + (ty + 32768);
+        return `${layer}:${tx}:${ty}`;
     }
 
     renderTiles(ctx, camera, layerArray) {
         const ts = this._tileSize;
-        const vLeft = camera.x;
-        const vRight = camera.x + camera.width / camera.zoom;
-        const vTop = camera.y;
-        const vBottom = camera.y + camera.height / camera.zoom;
-        const tx0 = Math.floor(vLeft / ts) - 1;
-        const ty0 = Math.floor(vTop / ts) - 1;
-        const tx1 = Math.floor(vRight / ts) + 1;
-        const ty1 = Math.floor(vBottom / ts) + 1;
-
         for (let li = 0; li < layerArray.length; li++) {
             const layer = layerArray[li];
+            const layerCamera = this.getLayerCamera(camera, layer);
+            const vLeft = layerCamera.x;
+            const vRight = layerCamera.x + camera.width / camera.zoom;
+            const vTop = layerCamera.y;
+            const vBottom = layerCamera.y + camera.height / camera.zoom;
+            const tx0 = Math.floor(vLeft / ts) - 1;
+            const ty0 = Math.floor(vTop / ts) - 1;
+            const tx1 = Math.floor(vRight / ts) + 1;
+            const ty1 = Math.floor(vBottom / ts) + 1;
             for (let tx = tx0; tx <= tx1; tx++) {
                 for (let ty = ty0; ty <= ty1; ty++) {
                     const tile = this._tiles.get(this._tileKey(layer, tx, ty));
                     if (tile) {
-                        ctx.drawImage(tile, tx * ts - camera.x, ty * ts - camera.y);
+                        ctx.drawImage(tile, tx * ts - layerCamera.x, ty * ts - layerCamera.y);
                     }
                 }
             }
@@ -2582,23 +4421,35 @@ class World {
 
     renderDynamic(ctx, camera, layerArray, checkpointColors) {
         if (!this._dynamicObjects || this._dynamicObjects.length === 0) return;
-        const margin = 100;
-        const vLeft = camera.x - margin;
-        const vRight = camera.x + camera.width / camera.zoom + margin;
-        const vTop = camera.y - margin;
-        const vBottom = camera.y + camera.height / camera.zoom + margin;
-
         for (let i = 0; i < this._dynamicObjects.length; i++) {
             const obj = this._dynamicObjects[i];
-            const layer = obj.layer || 1;
+            const layer = obj.layer ?? 1;
             let match = false;
             for (let li = 0; li < layerArray.length; li++) {
                 if (layerArray[li] === layer) { match = true; break; }
             }
             if (!match) continue;
+            const layerCamera = this.getLayerCamera(camera, layer);
+            const margin = 100;
+            const vLeft = layerCamera.x - margin;
+            const vRight = layerCamera.x + camera.width / camera.zoom + margin;
+            const vTop = layerCamera.y - margin;
+            const vBottom = layerCamera.y + camera.height / camera.zoom + margin;
             if (obj.x + obj.width < vLeft || obj.x > vRight ||
                 obj.y + obj.height < vTop || obj.y > vBottom) continue;
-            obj.render(ctx, camera, checkpointColors, this);
+            obj.render(ctx, layerCamera, checkpointColors, this);
+        }
+    }
+
+    renderAnimatedTilemaps(ctx, camera, layerArray) {
+        if (!this._animatedTilemapCells?.length) return;
+        for (const cell of this._animatedTilemapCells) {
+            if (!layerArray.includes(cell.layer)) continue;
+            const layerCamera = this.getLayerCamera(camera, cell.layer);
+            const margin = 100;
+            if (cell.x + cell.width < layerCamera.x - margin || cell.x > layerCamera.x + camera.width / camera.zoom + margin ||
+                cell.y + cell.height < layerCamera.y - margin || cell.y > layerCamera.y + camera.height / camera.zoom + margin) continue;
+            cell.render(ctx, layerCamera, null, this);
         }
     }
 
@@ -2608,25 +4459,25 @@ class World {
         if (!this._editorMergedDirty && this._editorMergedCache) return;
         this._editorMergedDirty = false;
 
-        const layer0 = [], layer1 = [], layer2 = [];
-        for (let i = 0; i < this.objects.length; i++) {
-            const obj = this.objects[i];
+        const objectsByLayer = new Map();
+        const addRenderable = obj => {
             const at = obj.appearanceType;
-            if (at === 'zone' || at === 'button') continue;
-            if (obj.layer === 0) layer0.push(obj);
-            else if (obj.layer === 2) layer2.push(obj);
-            else layer1.push(obj);
-        }
-
-        const r0 = this._buildMergedBlocks(layer0);
-        const r1 = this._buildMergedBlocks(layer1);
-        const r2 = this._buildMergedBlocks(layer2);
-
-        this._editorMergedCache = {
-            merged0: r0.merged, nonMerged0: r0.nonMerged,
-            merged1: r1.merged, nonMerged1: r1.nonMerged,
-            merged2: r2.merged, nonMerged2: r2.nonMerged
+            if (at === 'zone' || at === 'button') return;
+            const depth = normalizeWorldLayerDepth(obj.layer) ?? 1;
+            let layerObjects = objectsByLayer.get(depth);
+            if (!layerObjects) {
+                layerObjects = [];
+                objectsByLayer.set(depth, layerObjects);
+            }
+            layerObjects.push(obj);
         };
+        for (let i = 0; i < this.objects.length; i++) addRenderable(this.objects[i]);
+        for (const cell of this._getTilemapRenderCells()) addRenderable(cell);
+
+        this._editorMergedCache = Array.from(objectsByLayer, ([depth, objects]) => ({
+            depth,
+            ...this._buildMergedBlocks(objects)
+        })).sort((a, b) => a.depth - b.depth);
     }
 
     render(ctx, camera) {
@@ -2656,20 +4507,17 @@ class World {
             this._zones.push(obj);
         }
 
-        this._renderMergedLayer(ctx, camera, cache.merged0, cache.nonMerged0, checkpointColors, vLeft, vRight, vTop, vBottom);
-
-        // Layer 1: only render merged blocks here; nonMerged1 is returned to caller
-        // so the player renders between layer 1 non-merged objects and layer 2
-        for (let i = 0; i < cache.merged1.length; i++) {
-            const m = cache.merged1[i];
-            if (m.x + m.width < vLeft || m.x > vRight || m.y + m.height < vTop || m.y > vBottom) continue;
-            this._renderMergedBlock(ctx, m.x - camera.x, m.y - camera.y, m.width, m.height, m.color, m.texture, m.opacity);
+        const abovePlayer = [];
+        for (const layer of cache) {
+            if (layer.depth >= 2) {
+                abovePlayer.push(layer);
+            } else {
+                this._renderMergedLayer(ctx, camera, layer.merged, layer.nonMerged, checkpointColors, vLeft, vRight, vTop, vBottom);
+            }
         }
+        this._editorAboveLayers = abovePlayer;
 
-        this._editorMerged2 = cache.merged2;
-        this._editorNonMerged2 = cache.nonMerged2;
-
-        return { layers: [cache.nonMerged0, cache.nonMerged1, cache.nonMerged2], checkpointColors };
+        return { layers: [[], [], []], checkpointColors };
     }
 
     _renderMergedLayer(ctx, camera, merged, nonMerged, checkpointColors, vL, vR, vT, vB) {
@@ -2692,18 +4540,8 @@ class World {
         const vT = camera.y - margin;
         const vB = camera.y + camera.height / camera.zoom + margin;
 
-        if (this._editorMerged2) {
-            for (let i = 0; i < this._editorMerged2.length; i++) {
-                const m = this._editorMerged2[i];
-                if (m.x + m.width < vL || m.x > vR || m.y + m.height < vT || m.y > vB) continue;
-                this._renderMergedBlock(ctx, m.x - camera.x, m.y - camera.y, m.width, m.height, m.color, m.texture, m.opacity);
-            }
-        }
-        const list = this._editorNonMerged2 || [];
-        for (let i = 0; i < list.length; i++) {
-            const obj = list[i];
-            if (obj.x + obj.width < vL || obj.x > vR || obj.y + obj.height < vT || obj.y > vB) continue;
-            obj.render(ctx, camera, checkpointColors, this);
+        for (const layer of this._editorAboveLayers || []) {
+            this._renderMergedLayer(ctx, camera, layer.merged, layer.nonMerged, checkpointColors, vL, vR, vT, vB);
         }
     }
     
@@ -2887,8 +4725,34 @@ class World {
     }
 
     toJSON() {
+        const sourceCodeData = this.codeData && typeof this.codeData === 'object' && !Array.isArray(this.codeData)
+            ? JSON.parse(JSON.stringify(this.codeData))
+            : { triggers: [], events: [], variables: [] };
+        const normalizeCodeData = globalThis.normalizeParkoreenCodeData;
+        const codeDataSnapshot = typeof normalizeCodeData === 'function'
+            ? normalizeCodeData(sourceCodeData)
+            : sourceCodeData;
         return {
             objects: this.objects.map(o => o.toJSON()),
+            tilemaps: this.tilemaps.map(tilemap => ({
+                id: tilemap.id,
+                name: tilemap.name,
+                layer: tilemap.layer,
+                ...(tilemap.atlas ? { atlas: { ...tilemap.atlas } } : {}),
+                cells: tilemap.cells.map(cell => ({ ...cell }))
+            })),
+            objectStamps: this.objectStamps.map(stamp => ({
+                id: stamp.id,
+                name: stamp.name,
+                objects: stamp.objects.map(obj => ({ ...obj }))
+            })),
+            playerSpriteSheet: this.playerSpriteSheet ? {
+                ...this.playerSpriteSheet,
+                animations: Object.fromEntries(Object.entries(this.playerSpriteSheet.animations).map(([name, animation]) => [name, { ...animation }]))
+            } : null,
+            layerDefinitions: this.layerDefinitions.map(layer => ({ ...layer })),
+            mechanicsSaveId: this.mechanicsSaveId,
+            persistCheckpoints: this.persistCheckpoints,
             background: this.background,
             defaultBlockColor: this.defaultBlockColor,
             defaultSpikeColor: this.defaultSpikeColor,
@@ -2909,10 +4773,15 @@ class World {
             dieLineY: this.dieLineY,
             // Physics settings
             playerSpeed: this.playerSpeed,
+            horizontalAcceleration: this.horizontalAcceleration,
+            airControl: this.airControl,
+            terminalFallSpeed: this.terminalFallSpeed,
             jumpForce: this.jumpForce,
             gravity: this.gravity,
             cameraLerpX: this.cameraLerpX,
             cameraLerpY: this.cameraLerpY,
+            cameraFollowMode: this.cameraFollowMode,
+            cameraBounds: { ...this.cameraBounds },
             // Spike settings
             spikeTouchbox: this.spikeTouchbox,
             dropHurtOnly: this.dropHurtOnly,
@@ -2925,12 +4794,34 @@ class World {
             // Plugins
             plugins: this.plugins,
             // Code plugin data
-            codeData: this.codeData
+            codeData: codeDataSnapshot
         };
     }
 
     fromJSON(data) {
         this.clear();
+        this.playerSpriteSheet = normalizeWorldPlayerSpriteSheet(data?.playerSpriteSheet);
+        const playerSpriteBytes = this.playerSpriteSheet?.data.length || 0;
+        this.objectStamps = normalizeWorldObjectStamps(data?.objectStamps,
+            Math.max(0, WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH - playerSpriteBytes));
+        this.layerDefinitions = normalizeWorldLayerDefinitions(data?.layerDefinitions, data?.objects);
+        const stampSpriteBytes = this.objectStamps.reduce((total, stamp) => total + stamp.objects.reduce(
+            (stampTotal, obj) => stampTotal + (obj.spriteSheet?.data?.length || 0), 0), 0);
+        this.tilemaps = normalizeWorldTilemaps(data?.tilemaps, this.layerDefinitions,
+            Math.max(0, WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH - playerSpriteBytes - stampSpriteBytes));
+        for (const tilemap of this.tilemaps) {
+            if (!tilemap.cells.some(cell => cell.collision)) continue;
+            const layer = this.getLayerDefinition(tilemap.layer);
+            if (layer) {
+                layer.parallaxX = 1;
+                layer.parallaxY = 1;
+            }
+        }
+        this._rebuildTilemapCellLookups();
+        this.mechanicsSaveId = typeof data?.mechanicsSaveId === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(data.mechanicsSaveId)
+            ? data.mechanicsSaveId
+            : createMechanicsSaveId();
+        this.persistCheckpoints = data?.persistCheckpoints === true;
         this.background = data.background || 'sky';
         this.defaultBlockColor = data.defaultBlockColor || '#787878';
         this.defaultSpikeColor = data.defaultSpikeColor || '#c45a3f';
@@ -2952,10 +4843,35 @@ class World {
         
         // Physics settings with defaults for backward compatibility
         this.playerSpeed = (typeof data.playerSpeed === 'number' && data.playerSpeed > 0) ? data.playerSpeed : DEFAULT_MOVE_SPEED;
+        this.horizontalAcceleration = typeof data.horizontalAcceleration === 'number' &&
+            Number.isFinite(data.horizontalAcceleration) && data.horizontalAcceleration >= 0 &&
+            data.horizontalAcceleration <= MAX_HORIZONTAL_ACCELERATION
+            ? data.horizontalAcceleration : DEFAULT_HORIZONTAL_ACCELERATION;
+        this.airControl = typeof data.airControl === 'number' && Number.isFinite(data.airControl) &&
+            data.airControl >= 0 && data.airControl <= 1 ? data.airControl : DEFAULT_AIR_CONTROL;
+        this.terminalFallSpeed = typeof data.terminalFallSpeed === 'number' &&
+            Number.isFinite(data.terminalFallSpeed) && data.terminalFallSpeed > 0 &&
+            data.terminalFallSpeed <= MAX_TERMINAL_FALL_SPEED ? data.terminalFallSpeed : null;
         this.jumpForce = (typeof data.jumpForce === 'number' && data.jumpForce < 0) ? data.jumpForce : DEFAULT_JUMP_FORCE;
         this.gravity = (typeof data.gravity === 'number' && data.gravity > 0) ? data.gravity : DEFAULT_GRAVITY;
         this.cameraLerpX = (typeof data.cameraLerpX === 'number' && data.cameraLerpX > 0 && data.cameraLerpX <= 1) ? data.cameraLerpX : CAMERA_LERP_X;
         this.cameraLerpY = (typeof data.cameraLerpY === 'number' && data.cameraLerpY > 0 && data.cameraLerpY <= 1) ? data.cameraLerpY : CAMERA_LERP_Y;
+        this.cameraFollowMode = ['both', 'horizontal', 'vertical'].includes(data.cameraFollowMode) ? data.cameraFollowMode : 'both';
+        const cameraBounds = data.cameraBounds;
+        this.cameraBounds = cameraBounds &&
+            Number.isFinite(cameraBounds.x) && Number.isFinite(cameraBounds.y) &&
+            Number.isFinite(cameraBounds.width) && cameraBounds.width > 0 &&
+            Number.isFinite(cameraBounds.height) && cameraBounds.height > 0 &&
+            Number.isFinite(cameraBounds.x + cameraBounds.width) &&
+            Number.isFinite(cameraBounds.y + cameraBounds.height)
+            ? {
+                enabled: cameraBounds.enabled === true,
+                x: cameraBounds.x,
+                y: cameraBounds.y,
+                width: cameraBounds.width,
+                height: cameraBounds.height
+            }
+            : { enabled: false, x: 0, y: 0, width: 2000, height: 1200 };
         
         // Spike touchbox mode
         const validSpikeModes = ['full', 'normal', 'tip', 'ground', 'flag', 'air', 'all-spike'];
@@ -3015,32 +4931,56 @@ class World {
             };
         }
         
-        // Plugins settings - load dynamically without hardcoded defaults
-        if (data.plugins) {
-            this.plugins = {
-                enabled: Array.isArray(data.plugins.enabled) ? data.plugins.enabled : []
-            };
-            // Copy all plugin configs dynamically
+        // Reset plugin settings for every load so data from the previously
+        // loaded map cannot leak into a map without plugin configuration.
+        this.plugins = Object.create(null);
+        this.plugins.enabled = [];
+        if (data.plugins && typeof data.plugins === 'object' && !Array.isArray(data.plugins)) {
+            this.plugins.enabled = Array.isArray(data.plugins.enabled) ? data.plugins.enabled : [];
+            // Copy own config fields into a prototype-free dictionary. Plugin
+            // ids come from map data, so keys such as "__proto__" must remain
+            // ordinary data rather than changing this object's prototype.
             for (const key of Object.keys(data.plugins)) {
-                if (key !== 'enabled' && typeof data.plugins[key] === 'object') {
-                    this.plugins[key] = { ...data.plugins[key] };
+                const config = data.plugins[key];
+                if (key !== 'enabled' && config && typeof config === 'object' && !Array.isArray(config)) {
+                    this.plugins[key] = { ...config };
                 }
             }
         }
         
-        // Code plugin data
-        if (data.codeData && typeof data.codeData === 'object') {
-            this.codeData = {
-                triggers: Array.isArray(data.codeData.triggers) ? data.codeData.triggers : [],
-                events: Array.isArray(data.codeData.events) ? data.codeData.events : (Array.isArray(data.codeData.actions) ? data.codeData.actions : [])
+        // Code plugin data and any legacy actions are migrated by one shared
+        // normalizer used by import and runtime entry points too.
+        const normalizeCodeData = globalThis.normalizeParkoreenCodeData;
+        const savedCodeData = data?.codeData;
+        this.codeData = typeof normalizeCodeData === 'function'
+            ? normalizeCodeData(savedCodeData)
+            : {
+                ...(savedCodeData && typeof savedCodeData === 'object' && !Array.isArray(savedCodeData) ? savedCodeData : {}),
+                triggers: Array.isArray(savedCodeData?.triggers) ? savedCodeData.triggers : [],
+                events: [
+                    ...(Array.isArray(savedCodeData?.events) ? savedCodeData.events : []),
+                    ...(Array.isArray(savedCodeData?.actions) ? savedCodeData.actions : [])
+                ].map(event => event && typeof event === 'object' && !Array.isArray(event) && event.type === 'action'
+                    ? { ...event, type: 'event' }
+                    : event),
+                variables: Array.isArray(savedCodeData?.variables) ? savedCodeData.variables : []
             };
-        } else {
-            this.codeData = { triggers: [], events: [] };
-        }
+        delete this.codeData.actions;
         
+        let spriteDataLength = playerSpriteBytes + this.objectStamps.reduce((total, stamp) => total + stamp.objects.reduce(
+            (stampTotal, obj) => stampTotal + (obj.spriteSheet?.data?.length || 0), 0), 0);
+        spriteDataLength += this.tilemaps.reduce((total, tilemap) => total + (tilemap.atlas?.data?.length || 0), 0);
         if (data.objects) {
             for (const objData of data.objects) {
-                this.addObject(new WorldObject(objData));
+                const object = new WorldObject(objData);
+                if (object.spriteSheet) {
+                    if (spriteDataLength + object.spriteSheet.data.length > WORLD_SPRITE_TOTAL_MAX_DATA_URL_LENGTH) {
+                        object.spriteSheet = null;
+                    } else {
+                        spriteDataLength += object.spriteSheet.data.length;
+                    }
+                }
+                this.addObject(object);
             }
         }
     }
@@ -3052,25 +4992,27 @@ class World {
     
     // Enable a plugin (also enables via PluginManager if available)
     async enablePlugin(pluginId) {
-        if (!this.plugins.enabled.includes(pluginId)) {
-            this.plugins.enabled.push(pluginId);
-        }
-        // Also enable in PluginManager to register hooks
+        if (this.plugins.enabled.includes(pluginId)) return { success: true };
+        // Only persist the plugin after its scripts and hooks initialized.
         if (window.PluginManager && !window.PluginManager.isEnabled(pluginId)) {
-            await window.PluginManager.enablePlugin(pluginId, this);
+            const result = await window.PluginManager.enablePlugin(pluginId, this);
+            if (!result?.success) return result || { success: false, error: 'Plugin initialization failed' };
         }
+        if (!this.plugins.enabled.includes(pluginId)) this.plugins.enabled.push(pluginId);
+        return { success: true };
     }
     
     // Disable a plugin (also disables via PluginManager if available)
     disablePlugin(pluginId) {
+        if (window.PluginManager && window.PluginManager.isEnabled(pluginId)) {
+            const result = window.PluginManager.disablePlugin(pluginId, this);
+            if (!result?.success) return result || { success: false, error: 'Plugin could not be disabled' };
+        }
         const index = this.plugins.enabled.indexOf(pluginId);
         if (index !== -1) {
             this.plugins.enabled.splice(index, 1);
         }
-        // Also disable in PluginManager
-        if (window.PluginManager) {
-            window.PluginManager.disablePlugin(pluginId, this);
-        }
+        return { success: true };
     }
     
     // Get objects using a specific plugin (metadata from each plugin's plugin.json)
@@ -3103,11 +5045,21 @@ class GameEngine {
         
         this.localPlayer = null;
         this.remotePlayers = new Map();
+        this.playerScopedCoinCollections = new Map();
+        this.globalCoinCollectionPending = new Set();
+        this.globalCoinCollectionIds = new Set();
         
         this.state = GameState.EDITOR;
         WorldObject._editorMode = true;
         this.isRunning = false;
         this.lastTime = 0;
+        this.editorSceneSnapshot = null;
+        this._testSceneChanged = false;
+        this._endedFromState = null;
+        this._pendingEndGameData = null;
+        this.mechanicsWorldPaused = false;
+        this.mechanicsPauseNeedsRender = false;
+        this.mechanicsPauseStartedAt = null;
         
         // Debug tools
         this.invincibilityEnabled = false;
@@ -3123,7 +5075,7 @@ class GameEngine {
         this.keys = {};
         this.mouse = { x: 0, y: 0, down: false };
         
-        this.touchscreenMode = false;
+        this.touchControlsEnabled = !!window.ParkoreenDevice?.isMobile();
         
         // Particle system
         this.particles = [];
@@ -3191,17 +5143,46 @@ class GameEngine {
             const objType = obj.type;
             if (objType && objType !== 'block') continue;
 
-            // Vertical overlap with the probe strip at the player's feet seam.
-            const objTop = obj.y;
-            const objBottom = obj.y + (obj.height || 0);
-            const overlap = Math.min(probeY, objBottom) - Math.max(probeY - 2, objTop);
-            if (overlap <= 0) continue;
-
-            // Prefer blocks whose horizontal range covers the player's center.
-            const objLeft = obj.x;
-            const objRight = obj.x + (obj.width || 0);
+            let overlap;
+            let coversCenter;
             const centerX = (probeLeft + probeRight) / 2;
-            const coversCenter = centerX >= objLeft && centerX <= objRight;
+            if (['slopeUpRight', 'slopeUpLeft', 'polygon'].includes(obj.collisionShape)) {
+                const surfaceY = player.getSlopeSurfaceY(obj, centerX);
+                const surfaceGap = Number.isFinite(surfaceY) ? Math.abs(probeY - surfaceY) : Infinity;
+                if (surfaceGap > 3) continue;
+                overlap = 3 - surfaceGap;
+                coversCenter = true;
+            } else if (obj.collisionShape === 'capsule') {
+                const surfaceY = player.getCapsuleVerticalContact(obj, footBox, 1);
+                const surfaceGap = Number.isFinite(surfaceY) ? Math.abs(probeY - surfaceY) : Infinity;
+                if (surfaceGap > 3) continue;
+                overlap = 3 - surfaceGap;
+                coversCenter = centerX >= obj.x && centerX <= obj.x + obj.width;
+            } else if (obj.collisionShape === 'circle') {
+                const radius = Math.min(obj.width, obj.height) / 2;
+                const circleX = obj.x + obj.width / 2;
+                const circleY = obj.y + obj.height / 2;
+                const closestX = Math.max(probeLeft, Math.min(circleX, probeRight));
+                const dx = circleX - closestX;
+                const reachSquared = radius * radius - dx * dx;
+                if (reachSquared < 0) continue;
+                const surfaceY = circleY - Math.sqrt(reachSquared);
+                const surfaceGap = Math.abs(probeY - surfaceY);
+                if (surfaceGap > 3) continue;
+                overlap = 3 - surfaceGap;
+                coversCenter = circleX >= probeLeft && circleX <= probeRight;
+            } else {
+                // Vertical overlap with the probe strip at the player's feet seam.
+                const objTop = obj.y;
+                const objBottom = obj.y + (obj.height || 0);
+                overlap = Math.min(probeY, objBottom) - Math.max(probeY - 2, objTop);
+                if (overlap <= 0) continue;
+
+                // Prefer blocks whose horizontal range covers the player's center.
+                const objLeft = obj.x;
+                const objRight = obj.x + (obj.width || 0);
+                coversCenter = centerX >= objLeft && centerX <= objRight;
+            }
 
             // Score: prefer coverage, then deeper overlap.
             const score = (coversCenter ? 1000 : 0) + overlap;
@@ -3596,6 +5577,10 @@ class GameEngine {
         // Keyboard
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
+        window.addEventListener('blur', () => this.releaseKeyboardInput());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') this.releaseKeyboardInput();
+        });
         
         // Mouse
         this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -3631,7 +5616,7 @@ class GameEngine {
             return;
         }
         
-        if (GAME_KEYS.has(e.code)) {
+        if (GAME_KEYS.has(e.code) || window.PluginManager?.hasEnabledControlKey(e.code)) {
             e.preventDefault();
         }
         
@@ -3659,22 +5644,40 @@ class GameEngine {
     onKeyUp(e) {
         // Don't capture keyboard for player/game when typing in input
         if (this.isTypingInInput()) {
+            if (this.keys[e.code] === true) this.releaseKeyboardKey(e.code);
             return;
         }
-        
-        this.keys[e.code] = false;
-        
-        // Let plugins handle keyup
+        this.releaseKeyboardKey(e.code);
+    }
+
+    releaseKeyboardKey(keyCode) {
+        const wasPressed = this.keys[keyCode] === true;
+        this.keys[keyCode] = false;
+        if (!wasPressed) return;
+
         if (window.PluginManager && this.localPlayer) {
-            window.PluginManager.executeHook('input.keyup', { 
-                key: e.code, 
-                player: this.localPlayer 
+            window.PluginManager.executeHook('input.keyup', {
+                key: keyCode,
+                player: this.localPlayer
             });
         }
-        
-        if (this.localPlayer) {
-            this.updatePlayerInput();
+        if (this.localPlayer) this.updatePlayerInput();
+    }
+
+    releaseKeyboardInput() {
+        const releasedKeys = Object.keys(this.keys).filter(keyCode => this.keys[keyCode] === true);
+        if (releasedKeys.length === 0) return;
+
+        for (const keyCode of releasedKeys) {
+            this.keys[keyCode] = false;
+            if (window.PluginManager && this.localPlayer) {
+                window.PluginManager.executeHook('input.keyup', {
+                    key: keyCode,
+                    player: this.localPlayer
+                });
+            }
         }
+        if (this.localPlayer) this.updatePlayerInput();
     }
 
     updatePlayerInput() {
@@ -3713,6 +5716,10 @@ class GameEngine {
         if (this.localPlayer.isFlying) {
             inp.up = inp.up || k['KeyW'];
             inp.down = inp.down || k['KeyS'];
+        }
+
+        if (window.PluginManager) {
+            window.PluginManager.updatePlayerControls(this.localPlayer, k);
         }
         
         if (window.PluginManager) {
@@ -3901,6 +5908,12 @@ class GameEngine {
             case 'heal':
                 this.localPlayer.input.heal = pressed;
                 break;
+            default: {
+                if (direction.startsWith('plugin:')) {
+                    window.PluginManager?.setPlayerTouchControl(this.localPlayer, direction.slice('plugin:'.length), pressed);
+                }
+                break;
+            }
         }
     }
 
@@ -3962,12 +5975,16 @@ class GameEngine {
             updateCount++;
         }
         
-        this.render();
+        if (!this.mechanicsWorldPaused || this.mechanicsPauseNeedsRender) {
+            this.render();
+            this.mechanicsPauseNeedsRender = false;
+        }
         
         requestAnimationFrame(this._boundGameLoop);
     }
 
     update(deltaTime) {
+        if (this.mechanicsWorldPaused && [GameState.PLAYING, GameState.TESTING].includes(this.state)) return;
         // Rebuild spatial hash once per update (lazy — only if dirty)
         if (this.world) this.world.rebuildSpatialHash();
         
@@ -3975,6 +5992,11 @@ class GameEngine {
         
         if (isPlaying) {
             if (this.localPlayer) {
+                if (this.localPlayer._mechanicsDialogueOpen) {
+                    for (const key of Object.keys(this.localPlayer.input || {})) this.localPlayer.input[key] = false;
+                    this.localPlayer.vx = 0;
+                    this.localPlayer.vy = 0;
+                }
                 if (window.PluginManager) {
                     if (!this._updateHookData) this._updateHookData = {};
                     this._updateHookData.player = this.localPlayer;
@@ -3983,6 +6005,7 @@ class GameEngine {
                     this._updateHookData.deltaTime = deltaTime;
                     this._updateHookData.skipPhysics = false;
                     const result = window.PluginManager.executeHook('player.update', this._updateHookData);
+                    if (this.mechanicsWorldPaused) return;
                     
                     if (!result.skipPhysics) {
                         this.localPlayer.update(this.world, this.audioManager);
@@ -3996,7 +6019,7 @@ class GameEngine {
                 // Die line check
                 const dieLineY = this.world.dieLineY ?? 1000;
                 const voidInvinciblePromptIntervalMs = 30000;
-                if (this.localPlayer.y > dieLineY) {
+                if (!this.localPlayer._mechanicsDialogueOpen && this.localPlayer.y > dieLineY) {
                     if (this.invincibilityEnabled) {
                         const now = performance.now();
                         const due =
@@ -4026,17 +6049,17 @@ class GameEngine {
                         this._damageData.preventDefault = false;
                         const result = window.PluginManager.executeHook('player.damage', this._damageData);
                         if (!result.preventDefault) {
-                            this.localPlayer.die();
+                            this.localPlayer.die(this.world, this._voidSource);
                         }
                     } else {
-                        this.localPlayer.die();
+                        this.localPlayer.die(this.world, this._voidSource);
                     }
                 } else {
                     this._voidInvincibleLastPromptTime = null;
                 }
                 
                 // Respawn
-                if (this.localPlayer.isDead) {
+                if (!this.localPlayer._mechanicsDialogueOpen && this.localPlayer.isDead) {
                     this.respawnPlayer();
                     if (window.PluginManager) {
                         if (!this._respawnData) this._respawnData = {};
@@ -4046,8 +6069,9 @@ class GameEngine {
                     }
                 }
                 
-                this.checkSpecialCollisions();
-                this.camera.follow(this.localPlayer);
+                if (!this.localPlayer._mechanicsDialogueOpen) this.checkSpecialCollisions();
+                this.camera.follow(this.localPlayer,
+                    this.world?._mechanicsCameraFollowMode || this.world?.cameraFollowMode || 'both');
             }
             
             // Remote player prediction
@@ -4088,7 +6112,60 @@ class GameEngine {
             }
         }
         
-        this.camera.update(this.world?.cameraLerpX ?? CAMERA_LERP_X, this.world?.cameraLerpY ?? CAMERA_LERP_Y);
+        const activeCameraBounds = this.world && Object.prototype.hasOwnProperty.call(this.world, '_mechanicsCameraBounds')
+            ? this.world._mechanicsCameraBounds
+            : this.world?.cameraBounds;
+        const cameraBounds = (this.state === GameState.PLAYING || this.state === GameState.TESTING) &&
+            activeCameraBounds?.enabled === true
+            ? activeCameraBounds
+            : null;
+        this.camera.update(
+            this.world?.cameraLerpX ?? CAMERA_LERP_X,
+            this.world?.cameraLerpY ?? CAMERA_LERP_Y,
+            cameraBounds
+        );
+    }
+
+    setPlayerCheckpoint(player, checkpoint, { playEffects = false, fireHook = true } = {}) {
+        if (player !== this.localPlayer || !checkpoint || checkpoint.actingType !== 'checkpoint' ||
+            checkpoint._mechanicsEnabled === false || this.world?.getObjectById?.(checkpoint.id) !== checkpoint) return false;
+
+        const previousCheckpoint = this.lastCheckpoint;
+        if (previousCheckpoint && previousCheckpoint !== checkpoint) previousCheckpoint.checkpointState = 'touched';
+        checkpoint.checkpointState = 'active';
+        this.lastCheckpoint = checkpoint;
+        this._onCheckpointObj = checkpoint;
+        if (this.state === GameState.PLAYING && this.world.persistCheckpoints && previousCheckpoint !== checkpoint) {
+            window.ParkoreenLocalSave?.write?.(this.world, 'checkpoint', { checkpointId: checkpoint.id });
+        }
+
+        if (fireHook && window.PluginManager) {
+            if (!this._cpHookData) this._cpHookData = {};
+            this._cpHookData.player = player;
+            this._cpHookData.world = this.world;
+            this._cpHookData.checkpoint = checkpoint;
+            window.PluginManager.executeHook('player.checkpoint', this._cpHookData);
+        }
+        if (playEffects) {
+            const centerX = checkpoint.x + checkpoint.width / 2;
+            const centerY = checkpoint.y + checkpoint.height / 2;
+            this.spawnCheckpointParticles(centerX, centerY, this.world.checkpointActiveColor);
+            this.audioManager?.play?.('checkpoint');
+        }
+        return true;
+    }
+
+    restoreSavedPlayerCheckpoint() {
+        if (!this.world?.persistCheckpoints) return null;
+        const saved = window.ParkoreenLocalSave?.read?.(this.world, 'checkpoint');
+        const checkpoint = typeof saved?.checkpointId === 'string'
+            ? this.world.getObjectById?.(saved.checkpointId)
+            : null;
+        if (!checkpoint || checkpoint.actingType !== 'checkpoint' || checkpoint._mechanicsEnabled === false) return null;
+        checkpoint.checkpointState = 'active';
+        this.lastCheckpoint = checkpoint;
+        this._onCheckpointObj = null;
+        return checkpoint;
     }
 
     checkSpecialCollisions() {
@@ -4097,49 +6174,32 @@ class GameEngine {
         const playerBox = this.localPlayer.getGroundTouchbox();
         let onCheckpoint = false;
         
-        const nearby = this.world.queryNear(playerBox.x, playerBox.y, playerBox.width, playerBox.height);
+        // Checkpoint and endpoint hooks can run Mechanics events that query
+        // the world again. queryNear may reuse its spatial-hash result array,
+        // so keep this interaction scan stable across hook dispatch.
+        const nearby = this.world.queryNear(playerBox.x, playerBox.y, playerBox.width, playerBox.height).slice();
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
             if (obj.actingType !== 'checkpoint' && obj.actingType !== 'endpoint') continue;
+            if (obj._mechanicsEnabled === false) continue;
             if (!this.localPlayer.boxIntersects(playerBox, obj)) continue;
             
             if (obj.actingType === 'checkpoint') {
                 onCheckpoint = true;
 
-                const wasUntouched = obj.checkpointState === 'default';
                 const isNewContact = !this._onCheckpointObj || this._onCheckpointObj !== obj;
-
-                if (this.lastCheckpoint && this.lastCheckpoint !== obj) {
-                    this.lastCheckpoint.checkpointState = 'touched';
-                }
-                obj.checkpointState = 'active';
-                this.lastCheckpoint = obj;
-                this._onCheckpointObj = obj;
-
-                // Fire checkpoint hook every frame while touching (heals to full HP, etc.)
-                if (this.localPlayer && window.PluginManager) {
-                    if (!this._cpHookData) this._cpHookData = {};
-                    this._cpHookData.player = this.localPlayer;
-                    this._cpHookData.world = this.world;
-                    this._cpHookData.checkpoint = obj;
-                    window.PluginManager.executeHook('player.checkpoint', this._cpHookData);
-                }
-
-                if (isNewContact) {
-                    const centerX = obj.x + obj.width / 2;
-                    const centerY = obj.y + obj.height / 2;
-                    this.spawnCheckpointParticles(centerX, centerY, this.world.checkpointActiveColor);
-                    if (this.audioManager) this.audioManager.play('checkpoint');
-                }
+                // Fire the plugin hook every frame while touching (for continuous checkpoint effects).
+                this.setPlayerCheckpoint(this.localPlayer, obj, { playEffects: isNewContact });
             } else if (obj.actingType === 'endpoint') {
                 const requireCoins = !!obj.endpointRequireCoins;
                 if (requireCoins) {
-                    const totalCoins = this.world.objects.filter(o => o.appearanceType === 'coin').length;
+                    const totalCoins = this.world.objects.filter(o => o.appearanceType === 'coin' && o._mechanicsEnabled !== false).length;
                     let requiredCoins = Number.isFinite(obj.endpointRequiredCoins)
                         ? Math.max(0, Math.floor(obj.endpointRequiredCoins))
                         : totalCoins;
                     requiredCoins = Math.min(requiredCoins, totalCoins);
-                    const collectedCoins = this.world.objects.filter(o => o.appearanceType === 'coin' && o._collected).length;
+                    const collectedCoins = this.world.objects.filter(o => o.appearanceType === 'coin' && o._mechanicsEnabled !== false &&
+                        this.isCoinCollectedForLocalPlayer(o, this.world)).length;
                     if (collectedCoins < requiredCoins) {
                         continue;
                     }
@@ -4184,10 +6244,19 @@ class GameEngine {
         
         const playerBox = this.localPlayer.getGroundTouchbox();
         
-        const nearby = this.world.queryNear(playerBox.x, playerBox.y, playerBox.width, playerBox.height);
+        // A button hook may synchronously run an Event with nested world
+        // queries; don't let those queries replace the remaining button hits.
+        const nearby = this.world.queryNear(playerBox.x, playerBox.y, playerBox.width, playerBox.height).slice();
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
             if (obj.appearanceType !== 'button' || obj.actingType !== 'button') continue;
+            if (obj._mechanicsEnabled === false) {
+                obj._playerInside = false;
+                if (document.getElementById('game-button-ui')?.dataset.objectId === obj.id) {
+                    document.getElementById('game-button-ui')?.remove();
+                }
+                continue;
+            }
             if (!this.localPlayer.boxIntersects(playerBox, obj)) {
                 // Player left the button zone — mark as not inside
                 if (obj._playerInside) {
@@ -4228,6 +6297,7 @@ class GameEngine {
         
         const overlay = document.createElement('div');
         overlay.id = 'game-button-ui';
+        overlay.dataset.objectId = buttonObj.id;
         overlay.style.cssText = `
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             display: flex; align-items: center; justify-content: center;
@@ -4285,6 +6355,7 @@ class GameEngine {
         // Click panel (not close) = trigger
         panel.addEventListener('click', () => {
             overlay.remove();
+            if (buttonObj._mechanicsEnabled === false || this.world?.getObjectById?.(buttonObj.id) !== buttonObj) return;
             if (buttonObj.buttonOnlyOnce) buttonObj._triggered = true;
             if (this.audioManager) this.audioManager.play('button');
             // Fire button trigger via plugin hook
@@ -4312,6 +6383,7 @@ class GameEngine {
         if (!this._tpBox) this._tpBox = { x: 0, y: 0, width: 0, height: 0 };
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
+            if (obj._mechanicsEnabled === false) continue;
             if (obj.type !== 'teleportal') continue;
             if (obj.actingType !== 'portal') continue;
             if (!obj.teleportalName) continue;
@@ -4350,6 +6422,7 @@ class GameEngine {
                     
                     this.localPlayer.x = targetX;
                     this.localPlayer.y = targetY;
+                    this.localPlayer._mechanicsTeleportSerial = (this.localPlayer._mechanicsTeleportSerial || 0) + 1;
                     this.lastTeleportTime = now;
                     
                     // Spawn teleport particles at destination
@@ -4362,6 +6435,57 @@ class GameEngine {
         }
     }
 
+    getPlayerScopedCoinCollection(world = this.world) {
+        const mapId = world?.mechanicsSaveId || world?.mapName || '__current-map__';
+        let collection = this.playerScopedCoinCollections.get(mapId);
+        if (!collection) {
+            collection = new Set();
+            this.playerScopedCoinCollections.set(mapId, collection);
+        }
+        return collection;
+    }
+
+    isCoinCollectedForLocalPlayer(coinOrId, world = this.world) {
+        const coin = typeof coinOrId === 'string' ? world?.getObjectById?.(coinOrId) : coinOrId;
+        if (!coin?.id) return false;
+        return coin.coinActivityScope === 'player'
+            ? this.getPlayerScopedCoinCollection(world).has(coin.id)
+            : coin._collected === true || this.globalCoinCollectionIds.has(coin.id) || this.globalCoinCollectionPending.has(coin.id);
+    }
+
+    applyGlobalCoinCollection(coinId) {
+        if (typeof coinId !== 'string' || !coinId || this.globalCoinCollectionIds.has(coinId)) return false;
+        const coin = this.world.getObjectById(coinId);
+        if (!coin || coin.appearanceType !== 'coin' || coin.coinActivityScope === 'player') return false;
+        this.globalCoinCollectionPending.delete(coinId);
+        this.globalCoinCollectionIds.add(coinId);
+        coin._collected = true;
+        this.coinsCollected = (this.coinsCollected || 0) + (typeof coin.coinAmount === 'number' ? coin.coinAmount : 1);
+        if (this.audioManager) this.audioManager.play('coin');
+        const cx = coin.x + coin.width / 2;
+        const cy = coin.y + coin.height / 2;
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const speed = 50 + Math.random() * 50;
+            this.particles.push({
+                x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                life: 0.5 + Math.random() * 0.3, maxLife: 0.5 + Math.random() * 0.3,
+                size: 3 + Math.random() * 3, color: '#f5c518'
+            });
+        }
+        this.updateCoinCounterUI();
+        return true;
+    }
+
+    applyGlobalCoinCollections(coinIds) {
+        if (!Array.isArray(coinIds)) return;
+        for (const coinId of coinIds) this.applyGlobalCoinCollection(coinId);
+    }
+
+    rejectGlobalCoinCollection(coinId) {
+        if (typeof coinId === 'string') this.globalCoinCollectionPending.delete(coinId);
+    }
+
     checkCoinCollisions() {
         if (!this.localPlayer || this.localPlayer.isDead) return;
         const playerBox = this.localPlayer.getGroundTouchbox();
@@ -4370,9 +6494,18 @@ class GameEngine {
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
             if (obj.appearanceType !== 'coin') continue;
-            if (obj._collected) continue;
+            if (obj._mechanicsEnabled === false) continue;
+            if (this.isCoinCollectedForLocalPlayer(obj, this.world)) continue;
             if (!this.localPlayer.boxIntersects(playerBox, obj)) continue;
-            obj._collected = true;
+            if (obj.coinActivityScope !== 'player' && window.MultiplayerManager?.roomCode) {
+                this.globalCoinCollectionPending.add(obj.id);
+                if (!window.MultiplayerManager.requestGlobalCoinCollection?.(obj.id)) {
+                    this.globalCoinCollectionPending.delete(obj.id);
+                }
+                continue;
+            }
+            if (obj.coinActivityScope === 'player') this.getPlayerScopedCoinCollection(this.world).add(obj.id);
+            else obj._collected = true;
             this.coinsCollected = (this.coinsCollected || 0) + (typeof obj.coinAmount === 'number' ? obj.coinAmount : 1);
             anyCollected = true;
             // Play coin sound
@@ -4410,6 +6543,7 @@ class GameEngine {
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
             if (obj.actingType !== 'bouncer') continue;
+            if (obj._mechanicsEnabled === false) continue;
             if (!this.localPlayer.boxIntersects(playerBox, obj)) continue;
 
             // Cooldown check
@@ -4516,9 +6650,14 @@ class GameEngine {
     }
 
     onGameEnd() {
+        if (this.state === GameState.ENDED) return;
         // Set game state to ended
         const previousState = this.state;
+        this._endedFromState = previousState;
         this.state = GameState.ENDED;
+        if (typeof window.CodePluginReset === 'function') {
+            window.CodePluginReset({ world: this.world, preserveTriggerState: true });
+        }
         
         // Calculate time elapsed
         const endTime = Date.now();
@@ -4527,6 +6666,17 @@ class GameEngine {
         const minutes = Math.floor(elapsedSeconds / 60);
         const seconds = elapsedSeconds % 60;
         const milliseconds = elapsedMs % 1000;
+
+        // Completion triggers run once after runtime cleanup and before the
+        // results callback is shown.
+        if (window.PluginManager) {
+            window.PluginManager.executeHook('game.ended', {
+                player: this.localPlayer,
+                world: this.world,
+                elapsedMs,
+                wasTestMode: previousState === GameState.TESTING
+            });
+        }
         
         const timeString = minutes > 0 
             ? `${minutes}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`
@@ -4551,6 +6701,27 @@ class GameEngine {
         
         const isPlaying = this.state === GameState.PLAYING || this.state === GameState.TESTING;
         const isEditor = this.state === GameState.EDITOR;
+        let cameraOffsetX = 0;
+        let cameraOffsetY = 0;
+        if (isPlaying && window.PluginManager) {
+            const cameraFeedback = {
+                camera: Object.freeze({ ...this.camera }),
+                player: this.localPlayer,
+                world: this.world,
+                offsetX: 0,
+                offsetY: 0
+            };
+            window.PluginManager.executeHook('render.camera', cameraFeedback);
+            const maxCameraFeedback = 24;
+            cameraOffsetX = Number.isFinite(cameraFeedback.offsetX)
+                ? Math.max(-maxCameraFeedback, Math.min(maxCameraFeedback, cameraFeedback.offsetX)) : 0;
+            cameraOffsetY = Number.isFinite(cameraFeedback.offsetY)
+                ? Math.max(-maxCameraFeedback, Math.min(maxCameraFeedback, cameraFeedback.offsetY)) : 0;
+            // Apply visual feedback to this frame's scene transform only. The
+            // live camera stays stable for movement, editor state, and input.
+            this.ctx.translate(cameraOffsetX / this.camera.zoom, cameraOffsetY / this.camera.zoom);
+        }
+        if (isPlaying && !this.world._tileCacheReady) this.world.buildTileCache();
         const useTileCache = isPlaying && this.world._tileCacheReady;
         
         if (isPlaying) {
@@ -4564,19 +6735,22 @@ class GameEngine {
             this._cpColors.active = this.world.checkpointActiveColor;
             this._cpColors.touched = this.world.checkpointTouchedColor;
             
-            if (!this._layers01) { this._layers01 = [0, 1]; this._layers2 = [2]; }
+            const drawLayers = this.world.getRenderLayerDepths();
             
-            // Behind + same-layer static tiles
-            this.world.renderTiles(this.ctx, this.camera, this._layers01);
-            this.world.renderDynamic(this.ctx, this.camera, this._layers01, this._cpColors);
+            // Draw every layer before the player, preserving the built-in depth split.
+            for (const depth of drawLayers.behindPlayer) {
+                this.world.renderTiles(this.ctx, this.camera, [depth]);
+                this.world.renderAnimatedTilemaps(this.ctx, this.camera, [depth]);
+                this.world.renderDynamic(this.ctx, this.camera, [depth], this._cpColors);
+            }
             
             // Players
             if (this.localPlayer) {
                 const showPosition = this.state === GameState.TESTING;
                 for (const player of this.remotePlayers.values()) {
-                    player.render(this.ctx, this.camera, showPosition);
+                    player.render(this.ctx, this.camera, showPosition, this.world);
                 }
-                this.localPlayer.render(this.ctx, this.camera, showPosition);
+                this.localPlayer.render(this.ctx, this.camera, showPosition, this.world);
                 if (window.PluginManager) {
                     if (!this._renderPlayerData) this._renderPlayerData = {};
                     this._renderPlayerData.ctx = this.ctx;
@@ -4587,9 +6761,12 @@ class GameEngine {
                 }
             }
             
-            // Above-player static tiles + dynamic
-            this.world.renderTiles(this.ctx, this.camera, this._layers2);
-            this.world.renderDynamic(this.ctx, this.camera, this._layers2, this._cpColors);
+            // Draw all foreground layers after the players.
+            for (const depth of drawLayers.abovePlayer) {
+                this.world.renderTiles(this.ctx, this.camera, [depth]);
+                this.world.renderAnimatedTilemaps(this.ctx, this.camera, [depth]);
+                this.world.renderDynamic(this.ctx, this.camera, [depth], this._cpColors);
+            }
             
             // Zones/buttons
             this.world.renderVisibleZones(this.ctx, this.camera);
@@ -4605,10 +6782,10 @@ class GameEngine {
                 const showPosition = isEditor || this.state === GameState.TESTING;
                 if (isPlaying) {
                     for (const player of this.remotePlayers.values()) {
-                        player.render(this.ctx, this.camera, showPosition);
+                        player.render(this.ctx, this.camera, showPosition, this.world);
                     }
                 }
-                this.localPlayer.render(this.ctx, this.camera, showPosition);
+                this.localPlayer.render(this.ctx, this.camera, showPosition, this.world);
                 if (isPlaying && window.PluginManager) {
                     if (!this._renderPlayerData) this._renderPlayerData = {};
                     this._renderPlayerData.ctx = this.ctx;
@@ -4635,8 +6812,11 @@ class GameEngine {
         this.ctx.restore();
         
         if (isPlaying) {
+            this.ctx.save();
+            this.ctx.translate(cameraOffsetX, cameraOffsetY);
             this.renderPortalParticles();
             this.renderParticles();
+            this.ctx.restore();
             this.renderHUD();
         }
         
@@ -4674,7 +6854,9 @@ class GameEngine {
             if (existing) existing.remove();
             return;
         }
-        const totalCoins = this.world.objects.filter(o => o.appearanceType === 'coin').length;
+        const totalCoins = this.world.objects
+            .filter(o => o.appearanceType === 'coin' && o._mechanicsEnabled !== false)
+            .reduce((total, coin) => total + (Number.isFinite(coin.coinAmount) ? Math.max(0, coin.coinAmount) : 1), 0);
         if (totalCoins === 0) {
             const existing = document.getElementById('coin-counter-ui');
             if (existing) existing.remove();
@@ -4723,6 +6905,16 @@ class GameEngine {
     }
 
     startGame(playerName, playerColor) {
+        window.parkoreenActiveSceneMapId = null;
+        this.editorSceneSnapshot = null;
+        this._testSceneChanged = false;
+        this._endedFromState = null;
+        this._pendingEndGameData = null;
+        this.mechanicsWorldPaused = false;
+        this.mechanicsPauseNeedsRender = false;
+        this.mechanicsPauseStartedAt = null;
+        this.world.resetMechanicsObjectStates();
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
         this.state = GameState.PLAYING;
         WorldObject._editorMode = false;
         this.lastCheckpoint = null;
@@ -4730,10 +6922,14 @@ class GameEngine {
         this.gameStartTime = Date.now();
         // Reset coin state
         this.coinsCollected = 0;
+        this.playerScopedCoinCollections.clear();
+        this.globalCoinCollectionPending.clear();
+        this.globalCoinCollectionIds.clear();
         for (const obj of this.world.objects) {
             if (obj.appearanceType === 'coin') obj._collected = false;
             if (obj.appearanceType === 'button') obj._triggered = false;
         }
+        window.CodePluginRestoreMechanicsObjectStates?.(this.world);
         
         // Regenerate clouds for new game session
         this.regenerateClouds();
@@ -4748,16 +6944,22 @@ class GameEngine {
                 obj.checkpointState = 'default';
             }
         }
+        const savedCheckpoint = this.restoreSavedPlayerCheckpoint();
         
         // Create local player at spawn point
         let spawnX = 100, spawnY = 100;
-        if (this.world.spawnPoint) {
+        if (savedCheckpoint) {
+            spawnX = savedCheckpoint.x + savedCheckpoint.width / 2 - PLAYER_SIZE / 2;
+            spawnY = savedCheckpoint.y - PLAYER_SIZE;
+        } else if (this.world.spawnPoint) {
             spawnX = this.world.spawnPoint.x + this.world.spawnPoint.width / 2 - PLAYER_SIZE / 2;
             spawnY = this.world.spawnPoint.y - PLAYER_SIZE;
         }
         
         this.localPlayer = new Player(spawnX, spawnY, playerName, playerColor);
         this.localPlayer.isLocal = true;
+        this.localPlayer.id = window.MultiplayerManager?.playerId || null;
+        this.configureLocalPlayerIdentity(this.localPlayer);
         
         // Initialize plugins via hook
         if (window.PluginManager) {
@@ -4782,6 +6984,18 @@ class GameEngine {
     }
 
     startTestGame() {
+        window.parkoreenActiveSceneMapId = null;
+        if (!this.editorSceneSnapshot) {
+            this.editorSceneSnapshot = this.world.toJSON();
+            this._testSceneChanged = false;
+        }
+        this._endedFromState = null;
+        this._pendingEndGameData = null;
+        this.mechanicsWorldPaused = false;
+        this.mechanicsPauseNeedsRender = false;
+        this.mechanicsPauseStartedAt = null;
+        this.world.resetMechanicsObjectStates();
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
         this.state = GameState.TESTING;
         WorldObject._editorMode = false;
         this.lastCheckpoint = null;
@@ -4789,6 +7003,9 @@ class GameEngine {
         this.gameStartTime = Date.now();
         // Reset coin state
         this.coinsCollected = 0;
+        this.playerScopedCoinCollections.clear();
+        this.globalCoinCollectionPending.clear();
+        this.globalCoinCollectionIds.clear();
         for (const obj of this.world.objects) {
             if (obj.appearanceType === 'coin') obj._collected = false;
             if (obj.appearanceType === 'button') obj._triggered = false;
@@ -4820,6 +7037,8 @@ class GameEngine {
         
         this.localPlayer = new Player(spawnX, spawnY, 'Tester', '#4ECDC4');
         this.localPlayer.isLocal = true;
+        this.localPlayer.id = window.MultiplayerManager?.playerId || null;
+        this.configureLocalPlayerIdentity(this.localPlayer);
         
         // Initialize plugins via hook
         if (window.PluginManager) {
@@ -4840,8 +7059,23 @@ class GameEngine {
     }
 
     stopGame() {
+        window.parkoreenActiveSceneMapId = null;
         this.state = GameState.EDITOR;
+        this._endedFromState = null;
+        this._pendingEndGameData = null;
+        this.mechanicsWorldPaused = false;
+        this.mechanicsPauseNeedsRender = false;
+        this.mechanicsPauseStartedAt = null;
         WorldObject._editorMode = true;
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+        const restoreEditorScene = Boolean(this.editorSceneSnapshot && this._testSceneChanged);
+        if (restoreEditorScene) this.world.fromJSON(this.editorSceneSnapshot);
+        this.editorSceneSnapshot = null;
+        this._testSceneChanged = false;
+        this.world.resetMechanicsObjectStates();
+        this.playerScopedCoinCollections.clear();
+        this.globalCoinCollectionPending.clear();
+        this.globalCoinCollectionIds.clear();
         this.localPlayer = null;
         this.remotePlayers.clear();
         this.particles = [];
@@ -4874,8 +7108,33 @@ class GameEngine {
             }
         }
         
+        const restorePlugins = restoreEditorScene && window.PluginManager
+            ? window.PluginManager.initFromWorld(this.world).then(() => {
+                if (this.state === GameState.EDITOR && this.localPlayer) {
+                    window.PluginManager.executeHook('player.init', { player: this.localPlayer, world: this.world });
+                }
+            })
+            : null;
+
         // Recreate editor player
         this.createEditorPlayer();
+        if (restorePlugins) {
+            restorePlugins.catch(error => {
+                console.warn('[Game] Could not restore editor map plugins after scene test:', error);
+            });
+        }
+    }
+
+    configureLocalPlayerIdentity(player) {
+        if (!player) return;
+        const user = window.Auth?.getUser?.() || null;
+        const multiplayer = window.MultiplayerManager;
+        player.displayName = player.name || user?.name || 'Player';
+        player.username = typeof user?.username === 'string' ? user.username : '';
+        player.tag = typeof user?.tag === 'string' ? user.tag : '';
+        player.isHost = multiplayer?.getRoomCode?.()
+            ? multiplayer.isHost === true
+            : null;
     }
 
     createEditorPlayer() {
@@ -4890,6 +7149,8 @@ class GameEngine {
         
         this.localPlayer = new Player(spawnX, spawnY, 'Editor', '#45B7D1');
         this.localPlayer.isLocal = true;
+        this.localPlayer.id = window.MultiplayerManager?.playerId || null;
+        this.configureLocalPlayerIdentity(this.localPlayer);
         this.localPlayer.isFlying = true; // Start with fly mode in editor
         this.localPlayer.setMaxJumps(999, true); // Infinite jumps in editor mode
         
@@ -4899,6 +7160,7 @@ class GameEngine {
 
     addRemotePlayer(id, name, color, x, y) {
         const player = new Player(x, y, name, color);
+        player.id = id;
         this.remotePlayers.set(id, player);
         return player;
     }
