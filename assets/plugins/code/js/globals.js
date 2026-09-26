@@ -49,7 +49,7 @@ const CODE_TRIGGER_TYPE_INFO = [
     { id: CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, label: 'Player Touches Tilemap', description: 'When player starts touching a collidable cell in a selected tilemap' },
     { id: CODE_TRIGGER_TYPES.PLAYER_STATS, label: 'Player Stats', description: 'When player stats match a condition' },
     { id: CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED, label: 'Player Health Changed', description: 'When the player’s numeric health increases, decreases, or changes' },
-    { id: CODE_TRIGGER_TYPES.VARIABLE_CONDITION, label: 'Variable Condition', description: 'When a map or player variable changes into a matching condition' },
+    { id: CODE_TRIGGER_TYPES.VARIABLE_CONDITION, label: 'Variable Condition', description: 'When a map, campaign, or player variable changes into a matching condition' },
     { id: CODE_TRIGGER_TYPES.REPEAT, label: 'Repeat', description: 'Fires repeatedly at an interval' }
 ].sort((a, b) => a.label.localeCompare(b.label));
 

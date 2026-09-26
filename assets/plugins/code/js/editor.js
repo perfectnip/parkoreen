@@ -5211,12 +5211,14 @@
             case 'appendListItem':
             case 'removeListItem': {
                 const list = getListVariables().find(variable => variable.id === action.variableId);
-                const scopeHint = list?.scope === 'player' ? 'This changes the selected player’s separate List; the host synchronizes room values to every client.' : 'This changes a map-shared List.';
+                const scopeHint = list?.scope === 'player' ? 'This changes the selected player’s separate List; the host synchronizes room values to every client.'
+                    : list?.scope === 'campaign' ? 'This changes a Campaign List saved across maps during solo play.' : 'This changes a map-shared List.';
                 return `${renderListItemActionFields(action)}<p class="trigger-description">${scopeHint} Lists contain at most ${CODE_MAX_LIST_ITEMS} typed items.</p>`;
             }
             case 'branchListContains': {
                 const list = getListVariables().find(variable => variable.id === action.variableId);
-                const scopeHint = list?.scope === 'player' ? 'This checks the selected player’s separate List.' : 'This checks a map-shared List.';
+                const scopeHint = list?.scope === 'player' ? 'This checks the selected player’s separate List.'
+                    : list?.scope === 'campaign' ? 'This checks the shared Campaign List.' : 'This checks a map-shared List.';
                 return `${renderListItemActionFields(action, true)}<p class="trigger-description">${scopeHint} Runs the matching branch when this typed item is present.</p>`;
             }
             case 'branchInventoryItemEquipped': {
@@ -5238,7 +5240,7 @@
             case 'showList':
                 return `<label class="trigger-form-label">List</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderListVariableOptions(action.variableId)}</select><label class="trigger-form-label">Panel title</label>${field('title', action.title || '', 'text', 'Inventory', 64)}<p class="trigger-description">Opens a local, scrollable panel and refreshes it while the game runs. Player Lists show the triggering player’s own values; hosted snapshots are visible to everyone in the room. String List values may use JSON item cards with name, icon, description, count, slot, and equipped fields. The panel does not pause gameplay.</p>`;
             case 'showVariablePanel':
-                return `<label class="trigger-form-label">Variable</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderVariableOptions(action.variableId)}</select><label class="trigger-form-label">Panel title</label>${field('title', action.title || '', 'text', 'Score', 64)}<p class="trigger-description">Opens a local status panel that refreshes while the game runs. Map variables show shared map state; Player variables show the triggering local player’s value. The panel does not pause gameplay.</p>`;
+                return `<label class="trigger-form-label">Variable</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderVariableOptions(action.variableId)}</select><label class="trigger-form-label">Panel title</label>${field('title', action.title || '', 'text', 'Score', 64)}<p class="trigger-description">Opens a local status panel that refreshes while the game runs. Map and Campaign variables show shared state; Campaign values save across maps for solo play. Player variables show the triggering local player’s value. The panel does not pause gameplay.</p>`;
             case 'setObjectEnabled':
                 return `<label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId">${renderObjectOptions(action.objectId)}</select><label class="trigger-form-label">State</label><select class="trigger-form-select event-action-field" data-field="enabled"><option value="true" ${action.enabled !== false ? 'selected' : ''}>Enabled</option><option value="false" ${action.enabled === false ? 'selected' : ''}>Disabled</option></select><label class="trigger-form-label" style="display:flex; gap:8px; align-items:center;"><input class="event-action-field" data-field="persist" type="checkbox" ${action.persist === true ? 'checked' : ''}> Remember this object state between visits</label><p class="trigger-description">Saved locally for solo play on this browser. Test runs and hosted rooms stay temporary.</p>`;
             case 'setObjectHealth': {
