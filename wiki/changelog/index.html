@@ -34,6 +34,7 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Terminal path diagnostics</strong>: reachability, execution-limit warnings, and timer-cycle analysis now stop at direct scene transitions and restarts, matching runtime Event order.</li>
       <li><strong>Terminal action reachability</strong>: Mechanics reachability now stops after direct scene transitions and restarts, so links in actions the runtime skips are not reported as reachable.</li>
       <li><strong>Trigger-aware reachability</strong>: Events that enable a disabled Trigger now make that Trigger's linked Event potentially reachable in dashboard analysis.</li>
       <li><strong>Flow map edge direction</strong>: links now curve according to their source and target columns, including Event-to-Trigger state changes; same-column Event routes pass around the cards.</li>

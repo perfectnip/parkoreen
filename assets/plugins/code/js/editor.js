@@ -1436,6 +1436,13 @@
     };
     const EVENT_EXECUTION_PATH_LINK_KINDS = new Set(['call', 'defeat', 'branch', 'choice']);
     const NESTED_EVENT_LINK_KINDS = new Set(['call', 'defeat', 'branch']);
+    const getEventActionsThroughDirectTerminalAction = (event) => {
+        const actions = Array.isArray(event?.actions) ? event.actions : [];
+        const terminalIndex = actions.findIndex(action =>
+            action?.type === 'transitionToMap' || action?.type === 'restartScene'
+        );
+        return terminalIndex < 0 ? actions : actions.slice(0, terminalIndex + 1);
+    };
     const ACTION_VARIABLE_LINK_LABELS = new Map([
         ['setVariable', 'Sets'], ['addVariable', 'Adds to'], ['calculateVariable', 'Calculates'],
         ['toggleVariable', 'Toggles'], ['branchVariable', 'Checks'], ['appendListItem', 'Adds to'],
@@ -2356,7 +2363,7 @@
             if (!event) return { depth: 0, actions: 0 };
 
             visiting.add(eventId);
-            const actions = Array.isArray(event.actions) ? event.actions : [];
+            const actions = getEventActionsThroughDirectTerminalAction(event);
             const ownActionCount = Math.min(actions.length, (CODE_MAX_EVENT_ACTIONS || 128) + 1);
             let depth = 1;
             let chainActions = ownActionCount;
@@ -2411,7 +2418,7 @@
             if (!event || event.enabled === false) continue;
             reachable.add(eventId);
 
-            for (const action of Array.isArray(event.actions) ? event.actions : []) {
+            for (const action of getEventActionsThroughDirectTerminalAction(event)) {
                 for (const link of getActionEventLinks(action)) pending.push(link.eventId);
                 // A trigger may be authored disabled but enabled by a reachable
                 // Event. Include its linked Event in possible reachability; the
@@ -2421,9 +2428,6 @@
                     const triggerEventId = trigger?.config?.eventId || trigger?.config?.actionId;
                     if (triggerEventId) pending.push(triggerEventId);
                 }
-                // Direct scene transitions and restarts stop this Event's
-                // action loop, so links in later actions cannot be reached.
-                if (action?.type === 'transitionToMap' || action?.type === 'restartScene') break;
             }
         }
 
@@ -2444,7 +2448,7 @@
 
         for (const event of enabledEvents) {
             const edges = [];
-            for (const action of Array.isArray(event.actions) ? event.actions : []) {
+            for (const action of getEventActionsThroughDirectTerminalAction(event)) {
                 for (const { eventId: targetId, kind } of getActionEventLinks(action).filter(link => link.kind !== 'animation')) {
                     if (eventsById.has(targetId)) {
                         edges.push({ targetId, timer: kind === 'timer' });
