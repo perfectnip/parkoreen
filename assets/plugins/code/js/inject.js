@@ -2104,12 +2104,16 @@
         }
         const multiplayer = getMultiplayerManager();
         const inMultiplayerRoom = Boolean(multiplayer?.getRoomCode?.());
-        if (context.sharedAuthoritativeReplay && ['showChoice', 'showMenu'].includes(action.type)) {
-            if (inMultiplayerRoom && multiplayer.isHost && !rememberSharedChoiceRoutes(world, action, context, event)) {
+        if (context.sharedAuthoritativeReplay && ['showDialogue', 'showChoice', 'showMenu'].includes(action.type)) {
+            if (['showChoice', 'showMenu'].includes(action.type) && inMultiplayerRoom && multiplayer.isHost &&
+                !rememberSharedChoiceRoutes(world, action, context, event)) {
                 reportMechanicsRuntimeError(world, event, actionSource,
                     'The host could not record the enabled routes for this choice.');
             }
-            return;
+            // The host records choice routes before selection. Dialogue and
+            // choice actions suspend the local chain, so end authoritative
+            // replay here instead of running later shared actions early.
+            return EVENT_ACTION_STOP;
         }
         if (context.sharedAuthoritativeReplay &&
             !SHARED_MECHANICS_ACTIONS.has(action.type) && !['branchVariable', 'runEvent'].includes(action.type)) {

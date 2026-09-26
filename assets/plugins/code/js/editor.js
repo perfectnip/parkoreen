@@ -1436,11 +1436,27 @@
     };
     const EVENT_EXECUTION_PATH_LINK_KINDS = new Set(['call', 'defeat', 'branch', 'choice']);
     const NESTED_EVENT_LINK_KINDS = new Set(['call', 'defeat', 'branch']);
-    const getEventActionsThroughDirectTerminalAction = (event) => {
+    const eventAlwaysEndsChain = (eventId, visiting = new Set()) => {
+        if (typeof eventId !== 'string' || !eventId || visiting.has(eventId)) return false;
+        const event = getEvents().find(candidate => candidate?.id === eventId);
+        if (!event || event.enabled === false) return false;
+        const nextVisiting = new Set(visiting);
+        nextVisiting.add(eventId);
+        return (Array.isArray(event.actions) ? event.actions : []).some(action => actionAlwaysEndsChain(action, nextVisiting));
+    };
+    const actionAlwaysEndsChain = (action, visiting = new Set()) => {
+        if (['transitionToMap', 'restartScene', 'showDialogue', 'showChoice', 'showMenu'].includes(action?.type)) return true;
+        if (action?.type === 'runEvent') return eventAlwaysEndsChain(action.eventId, visiting);
+        // Conditional routes only end the caller when every possible route
+        // runs an Event that ends the shared chain. One missing or continuing
+        // route keeps later caller actions potentially reachable.
+        const branches = getActionEventLinks(action).filter(link => link.kind === 'branch');
+        if (branches.length !== 2 || !action?.trueEventId || !action?.falseEventId) return false;
+        return branches.every(link => eventAlwaysEndsChain(link.eventId, visiting));
+    };
+    const getEventActionsThroughTerminalRoute = (event) => {
         const actions = Array.isArray(event?.actions) ? event.actions : [];
-        const terminalIndex = actions.findIndex(action =>
-            action?.type === 'transitionToMap' || action?.type === 'restartScene'
-        );
+        const terminalIndex = actions.findIndex(action => actionAlwaysEndsChain(action));
         return terminalIndex < 0 ? actions : actions.slice(0, terminalIndex + 1);
     };
     const ACTION_VARIABLE_LINK_LABELS = new Map([
@@ -2363,7 +2379,7 @@
             if (!event) return { depth: 0, actions: 0 };
 
             visiting.add(eventId);
-            const actions = getEventActionsThroughDirectTerminalAction(event);
+            const actions = getEventActionsThroughTerminalRoute(event);
             const ownActionCount = Math.min(actions.length, (CODE_MAX_EVENT_ACTIONS || 128) + 1);
             let depth = 1;
             let chainActions = ownActionCount;
@@ -2418,7 +2434,7 @@
             if (!event || event.enabled === false) continue;
             reachable.add(eventId);
 
-            for (const action of getEventActionsThroughDirectTerminalAction(event)) {
+            for (const action of getEventActionsThroughTerminalRoute(event)) {
                 for (const link of getActionEventLinks(action)) pending.push(link.eventId);
                 // A trigger may be authored disabled but enabled by a reachable
                 // Event. Include its linked Event in possible reachability; the
@@ -2448,7 +2464,7 @@
 
         for (const event of enabledEvents) {
             const edges = [];
-            for (const action of getEventActionsThroughDirectTerminalAction(event)) {
+            for (const action of getEventActionsThroughTerminalRoute(event)) {
                 for (const { eventId: targetId, kind } of getActionEventLinks(action).filter(link => link.kind !== 'animation')) {
                     if (eventsById.has(targetId)) {
                         edges.push({ targetId, timer: kind === 'timer' });

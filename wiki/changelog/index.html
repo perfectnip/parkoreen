@@ -34,6 +34,8 @@
 
 <h3>Mechanics Editor</h3>
 <ul>
+      <li><strong>Host UI replay ordering</strong>: multiplayer host replay stops at Dialogue, Choices, and Menu actions. It records declared choice routes first, and later shared actions wait until the local UI pause or selection Event completes.</li>
+      <li><strong>Nested terminal path analysis</strong>: reachability, execution-limit warnings, and timer-cycle analysis now stop after a Run Event that always transitions or restarts, and after a branch only when every possible route ends the shared Event chain.</li>
       <li><strong>Terminal path diagnostics</strong>: reachability, execution-limit warnings, and timer-cycle analysis now stop at direct scene transitions and restarts, matching runtime Event order.</li>
       <li><strong>Terminal action reachability</strong>: Mechanics reachability now stops after direct scene transitions and restarts, so links in actions the runtime skips are not reported as reachable.</li>
       <li><strong>Trigger-aware reachability</strong>: Events that enable a disabled Trigger now make that Trigger's linked Event potentially reachable in dashboard analysis.</li>
