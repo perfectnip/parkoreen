@@ -6914,7 +6914,7 @@ class GameEngine {
         this.mechanicsPauseNeedsRender = false;
         this.mechanicsPauseStartedAt = null;
         this.world.resetMechanicsObjectStates();
-        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset({ world: this.world });
         this.state = GameState.PLAYING;
         WorldObject._editorMode = false;
         this.lastCheckpoint = null;
@@ -6995,7 +6995,7 @@ class GameEngine {
         this.mechanicsPauseNeedsRender = false;
         this.mechanicsPauseStartedAt = null;
         this.world.resetMechanicsObjectStates();
-        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset({ world: this.world });
         this.state = GameState.TESTING;
         WorldObject._editorMode = false;
         this.lastCheckpoint = null;
@@ -7067,7 +7067,7 @@ class GameEngine {
         this.mechanicsPauseNeedsRender = false;
         this.mechanicsPauseStartedAt = null;
         WorldObject._editorMode = true;
-        if (typeof window.CodePluginReset === 'function') window.CodePluginReset();
+        if (typeof window.CodePluginReset === 'function') window.CodePluginReset({ world: this.world });
         const restoreEditorScene = Boolean(this.editorSceneSnapshot && this._testSceneChanged);
         if (restoreEditorScene) this.world.fromJSON(this.editorSceneSnapshot);
         this.editorSceneSnapshot = null;
