@@ -14,8 +14,10 @@ Game data crosses the boundary only as bounded JSON snapshots or typed requests.
 
 Every message is a plain JSON object with an exact, direction-specific shape.
 Unknown fields, message kinds, methods, protocol versions, and non-JSON values
-are rejected. A message id is unique within its sender's session and responses
-must name the matching request id.
+are rejected. Plugin request ids are positive decimal sequence strings starting
+at `1` and increasing by one; this lets the host enforce uniqueness without
+retaining an unbounded per-plugin id set. Responses must name the matching
+request id.
 
 ```ts
 type HostMessage =
@@ -46,12 +48,17 @@ and [TypeScript declarations](api-v2-draft/plugin-protocol.d.ts) define these
 envelopes and method-specific request fields. They are reference artifacts only;
 the runtime still needs to enforce them, and their method semantics need review.
 The offline [`protocol-guard.mjs`](api-v2-draft/protocol-guard.mjs) and
-`tools/plugin-v2-draft-contract.test.mjs` exercise exact plugin request fields,
+`broker.mjs` are reference artifacts only; the first validates message
+contracts, while the second demonstrates capability checks, sequential request
+ids, token-bucket rate limiting, bounded pending work, deadlines, response
+correlation, violation shutdown, and teardown. CI exercises both draft tools,
+but neither is loaded by the game runtime; they do not create an isolation
+boundary or permit API v2 installation. `tools/plugin-v2-draft-contract.test.mjs` exercises exact plugin request fields,
 capability-to-method checks, package-declared inputs/assets/sounds, JSON depth,
 storage size, adversarial payload rejection, request/response correlation, and
 method-specific host result shapes. CI runs these draft contract checks, but
-the game runtime does not load the guard and none of the checks create an
-isolation boundary or permit API v2 installation.
+neither draft tool is loaded by the game runtime and the checks do not create
+an isolation boundary or permit API v2 installation.
 
 The contract is intentionally JSON-only. `JsonValue` is null, boolean, finite
 number, string, array, or object composed recursively from those values. The
@@ -81,7 +88,10 @@ optional per-map restrictions; denial or revocation closes the port and
 terminates the plugin instance.
 
 The host validates every method's exact argument schema, capability, request
-size, rate, and current map/session before doing work. The plugin receives only
+size, rate, and current map/session before doing work. The reference broker
+validates protocol data and lifecycle limits but delegates current map/session
+authorization and game-specific method semantics to the trusted host adapter.
+The plugin receives only
 the response fields documented for that method. Since the response envelope
 contains only `responseTo`, the broker must retain the pending request's method
 and validate `value` against that method's result schema before replying; a

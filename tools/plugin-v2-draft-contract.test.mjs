@@ -7,20 +7,31 @@ import {
     validateHostResponse,
     validatePluginRequest
 } from '../assets/plugins/api-v2-draft/protocol-guard.mjs';
+import {
+    API_V2_BROKER_DEFAULTS,
+    createPluginV2Broker
+} from '../assets/plugins/api-v2-draft/broker.mjs';
 
 const schema = JSON.parse(await readFile(new URL('../assets/plugins/api-v2-draft/plugin-protocol.schema.json', import.meta.url), 'utf8'));
-const request = (method, args = {}, requestId = 'request_1') => ({
+const request = (method, args = {}, requestId = '1') => ({
     type: 'request', apiVersion: 2, requestId, method, args
 });
 const validate = (message, capability, declarations = {}) =>
     validatePluginRequest(message, capability ? [capability] : [], declarations);
-const response = (value, responseTo = 'request_1') => ({
+const response = (value, responseTo = '1') => ({
     type: 'response', apiVersion: 2, responseTo, ok: true, value
 });
 
 test('draft capability map stays aligned with the protocol schema method and capability enums', () => {
     assert.deepEqual(Object.keys(API_V2_METHOD_CAPABILITY).sort(), schema.$defs.pluginMethod.enum.slice().sort());
     assert.deepEqual([...new Set(Object.values(API_V2_METHOD_CAPABILITY))].sort(), schema.$defs.capability.enum.slice().sort());
+    assert.deepEqual(API_V2_BROKER_DEFAULTS, {
+        requestsPerSecond: 30,
+        burstCapacity: 10,
+        maxPendingRequests: 32,
+        requestTimeoutMs: 250,
+        maxConsecutiveViolations: 3
+    });
 });
 
 test('accepts a bounded map snapshot request only with its read grant', () => {
@@ -131,14 +142,103 @@ test('host success result fields stay coupled to accepted request payloads', () 
 
 test('host error envelopes remain bounded and exact', () => {
     const pending = request('audio.play', { soundName: 'hit' });
-    const validError = { type: 'response', apiVersion: 2, responseTo: 'request_1', ok: false,
+    const validError = { type: 'response', apiVersion: 2, responseTo: '1', ok: false,
         error: { code: 'NOT_DECLARED', message: 'The sound is not part of this package.' } };
     assert.equal(validateHostResponse(validError, pending).ok, true);
     assert.equal(validateHostResponse({ ...validError, extra: true }, pending).error.code, 'INVALID_RESPONSE');
     assert.equal(validateHostResponse({ ...validError, error: { code: 'bad code', message: '' } }, pending).error.code, 'INVALID_RESPONSE');
     let getterCalled = false;
-    const accessorResponse = { apiVersion: 2, responseTo: 'request_1', ok: false, error: validError.error };
+    const accessorResponse = { apiVersion: 2, responseTo: '1', ok: false, error: validError.error };
     Object.defineProperty(accessorResponse, 'type', { enumerable: true, get() { getterCalled = true; return 'response'; } });
     assert.equal(validateHostResponse(accessorResponse, pending).error.code, 'INVALID_RESPONSE');
     assert.equal(getterCalled, false, 'response validation does not execute property accessors');
+});
+
+const emptyMapSnapshot = {
+    mapId: 'map-1', mapName: 'Test Map', gravity: 1, objectCount: 0,
+    objectOffset: 0, nextObjectOffset: null, objects: []
+};
+
+test('draft broker dispatches only granted methods and validates host results', async () => {
+    const grants = ['map.read'];
+    const replies = [];
+    const dispatched = [];
+    const broker = createPluginV2Broker({
+        pluginId: 'sample-plugin',
+        grants,
+        dispatch: async (method, args, context) => {
+            dispatched.push({ method, args, context });
+            return emptyMapSnapshot;
+        },
+        reply: message => replies.push(message)
+    });
+
+    assert.equal(broker.handleMessage(request('map.getSnapshot')).ok, true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(replies[0], response(emptyMapSnapshot));
+    assert.equal(dispatched[0].context.capability, 'map.read');
+    assert.deepEqual(dispatched[0].context.grants, ['map.read']);
+
+    grants.push('storage.local');
+    const denied = broker.handleMessage(request('storage.set', { key: 'state', value: 1 }, '2'));
+    assert.equal(denied.error.code, 'CAPABILITY_DENIED');
+    assert.equal(dispatched.length, 1);
+    assert.equal(replies[1]?.error?.code, 'CAPABILITY_DENIED');
+    assert.equal(broker.handleMessage(request('map.getSnapshot', {}, '3')).ok, true,
+        'a denied request consumes its sequence id so the next request can proceed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(dispatched.length, 2);
+    broker.close();
+});
+
+test('draft broker requires bounded sequential request ids and correlates duplicate rejection', async () => {
+    const replies = [];
+    const broker = createPluginV2Broker({
+        pluginId: 'sample-plugin', grants: ['map.read'],
+        dispatch: async () => emptyMapSnapshot,
+        reply: message => replies.push(message)
+    });
+    assert.equal(broker.handleMessage(request('map.getSnapshot', {}, '1')).ok, true);
+    await new Promise(resolve => setImmediate(resolve));
+    const duplicate = broker.handleMessage(request('map.getSnapshot', {}, '1'));
+    assert.equal(duplicate.error.code, 'INVALID_REQUEST_SEQUENCE');
+    assert.equal(replies.length, 1, 'a duplicate id does not get a second response with ambiguous correlation');
+    assert.equal(validate(request('map.getSnapshot', {}, 'request_1'), 'map.read').error.code, 'INVALID_ENVELOPE');
+    broker.close();
+});
+
+test('draft broker applies token-bucket limits and closes a repeatedly flooding instance', () => {
+    let portClosed = 0;
+    const broker = createPluginV2Broker({
+        pluginId: 'sample-plugin', grants: ['map.read'],
+        dispatch: () => new Promise(() => {}),
+        reply() {},
+        closePort: () => { portClosed++; },
+        limits: { requestsPerSecond: 0.001, burstCapacity: 1 }
+    });
+    assert.equal(broker.handleMessage(request('map.getSnapshot')).ok, true);
+    assert.equal(broker.handleMessage(request('map.getSnapshot', {}, '2')).error.code, 'RATE_LIMITED');
+    assert.equal(broker.handleMessage(request('map.getSnapshot', {}, '2')).error.code, 'RATE_LIMITED');
+    assert.equal(broker.handleMessage(request('map.getSnapshot', {}, '2')).state, 'closed');
+    assert.equal(broker.pendingCount, 0);
+    assert.equal(portClosed, 1);
+});
+
+test('draft broker deadlines and teardown clear pending work', async () => {
+    const replies = [];
+    const broker = createPluginV2Broker({
+        pluginId: 'sample-plugin', grants: ['map.read'],
+        dispatch: () => new Promise(() => {}),
+        reply: message => replies.push(message),
+        limits: { requestTimeoutMs: 5 }
+    });
+    broker.handleMessage(request('map.getSnapshot'));
+    assert.equal(broker.pendingCount, 1);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(replies[0]?.error?.code, 'REQUEST_TIMEOUT');
+    assert.equal(broker.pendingCount, 0);
+    assert.equal(broker.state, 'active');
+    broker.close('revoked');
+    assert.equal(broker.state, 'closed');
+    assert.equal(broker.closeReason, 'revoked');
 });

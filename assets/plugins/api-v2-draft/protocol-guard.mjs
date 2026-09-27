@@ -1,7 +1,8 @@
 /**
  * Offline conformance guard for the proposed API v2 plugin request contract.
  * This is tooling for draft review only; the game runtime does not import it.
- * It does not provide isolation, permissions UI, rate limiting, or installation.
+ * It is not a runtime integration and does not provide isolation, permissions
+ * UI, rate limiting, or installation. See broker.mjs for a separate reference.
  */
 
 export const API_V2_LIMITS = Object.freeze({
@@ -24,7 +25,7 @@ export const API_V2_METHOD_CAPABILITY = Object.freeze({
 });
 
 const knownCapabilities = new Set(Object.values(API_V2_METHOD_CAPABILITY));
-const requestIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
+const requestIdPattern = /^[1-9][0-9]{0,15}$/;
 const controlIdPattern = /^[a-z][a-zA-Z0-9_-]{0,47}$/;
 const assetNamePattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const soundNamePattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
@@ -182,18 +183,27 @@ function validateMethodArguments(method, args, declarations) {
     }
 }
 
+/** Validate a request envelope without inspecting or copying its argument data. */
+export function validatePluginRequestEnvelope(message) {
+    if (!isPlainObject(message) || !hasOnlyKeys(message, ['type', 'apiVersion', 'requestId', 'method', 'args'],
+        ['type', 'apiVersion', 'requestId', 'method', 'args'])) {
+        return fail('INVALID_ENVELOPE', 'Request must contain only the documented envelope fields.');
+    }
+    if (message.type !== 'request' || message.apiVersion !== 2 ||
+        !isString(message.requestId, 1, 16, requestIdPattern) ||
+        !Number.isSafeInteger(Number(message.requestId)) || typeof message.method !== 'string') {
+        return fail('INVALID_ENVELOPE', 'Request type, protocol version, or request id is invalid.');
+    }
+    return { ok: true, requestId: message.requestId, method: message.method };
+}
+
 /**
  * Validate one plugin-to-host request against the v2 draft before any dispatch.
  * `declarations` contains package-declared control ids, sound names, and asset names.
  */
 export function validatePluginRequest(message, grants, declarations = {}) {
-    if (!isPlainObject(message) || !hasOnlyKeys(message, ['type', 'apiVersion', 'requestId', 'method', 'args'],
-        ['type', 'apiVersion', 'requestId', 'method', 'args'])) {
-        return fail('INVALID_ENVELOPE', 'Request must contain only the documented envelope fields.');
-    }
-    if (message.type !== 'request' || message.apiVersion !== 2 || !isString(message.requestId, 1, 64, requestIdPattern)) {
-        return fail('INVALID_ENVELOPE', 'Request type, protocol version, or request id is invalid.');
-    }
+    const envelope = validatePluginRequestEnvelope(message);
+    if (!envelope.ok) return envelope;
     if (!Object.hasOwn(API_V2_METHOD_CAPABILITY, message.method)) return fail('UNKNOWN_METHOD', 'The requested method is not supported.');
     if (!Array.isArray(grants) || grants.some(grant => !knownCapabilities.has(grant))) {
         return fail('INVALID_GRANTS', 'The grant set contains an unknown capability.');
@@ -316,7 +326,8 @@ function validMethodResult(method, value, request) {
  */
 export function validateHostResponse(message, pendingRequest) {
     if (!isPlainObject(pendingRequest) || pendingRequest.type !== 'request' ||
-        !isString(pendingRequest.requestId, 1, 64, requestIdPattern) ||
+        !isString(pendingRequest.requestId, 1, 16, requestIdPattern) ||
+        !Number.isSafeInteger(Number(pendingRequest.requestId)) ||
         !Object.hasOwn(API_V2_METHOD_CAPABILITY, pendingRequest.method) || !isPlainObject(pendingRequest.args) ||
         !inspectJsonValue(pendingRequest)) {
         return fail('INVALID_PENDING_REQUEST', 'The pending request context is missing or invalid.');

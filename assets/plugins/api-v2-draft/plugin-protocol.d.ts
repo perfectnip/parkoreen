@@ -33,6 +33,7 @@ export type ParkoreenPluginMethodV2 =
 
 export interface ParkoreenPluginInitializeV2 {
     type: 'initialize';
+    /** Positive decimal correlation id for this host initialization message. */
     requestId: string;
     apiVersion: 2;
     pluginId: ParkoreenPluginIdV2;
@@ -133,6 +134,7 @@ export type ParkoreenPluginResultV2 =
 interface ParkoreenPluginRequestEnvelopeV2<Method extends ParkoreenPluginMethodV2, Args extends object> {
     type: 'request';
     apiVersion: 2;
+    /** Positive decimal sequence id; starts at 1 and increments for each plugin request. */
     requestId: string;
     method: Method;
     args: Args;

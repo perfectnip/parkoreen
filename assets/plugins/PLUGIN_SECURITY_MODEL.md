@@ -141,9 +141,11 @@ The current validator and starter are useful for reviewed bundled development;
 they do not pass these release gates.
 
 The separate [API v2 draft](PLUGIN_API_V2_DRAFT.md) proposes a JSON-only,
-capability-checked message contract for an isolated runtime. Its limits and
-method list are design inputs for review, not implemented enforcement or a
-permission to install third-party plugins.
+capability-checked message contract for an isolated runtime. Its offline
+protocol guard and reference broker exercise validation, quotas, correlation,
+deadlines, and teardown, but are not integrated with the game or an isolation
+boundary. These artifacts are design inputs for review, not implemented
+enforcement or a permission to install third-party plugins.
 
 ## Local developer preview
 
