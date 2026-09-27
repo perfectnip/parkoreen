@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hollow Knight Pogo Runtime Check</title>
+  <style>
+    body { background: #111827; color: #e5e7eb; font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 850px; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    .hint { color: #a5b4fc; }
+    .pass { color: #86efac; }
+    .fail { color: #fca5a5; }
+    pre { white-space: pre-wrap; background: #1f2937; border-radius: 8px; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Hollow Knight down-slash pogo runtime check</h1>
+  <p class="hint">Serve the repository root locally, then open <code>/tools/hk-pogo-runtime-check.html</code>. This page loads the real game and HK plugin scripts without requiring an account.</p>
+  <pre id="results">Loading game and plugin code…</pre>
+  <script src="../assets/js/game.js"></script>
+  <script src="../assets/plugins/hk/js/globals.js"></script>
+  <script>
+    window.__pogoHooks = new Map();
+    window.PluginManager = {
+      __pogoHooks: window.__pogoHooks,
+      plugins: new Map([['hk', { path: '../assets/plugins/hk/' }]]),
+      registerHook(name, callback, pluginId, priority = 0) {
+        if (!this.__pogoHooks.has(name)) this.__pogoHooks.set(name, []);
+        const hooks = this.__pogoHooks.get(name);
+        hooks.push({ callback, priority });
+        hooks.sort((left, right) => left.priority - right.priority);
+      },
+      executeHook(name, data) {
+        for (const hook of this.__pogoHooks.get(name) || []) data = hook.callback(data) || data;
+        return data;
+      },
+      playSound() {},
+      stopSound() {}
+    };
+    const ctx = {
+      api: { onCleanup() { return () => {}; } },
+      pluginManager: window.PluginManager,
+      pluginId: 'hk',
+      world: { plugins: { hk: {} } },
+      hooks: {},
+      sounds: {}
+    };
+  </script>
+  <script src="../assets/plugins/hk/js/inject.js"></script>
+  <script>
+    (() => {
+      const results = [];
+
+      function simulate({ label, kind = 'block', shape = 'box', platformY = 200,
+        playerY = null, vy = 0, disabled = false, oneWayPolygon = true }) {
+        const world = new World();
+        world.gravity = 0.71;
+        world.jumpForce = -13.2;
+        world.terminalFallSpeed = 16;
+
+        let object;
+        if (kind.startsWith('tilemap:')) {
+          const collisionType = kind.slice('tilemap:'.length);
+          const config = { collisionType };
+          if (collisionType === 'polygon') {
+            config.collisionShape = 'polygon';
+            config.collisionPoints = [[0, 1], [1, 0], [1, 1]];
+            config.polygonOneWay = oneWayPolygon;
+          }
+          world.setTilemapCell(96, platformY, config, 1);
+          const tilemap = world.tilemaps[0];
+          object = world._getTilemapCollider(tilemap, tilemap.cells[0]);
+        } else if (kind === 'spike') {
+          object = new WorldObject({ id: label, x: 84, y: platformY, width: 64, height: 32,
+            type: 'obstacle', appearanceType: 'spike', actingType: 'spike', collision: true });
+        } else if (kind === 'statue') {
+          object = new WorldObject({ id: label, x: 84, y: platformY, width: 64, height: 32,
+            type: 'koreen', appearanceType: 'soulStatue', actingType: 'soulStatus', collision: true });
+        } else {
+          object = new WorldObject({ id: label, x: 84, y: platformY, width: 64, height: 32,
+            type: 'block', appearanceType: 'ground', actingType: 'ground', collision: true,
+            collisionShape: shape, polygonOneWay: oneWayPolygon, _mechanicsEnabled: !disabled });
+          if (disabled) object._mechanicsEnabled = false;
+        }
+
+        if (!kind.startsWith('tilemap:')) world.addObject(object);
+        world.rebuildSpatialHash();
+        const player = new Player(100, Number.isFinite(playerY) ? playerY : platformY - 32, 'Tester', '#fff');
+        const groundBox = player.getGroundTouchbox();
+        const polygonContact = object.collisionShape === 'polygon' && object.polygonOneWay === false
+          ? player.getPolygonAxisContact(object, groundBox, 'y', 1) + groundBox.height / 2
+          : null;
+        if (Number.isFinite(polygonContact) && !Number.isFinite(playerY)) player.y = polygonContact - player.height;
+        player.vy = vy;
+        player.input.attack = true;
+        player.input.down = true;
+        window.PluginManager.executeHook('player.init', { player, world });
+
+        const hookResult = window.PluginManager.executeHook('player.update', {
+          player, world, audioManager: null, skipPhysics: false
+        });
+        const hit = player._attackHitThisSwing === true;
+        const nearby = world.queryNear(103, player.y + player.height - 2, 26, 92);
+        if (hookResult.skipPhysics) player.moveWithCollision(world);
+        else player.update(world, null);
+        return { label, hit, skipPhysics: hookResult.skipPhysics === true, velocityY: player.vy,
+          object: { type: object.type, appearanceType: object.appearanceType, actingType: object.actingType,
+            collision: object.collision, available: object._mechanicsEnabled !== false },
+          attackCandidates: nearby.length };
+      }
+
+      function check(label, predicate, result) {
+        results.push({ label, passed: Boolean(predicate), result });
+      }
+
+      try {
+        const bounceCases = [
+          simulate({ label: 'solid block' }),
+          simulate({ label: 'circle block', shape: 'circle' }),
+          simulate({ label: 'capsule block', shape: 'capsule' }),
+          simulate({ label: 'rising right ramp', shape: 'slopeUpRight', playerY: 184 }),
+          simulate({ label: 'rising left ramp', shape: 'slopeUpLeft', playerY: 184 }),
+          simulate({ label: 'spike', kind: 'spike' }),
+          simulate({ label: 'Soul Statue', kind: 'statue' }),
+          simulate({ label: 'solid tile cell', kind: 'tilemap:solid', platformY: 192 }),
+          simulate({ label: 'one-way tile cell', kind: 'tilemap:oneWay', platformY: 192 }),
+          simulate({ label: 'right ramp tile cell', kind: 'tilemap:rampUpRight', platformY: 192, playerY: 172 }),
+          simulate({ label: 'left ramp tile cell', kind: 'tilemap:rampUpLeft', platformY: 192, playerY: 180 }),
+          simulate({ label: 'one-way polygon tile cell', kind: 'tilemap:polygon', platformY: 192, playerY: 172 }),
+          simulate({ label: 'solid polygon tile cell', kind: 'tilemap:polygon', platformY: 192, oneWayPolygon: false })
+        ];
+        for (const result of bounceCases) {
+          check(`${result.label} rebounds upward`, result.hit && result.skipPhysics && result.velocityY < 0, result);
+        }
+
+        const early = simulate({ label: 'platform above nail reach', playerY: 120 });
+        check('long nail box cannot pogo early', !early.hit && !early.skipPhysics, early);
+        const disabled = simulate({ label: 'disabled ground', disabled: true });
+        check('disabled ground cannot pogo', !disabled.hit && !disabled.skipPhysics, disabled);
+        const rising = simulate({ label: 'player rising from below', playerY: 184, vy: -2 });
+        check('rising player cannot pogo', !rising.hit && !rising.skipPhysics, rising);
+        const decorative = simulate({ label: 'decorative tile cell', kind: 'tilemap:decorative', platformY: 192 });
+        check('decorative tile cannot pogo', !decorative.hit && !decorative.skipPhysics, decorative);
+
+        const report = { total: results.length, passed: results.filter(item => item.passed).length, results };
+        const output = document.getElementById('results');
+        output.className = report.passed === report.total ? 'pass' : 'fail';
+        output.textContent = JSON.stringify(report, null, 2);
+      } catch (error) {
+        const output = document.getElementById('results');
+        output.className = 'fail';
+        output.textContent = String(error.stack || error);
+      }
+    })();
+  </script>
+</body>
+</html>
