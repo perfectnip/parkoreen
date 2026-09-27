@@ -172,7 +172,10 @@
         const afterSecondZoneUpdate = state?.variables?.get('variable-zone-entries');
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
         check('Event hides its selected draw layer without changing other render layers',
-          world.getRenderLayerDepths().behindPlayer.length === 0 && world.getRenderLayerDepths().abovePlayer.includes(2),
+          !world.getRenderLayerDepths().behindPlayer.includes(0) &&
+          world.getRenderLayerDepths().behindPlayer.includes(-1) &&
+          world.getRenderLayerDepths().behindPlayer.includes(1) &&
+          world.getRenderLayerDepths().abovePlayer.includes(2),
           world.getRenderLayerDepths());
         check('Event moves an authored object to its selected draw layer without changing collision',
           world.getObjectById('phase-platform')?.layer === 2 && world.getObjectById('phase-platform')?.collision === true,
