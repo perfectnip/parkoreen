@@ -148,6 +148,14 @@
           }],
           creatorExtension: { preserve: ['future-action-field', 3] }
         };
+        const catalogRoundTripActions = CODE_EVENT_ACTION_TYPES.map(({ id }, index) => ({
+          type: id,
+          roundTripFixture: { index, marker: `mechanics-action-${index}`, nested: ['preserve', index] }
+        }));
+        source.codeData.events.push({
+          id: 'event-action-catalog-roundtrip', type: 'event', name: 'Action catalog round trip', enabled: true,
+          actions: catalogRoundTripActions, code: ''
+        });
         source.addObject(new WorldObject({ id: 'zone-start', type: 'koreen', appearanceType: 'zone',
           actingType: 'zone', zoneName: 'start-area', x: -16, y: -16, width: 64, height: 64, collision: false }));
         source.addObject(new WorldObject({ id: 'phase-platform', type: 'block', appearanceType: 'ground',
@@ -238,6 +246,17 @@
             frameCount: loadedEnemyTemplate?.spriteSheet?.frameCount,
             animationNames: loadedEnemyTemplate?.spriteSheet?.animations?.map(animation => animation.name) });
         const restored = world.codeData;
+        const restoredActionCatalogEvent = restored.events.find(event => event.id === 'event-action-catalog-roundtrip');
+        check('Every supported Event action record survives PKRN and World save/load',
+          restoredActionCatalogEvent?.actions?.length === catalogRoundTripActions.length &&
+            restoredActionCatalogEvent.actions.every((action, index) =>
+              action.type === catalogRoundTripActions[index].type &&
+              action.roundTripFixture?.index === index &&
+              action.roundTripFixture?.marker === catalogRoundTripActions[index].roundTripFixture.marker &&
+              action.roundTripFixture?.nested?.[1] === index),
+          { expectedActions: catalogRoundTripActions.length,
+            restoredActions: restoredActionCatalogEvent?.actions?.length,
+            restoredTypes: restoredActionCatalogEvent?.actions?.map(action => action.type) });
         check('World serialization retains its map and save options',
           jsonRestoredWorld.mapName === 'Mechanics Round Trip' && jsonRestoredWorld.persistCheckpoints === true);
         check('PKRN serializer and importer validate the Mechanics payload', importValidation.valid === true, importValidation);
