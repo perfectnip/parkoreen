@@ -52,7 +52,7 @@
       const results = [];
 
       function simulate({ label, kind = 'block', shape = 'box', platformY = 200,
-        playerY = null, vy = 0, disabled = false, oneWayPolygon = true, nestedQuery = false }) {
+        playerY = null, vy = 0, disabled = false, oneWayPolygon = true, nestedQuery = false, pogoable = false }) {
         const world = new World();
         world.gravity = 0.71;
         world.jumpForce = -13.2;
@@ -93,6 +93,9 @@
         } else if (kind === 'statue') {
           object = new WorldObject({ id: label, x: 84, y: platformY, width: 64, height: 32,
             type: 'koreen', appearanceType: 'soulStatue', actingType: 'soulStatus', collision: true });
+        } else if (kind === 'enemy') {
+          object = new WorldObject({ id: label, x: 84, y: platformY, width: 40, height: 32,
+            type: 'block', appearanceType: 'enemy', actingType: 'enemy', collision: false });
         } else {
           object = new WorldObject({ id: label, x: 84, y: platformY, width: 64, height: 32,
             type: 'block', appearanceType: 'ground', actingType: 'ground', collision: true,
@@ -113,6 +116,14 @@
         player.input.down = true;
         player._pogoTestNestedQuery = nestedQuery;
         window.PluginManager.executeHook('player.init', { player, world });
+        if (kind === 'enemy') {
+          // Model the metadata that the Mechanics Player Attacks Object hook
+          // adds only for an author-selected pogo target.
+          window.PluginManager.registerHook('player.attack.hit', data => {
+            if (data.object?.id === label && pogoable) data.pogoable = true;
+            return data;
+          }, `pogoable-target-${label}`);
+        }
 
         const hookResult = window.PluginManager.executeHook('player.update', {
           player, world, audioManager: null, skipPhysics: false
@@ -141,6 +152,7 @@
           simulate({ label: 'rising left ramp', shape: 'slopeUpLeft', playerY: 184 }),
           simulate({ label: 'spike', kind: 'spike' }),
           simulate({ label: 'Soul Statue', kind: 'statue' }),
+          simulate({ label: 'Mechanics pogo enemy', kind: 'enemy', pogoable: true }),
           simulate({ label: 'solid tile cell', kind: 'tilemap:solid', platformY: 192 }),
           simulate({ label: 'one-way tile cell', kind: 'tilemap:oneWay', platformY: 192 }),
           simulate({ label: 'right ramp tile cell', kind: 'tilemap:rampUpRight', platformY: 192, playerY: 172 }),
@@ -156,6 +168,8 @@
         check('long nail box cannot pogo early', !early.hit && !early.skipPhysics, early);
         const disabled = simulate({ label: 'disabled ground', disabled: true });
         check('disabled ground cannot pogo', !disabled.hit && !disabled.skipPhysics, disabled);
+        const ordinaryEnemy = simulate({ label: 'ordinary enemy', kind: 'enemy' });
+        check('ordinary objects stay non-pogoable without an author flag', !ordinaryEnemy.hit && !ordinaryEnemy.skipPhysics, ordinaryEnemy);
         const rising = simulate({ label: 'player rising from below', playerY: 184, vy: -2 });
         check('rising player cannot pogo', !rising.hit && !rising.skipPhysics, rising);
         const decorative = simulate({ label: 'decorative tile cell', kind: 'tilemap:decorative', platformY: 192 });

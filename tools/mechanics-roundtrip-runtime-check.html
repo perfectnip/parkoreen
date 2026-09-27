@@ -117,7 +117,7 @@
           }, {
             id: 'trigger-enemy-frame', type: 'trigger', name: 'Enemy frame', enabled: true,
             triggerType: CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT,
-            config: { eventId: 'event-enemy-frame', objectId: 'enemy-template' }
+            config: { eventId: 'event-enemy-frame', objectId: 'enemy-template', pogoable: true }
           }, {
             id: 'trigger-enemy-animation', type: 'trigger', name: 'Enemy animation', enabled: false,
             triggerType: CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT,
@@ -562,7 +562,11 @@
         check('Object leave is edge-triggered while the player stays outside',
           afterSecondObjectLeaveUpdate === 1, { afterSecondObjectLeaveUpdate });
 
-        window.PluginManager.executeHook('player.attack.hit', { player, world, object: spawnedEnemy, direction: 'forward' });
+        const configuredPogoHit = window.PluginManager.executeHook('player.attack.hit', {
+          player, world, object: spawnedEnemy, direction: 'down', pogoable: false
+        });
+        check('Enabled Player Attacks Object trigger marks its target as pogoable',
+          configuredPogoHit?.pogoable === true, configuredPogoHit);
         check('Loaded attack Event sets a frame on the touched spawned instance',
           spawnedEnemy?._mechanicsSpriteFrame === 2,
           { frame: spawnedEnemy?._mechanicsSpriteFrame, targetId: spawnedEnemy?.id });
@@ -570,7 +574,11 @@
         const animationTrigger = world.codeData.triggers.find(trigger => trigger.id === 'trigger-enemy-animation');
         frameTrigger.enabled = false;
         animationTrigger.enabled = true;
-        window.PluginManager.executeHook('player.attack.hit', { player, world, object: spawnedEnemy, direction: 'forward' });
+        const disabledPogoHit = window.PluginManager.executeHook('player.attack.hit', {
+          player, world, object: spawnedEnemy, direction: 'down', pogoable: false
+        });
+        check('Disabled attack trigger no longer marks its target as pogoable',
+          disabledPogoHit?.pogoable === false, disabledPogoHit);
         const spawnedAnimation = spawnedEnemy?._mechanicsSpriteAnimation;
         check('Loaded named-clip Event animates the touched spawned instance',
           spawnedEnemy?._mechanicsSpriteFrame === undefined && spawnedAnimation?.startFrame === 1 &&

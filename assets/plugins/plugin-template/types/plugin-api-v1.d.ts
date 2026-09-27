@@ -74,7 +74,7 @@ export interface ParkoreenHookPayloadMap {
     'player.jump': { player: ParkoreenPluginPlayer; canJump: boolean; didJump?: boolean };
     'player.jumped': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; wasGrounded: boolean; source: 'core' | 'plugin' };
     'player.land': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; surface: ParkoreenMapObject };
-    'player.attack.hit': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; object: ParkoreenMapObject; direction: 'up' | 'down' | 'forward' };
+    'player.attack.hit': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; object: ParkoreenMapObject; direction: 'up' | 'down' | 'forward'; pogoable: boolean };
     'player.damage': { player: ParkoreenPluginPlayer; source: Record<string, unknown>; world: ParkoreenWorld; preventDefault?: boolean };
     'player.died': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; source: ParkoreenMapObject | Record<string, unknown> | null };
     'player.checkpoint': { player: ParkoreenPluginPlayer; world: ParkoreenWorld; checkpoint: ParkoreenMapObject };

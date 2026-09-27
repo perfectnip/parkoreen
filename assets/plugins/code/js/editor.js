@@ -1646,6 +1646,9 @@
             }
             case CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT: {
                 if (!config.objectId) return 'No map object selected';
+                if (config.pogoable !== undefined && typeof config.pogoable !== 'boolean') {
+                    return 'Choose whether a down slash should rebound from this target';
+                }
                 const object = (getWorld()?.objects || []).find(item =>
                     item?.id === config.objectId && item._mechanicsEnabled !== false && item._collected !== true
                 );
@@ -3169,7 +3172,7 @@
                 id: generateId(),
                 name: `Hit ${label}`.slice(0, 80),
                 triggerType: CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT,
-                config: { objectId: object.id, eventId: damageEventId }
+                config: { objectId: object.id, eventId: damageEventId, pogoable: true }
             }];
             const events = [
                 {
@@ -4637,8 +4640,9 @@
                                 return `<option value="${escapeHtml(object.id)}" ${config.objectId === object.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
                             }).join('')}
                         </select>
+                        <label class="trigger-form-label" style="margin-top: 10px;"><input type="checkbox" id="trigger-config-pogoable" ${config.pogoable === true ? 'checked' : ''}> Down slash rebounds from this target</label>
                         ${!hasObjects ? '<p class="trigger-description error">Add a map object in the editor first</p>' : ''}
-                        <p class="trigger-description">Requires the Hollow Knight plugin. Fires once per target object during each nail swing; the hit does not consume the attack unless the target already has Hollow Knight behavior.</p>
+                        <p class="trigger-description">Requires the Hollow Knight plugin. Fires once per target object during each nail swing. Enable the option for enemies or breakable objects to make a down-slash hit rebound like a pogo; ordinary decorations stay non-pogoable.</p>
                     </div>
                 `;
                 break;
@@ -5053,6 +5057,7 @@
 
             case CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT:
                 config.objectId = document.getElementById('trigger-config-object')?.value || '';
+                config.pogoable = document.getElementById('trigger-config-pogoable')?.checked === true;
                 break;
 
             case CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP:

@@ -413,24 +413,27 @@
                 const sweptPogoContact = isSolidPogoSurface &&
                     playerFeet <= pogoSurfaceTop + pogoContactTolerance &&
                     playerFeet + nextFallStep >= pogoSurfaceTop;
-                const isHittable = isSoulTarget || isSolidPogoSurface ||
-                    (isAvailable && obj.actingType === 'spike' && obj.collision !== false);
                 const nailOverlapsObject = isAvailable && colliderIntersectsBox(player, hitbox, obj);
                 // A solid platform only counts when the feet sweep reaches its
                 // surface. The down-slash hitbox is deliberately long for
                 // enemies/statues; using that overlap for platforms pogoes
                 // while the player is still far above the floor.
                 const attackHitsObject = isSolidPogoSurface ? sweptPogoContact : nailOverlapsObject;
+                let isMechanicsPogoTarget = false;
                 if (attackHitsObject && obj.id && player._mechanicsAttackHitObjects instanceof Set &&
                     !player._mechanicsAttackHitObjects.has(obj.id) && player._mechanicsAttackHitObjects.size < 64) {
                     player._mechanicsAttackHitObjects.add(obj.id);
-                    pluginManager.executeHook('player.attack.hit', {
+                    const attackHit = pluginManager.executeHook('player.attack.hit', {
                         player,
                         world,
                         object: obj,
-                        direction: player.attackDirection
-                    });
+                        direction: player.attackDirection,
+                        pogoable: false
+                    }) || {};
+                    isMechanicsPogoTarget = player.attackDirection === 'down' && attackHit.pogoable === true;
                 }
+                const isHittable = isSoulTarget || isSolidPogoSurface || isMechanicsPogoTarget ||
+                    (isAvailable && obj.actingType === 'spike' && obj.collision !== false);
                 if (!isHittable) continue;
                 
                 if (attackHitsObject) {

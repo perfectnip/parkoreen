@@ -5235,6 +5235,7 @@
             for (const trigger of attackTriggers) {
                 if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                 if (trigger.config?.objectId !== objectId && object._mechanicsSpawnTemplateId !== trigger.config?.objectId) continue;
+                if (data?.direction === 'down' && trigger.config?.pogoable === true) data.pogoable = true;
                 const eventId = trigger.config?.eventId || trigger.config?.actionId;
                 if (!eventId) continue;
                 executeEvent(eventId, world, player, {
