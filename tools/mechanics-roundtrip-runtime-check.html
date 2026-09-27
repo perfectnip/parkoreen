@@ -82,6 +82,14 @@
         'assert parkoreen.set_object_health("phase-cube", 6, 5) is False',
         'print("object-health-api-ok")'
       ].join('\n');
+      const healthTriggerPythonCode = [
+        'import parkoreen',
+        'context = parkoreen.get_context()',
+        'assert context["health_before"] == 3',
+        'assert context["health_after"] == 5',
+        'assert context["health_delta"] == 2',
+        'print("mechanics-health-trigger-ok")'
+      ].join('\n');
 
       try {
         const source = new World();
@@ -328,6 +336,8 @@
         window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
         let objectHealthApiResult = null;
         let objectHealthApiPromise = null;
+        let healthTriggerPythonResult = null;
+        let healthTriggerPythonPromise = null;
         const actualRunPython = window.runPython;
         window.runPython = (code, options) => {
           const execution = actualRunPython(code, options);
@@ -337,6 +347,13 @@
               return result;
             });
             return objectHealthApiPromise;
+          }
+          if (code === healthTriggerPythonCode) {
+            healthTriggerPythonPromise = execution.then(result => {
+              healthTriggerPythonResult = result;
+              return result;
+            });
+            return healthTriggerPythonPromise;
           }
           return execution;
         };
@@ -398,6 +415,80 @@
             animationNames: spawnedEnemy.spriteSheet?.animations?.map(animation => animation.name) });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
+
+        const healthWorld = new World();
+        healthWorld.mapName = 'Health Trigger Runtime';
+        healthWorld.mechanicsSaveId = 'health-trigger-runtime';
+        healthWorld.codeData = {
+          triggers: [
+            { id: 'health-any-trigger', type: 'trigger', name: 'Any health change', enabled: true,
+              triggerType: CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED, config: { eventId: 'health-any-event', direction: 'any' } },
+            { id: 'health-increase-trigger', type: 'trigger', name: 'Health increase', enabled: true,
+              triggerType: CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED, config: { eventId: 'health-increase-event', direction: 'increased' } },
+            { id: 'health-decrease-trigger', type: 'trigger', name: 'Health decrease', enabled: true,
+              triggerType: CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED, config: { eventId: 'health-decrease-event', direction: 'decreased' } },
+            { id: 'health-respawn-trigger', type: 'trigger', name: 'After respawn', enabled: true,
+              triggerType: CODE_TRIGGER_TYPES.PLAYER_RESPAWNS, config: { eventId: 'health-respawn-event' } }
+          ],
+          events: [
+            { id: 'health-any-event', type: 'event', name: 'Count health changes', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-any-count', amount: 1 }], code: healthTriggerPythonCode },
+            { id: 'health-increase-event', type: 'event', name: 'Count health increases', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-increase-count', amount: 1 }], code: '' },
+            { id: 'health-decrease-event', type: 'event', name: 'Count health decreases', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-decrease-count', amount: 1 }], code: '' },
+            { id: 'health-respawn-event', type: 'event', name: 'Count respawns', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-respawn-count', amount: 1 }], code: '' }
+          ],
+          variables: ['health-any-count', 'health-increase-count', 'health-decrease-count', 'health-respawn-count']
+            .map(id => ({ id, type: 'variable', name: id, enabled: true,
+              variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0 }))
+        };
+        const healthPlayer = new Player(0, 0, 'Health Trigger Tester', '#fff');
+        healthPlayer.id = 'health-trigger-player';
+        healthPlayer.hp = 3;
+        window.engine = { world: healthWorld, state: 'playing', localPlayer: healthPlayer, remotePlayers: new Map() };
+        window.PluginManager.executeHook('player.init', { player: healthPlayer, world: healthWorld });
+        window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        const healthState = window.__parkoreenCodeRuntimeState?.worldStates?.get(healthWorld);
+        check('Player Health Changed seeds a per-player baseline without firing',
+          healthState?.variables?.get('health-any-count') === 0 &&
+          healthState?.variables?.get('health-increase-count') === 0 &&
+          healthState?.variables?.get('health-decrease-count') === 0,
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count') });
+        healthPlayer.hp = 5;
+        window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        await healthTriggerPythonPromise;
+        check('Player Health Changed fires once and passes before, after, and delta to Python',
+          healthState?.variables?.get('health-any-count') === 1 &&
+          healthState?.variables?.get('health-increase-count') === 1 &&
+          healthState?.variables?.get('health-decrease-count') === 0 &&
+          healthTriggerPythonResult?.success === true && healthTriggerPythonResult?.output?.includes('mechanics-health-trigger-ok'),
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count'), result: healthTriggerPythonResult });
+        window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Player Health Changed does not fire when its numeric value is unchanged',
+          healthState?.variables?.get('health-any-count') === 1 && healthState?.variables?.get('health-increase-count') === 1,
+          { any: healthState?.variables?.get('health-any-count'), increase: healthState?.variables?.get('health-increase-count') });
+        healthPlayer.hp = 2;
+        window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Player Health Changed direction filters distinguish a decrease from an increase',
+          healthState?.variables?.get('health-any-count') === 2 &&
+          healthState?.variables?.get('health-increase-count') === 1 &&
+          healthState?.variables?.get('health-decrease-count') === 1,
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count') });
+        window.PluginManager.executeHook('player.respawn', { player: healthPlayer, world: healthWorld });
+        await Promise.resolve();
+        check('Player Respawns runs its linked Event after the respawn hook',
+          healthState?.variables?.get('health-respawn-count') === 1,
+          { respawns: healthState?.variables?.get('health-respawn-count'),
+            runtimeErrors: healthState?.runtimeErrors?.slice(-3) });
+        window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
 
         player.x = 128;
         player.y = 128;
