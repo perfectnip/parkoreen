@@ -72,6 +72,16 @@
       const updatedCount = editorWorld._editorMergedCache.reduce((count, layer) => count + layer.merged.length + layer.nonMerged.length, 0);
       check('Editing an object invalidates and rebuilds the regional mesh', updatedCount === 3, updatedCount);
 
+      const opacityWorld = new World();
+      const opacityBlock = opacityWorld.addObject(new WorldObject({ id: 'opacity-ground', x: 0, y: 0, color: '#787878' }));
+      opacityBlock._mechanicsOpacity = 0.25;
+      opacityWorld.buildTileCache();
+      const fadedPixel = opacityWorld._getOrBuildRenderTile(1, 0, 0)?._ctx.getImageData(16, 16, 1, 1).data;
+      check('Static cached ground renders Mechanics opacity', Boolean(fadedPixel && fadedPixel[3] >= 63 && fadedPixel[3] <= 65), fadedPixel ? Array.from(fadedPixel) : null);
+      opacityWorld.resetMechanicsObjectStates();
+      const restoredPixel = opacityWorld._getOrBuildRenderTile(1, 0, 0)?._ctx.getImageData(16, 16, 1, 1).data;
+      check('Reset restores authored opacity in the rebuilt static cache', Boolean(restoredPixel && restoredPixel[3] === 255), restoredPixel ? Array.from(restoredPixel) : null);
+
       const passed = checks.every(item => item.passed);
       const output = document.getElementById('results');
       output.className = passed ? 'pass' : 'fail';

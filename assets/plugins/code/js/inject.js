@@ -1075,14 +1075,22 @@
 
         const objectOpacities = snapshot.objectOpacities && typeof snapshot.objectOpacities === 'object' && !Array.isArray(snapshot.objectOpacities)
             ? snapshot.objectOpacities : {};
+        let objectOpacityChanged = false;
         for (const object of world?.objects || []) {
-            if (!Object.prototype.hasOwnProperty.call(objectOpacities, object.id)) delete object._mechanicsOpacity;
+            if (!Object.prototype.hasOwnProperty.call(objectOpacities, object.id) && object._mechanicsOpacity !== undefined) {
+                delete object._mechanicsOpacity;
+                objectOpacityChanged = true;
+            }
         }
         for (const [objectId, opacity] of Object.entries(objectOpacities)) {
             const object = world?.getObjectById?.(objectId);
             if (!object || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) continue;
-            object._mechanicsOpacity = opacity;
+            if (object._mechanicsOpacity !== opacity) {
+                object._mechanicsOpacity = opacity;
+                objectOpacityChanged = true;
+            }
         }
+        if (objectOpacityChanged) world?.invalidateTileCache?.();
 
         if (snapshot.objectHealth && typeof snapshot.objectHealth === 'object' && !Array.isArray(snapshot.objectHealth)) {
             worldState.objectHealth.clear();
@@ -3259,6 +3267,7 @@
                 if (action.mode === 'map') {
                     if (object._mechanicsOpacity !== undefined) {
                         delete object._mechanicsOpacity;
+                        world?.invalidateTileCache?.();
                         if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                     }
                     break;
@@ -3274,6 +3283,7 @@
                 const opacity = Number(action.opacity);
                 if (object._mechanicsOpacity !== opacity) {
                     object._mechanicsOpacity = opacity;
+                    world?.invalidateTileCache?.();
                     if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                 }
                 break;

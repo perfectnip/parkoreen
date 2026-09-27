@@ -76,7 +76,8 @@
             id: 'event-start', type: 'event', name: 'Initialize score', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 },
               { type: 'setLayerVisibility', layerId: 'behind-player', visible: false },
-              { type: 'setObjectDrawLayer', objectId: 'phase-platform', layerId: 'above-player' }], code: ''
+              { type: 'setObjectDrawLayer', objectId: 'phase-platform', layerId: 'above-player' },
+              { type: 'setObjectOpacity', objectId: 'phase-platform', mode: 'custom', opacity: 0.35 }], code: ''
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
@@ -150,7 +151,8 @@
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-object-leave' && trigger.config?.eventId === 'event-object-leave') &&
           restored.events.some(event => event.id === 'event-start' && event.actions[1]?.type === 'setLayerVisibility' && event.actions[1].layerId === 'behind-player' &&
-            event.actions[2]?.type === 'setObjectDrawLayer' && event.actions[2].objectId === 'phase-platform') &&
+            event.actions[2]?.type === 'setObjectDrawLayer' && event.actions[2].objectId === 'phase-platform' &&
+            event.actions[3]?.type === 'setObjectOpacity' && event.actions[3].opacity === 0.35) &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           world.getObjectById('zone-start')?.zoneName === 'start-area', restored);
@@ -180,6 +182,14 @@
         check('Event moves an authored object to its selected draw layer without changing collision',
           world.getObjectById('phase-platform')?.layer === 2 && world.getObjectById('phase-platform')?.collision === true,
           { layer: world.getObjectById('phase-platform')?.layer, collision: world.getObjectById('phase-platform')?.collision });
+        check('Game Starts applies the Mechanics opacity to its object',
+          world.getObjectById('phase-platform')?._mechanicsOpacity === 0.35,
+          world.getObjectById('phase-platform')?._mechanicsOpacity);
+        world.buildTileCache();
+        const fadedPlatformPixel = world._getOrBuildRenderTile(2, 1, 1)?._ctx.getImageData(16, 16, 1, 1).data;
+        check('Mechanics opacity reaches the cached static object pixels',
+          Boolean(fadedPlatformPixel && fadedPlatformPixel[3] >= 88 && fadedPlatformPixel[3] <= 91),
+          fadedPlatformPixel ? Array.from(fadedPlatformPixel) : null);
         check('Game Starts event runs once per world session', afterSecondUpdate === 1, { afterSecondUpdate });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
@@ -194,12 +204,18 @@
         check('Object leave is edge-triggered while the player stays outside',
           afterSecondObjectLeaveUpdate === 1, { afterSecondObjectLeaveUpdate });
         window.CodePluginReset({ world });
+        world.resetMechanicsObjectStates();
         check('Mechanics reset restores default draw-layer visibility',
           world.getRenderLayerDepths().behindPlayer.includes(0) && world.getRenderLayerDepths().abovePlayer.includes(2),
           world.getRenderLayerDepths());
         check('Mechanics reset restores an object to its authored draw layer',
           world.getObjectById('phase-platform')?.layer === 1,
           { layer: world.getObjectById('phase-platform')?.layer });
+        world.buildTileCache();
+        const restoredPlatformPixel = world._getOrBuildRenderTile(1, 1, 1)?._ctx.getImageData(16, 16, 1, 1).data;
+        check('Mechanics reset restores authored alpha in cached object pixels',
+          Boolean(restoredPlatformPixel && restoredPlatformPixel[3] === 255),
+          restoredPlatformPixel ? Array.from(restoredPlatformPixel) : null);
 
         const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
         const output = document.getElementById('results');
