@@ -72,6 +72,13 @@
         const source = new World();
         source.mapName = 'Mechanics Round Trip';
         source.persistCheckpoints = true;
+        source.music = {
+          type: 'custom', customData: 'data:audio/ogg;base64,AAAA', customName: 'round-trip.ogg', volume: 50, loop: true
+        };
+        source.customBackground = {
+          enabled: true, type: 'video', data: 'data:video/mp4;base64,AAAA', playMode: 'loop',
+          loopCount: -1, endType: 'freeze', endBackground: null, sameAcrossScreens: false, reverse: false
+        };
         source.codeData = {
           triggers: [{
             id: 'trigger-start', type: 'trigger', name: 'Start once', enabled: true,
@@ -232,6 +239,13 @@
         check('PKRN ZIP archive imports through the production ZIP reader',
           archiveHeader[0] === 0x50 && archiveHeader[1] === 0x4b && world.mapName === 'Mechanics Round Trip',
           { archiveHeader, mapName: world.mapName });
+        check('PKRN ZIP import restores image, audio, and video MIME types',
+          importedEnemyData?.spriteSheet?.data?.startsWith('data:image/png;') === true &&
+            importedWorldData.music?.customData?.startsWith('data:audio/ogg;') === true &&
+            importedWorldData.customBackground?.data?.startsWith('data:video/mp4;') === true,
+          { spriteImage: importedEnemyData?.spriteSheet?.data?.slice(0, 24),
+            customMusic: importedWorldData.music?.customData?.slice(0, 24),
+            backgroundVideo: importedWorldData.customBackground?.data?.slice(0, 24) });
         check('Trigger and Event links, sprite-sheet metadata, and zone name survive World save/load',
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
