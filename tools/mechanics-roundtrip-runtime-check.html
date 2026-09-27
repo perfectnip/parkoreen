@@ -15,10 +15,11 @@
 </head>
 <body>
   <h1>Mechanics save/load and trigger runtime check</h1>
-  <p class="hint">Serve the repository root locally, then open <code>/tools/mechanics-roundtrip-runtime-check.html</code>. This page round-trips an actual World and runs the actual Code plugin trigger/action hooks without an account.</p>
+  <p class="hint">Serve the repository root locally, then open <code>/tools/mechanics-roundtrip-runtime-check.html</code>. This page runs the actual PKRN serializer/importer, round-trips a World, and executes Code plugin trigger/action hooks without an account.</p>
   <pre id="results">Loading game and Mechanics plugin…</pre>
   <script src="../assets/js/mechanicsData.js"></script>
   <script src="../assets/js/game.js"></script>
+  <script src="../assets/js/exportImport.js"></script>
   <script src="../assets/plugins/code/js/globals.js"></script>
   <script>
     window.__mechanicsHooks = new Map();
@@ -85,12 +86,20 @@
         source.addObject(new WorldObject({ id: 'zone-start', type: 'koreen', appearanceType: 'zone',
           actingType: 'zone', zoneName: 'start-area', x: -16, y: -16, width: 64, height: 64, collision: false }));
 
-        const saved = JSON.parse(JSON.stringify(source.toJSON()));
+        const worldSnapshot = JSON.parse(JSON.stringify(source.toJSON()));
+        const jsonRestoredWorld = new World();
+        jsonRestoredWorld.fromJSON(worldSnapshot);
+        const exporter = new ExportManager();
+        const importer = new ImportManager();
+        const pkrnPayload = JSON.parse(JSON.stringify(exporter.serialize(source)));
+        const importValidation = importer.validate(pkrnPayload);
+        const importedWorldData = importer.deserialize(pkrnPayload);
         const world = new World();
-        world.fromJSON(saved);
+        world.fromJSON(importedWorldData);
         const restored = world.codeData;
         check('World serialization retains its map and save options',
-          world.mapName === 'Mechanics Round Trip' && world.persistCheckpoints === true);
+          jsonRestoredWorld.mapName === 'Mechanics Round Trip' && jsonRestoredWorld.persistCheckpoints === true);
+        check('PKRN serializer and importer validate the Mechanics payload', importValidation.valid === true, importValidation);
         check('Trigger and Event link survive World save/load',
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
