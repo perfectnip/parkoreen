@@ -139,6 +139,15 @@ test('room worker validates object draw-layer overrides against map objects and 
     assert.equal(room.sanitizeMechanicsState(mapData, { objectDrawLayers: { backdrop: 'parallax' } })?.objectDrawLayers.backdrop, 'parallax');
 });
 
+test('room worker validates object collision overrides against saved map objects', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = { objects: [{ id: 'phase-platform', collision: true }], codeData: {} };
+    const valid = room.sanitizeMechanicsState(mapData, { objectCollisions: { 'phase-platform': false } });
+    assert.equal(valid?.objectCollisions['phase-platform'], false);
+    assert.equal(room.sanitizeMechanicsState(mapData, { objectCollisions: { missing: false } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { objectCollisions: { 'phase-platform': 'false' } }), null);
+});
+
 test('room worker validates sprite frame and animation state for spawned objects through their template', () => {
     const room = new GameRoom({ storage: {} }, {});
     const mapData = {

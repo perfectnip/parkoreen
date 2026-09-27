@@ -283,6 +283,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'setCheckpoint', label: 'Set Player Checkpoint' },
     { id: 'setTriggerEnabled', label: 'Set Trigger Enabled' },
     { id: 'setObjectEnabled', label: 'Set Object Enabled' },
+    { id: 'setObjectCollision', label: 'Set Object Collision' },
     { id: 'setObjectHealth', label: 'Set Object Health' },
     { id: 'damageObject', label: 'Damage Object' },
     { id: 'branchObjectHealth', label: 'Branch on Object Health' },

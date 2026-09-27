@@ -3988,6 +3988,32 @@ class World {
         return true;
     }
 
+    setMechanicsObjectCollision(id, collisionEnabled) {
+        const object = this.getObjectById(id);
+        if (!object || typeof collisionEnabled !== 'boolean') return false;
+        if (object._mechanicsOriginalCollision === undefined) {
+            object._mechanicsOriginalCollision = object.collision !== false;
+        }
+        object.collision = collisionEnabled;
+        object._mechanicsCollision = collisionEnabled;
+        if (collisionEnabled === object._mechanicsOriginalCollision) {
+            delete object._mechanicsCollision;
+            delete object._mechanicsOriginalCollision;
+        }
+        object._playerInside = false;
+        return true;
+    }
+
+    resetMechanicsObjectCollision(id) {
+        const object = this.getObjectById(id);
+        if (!object || object._mechanicsOriginalCollision === undefined) return false;
+        object.collision = object._mechanicsOriginalCollision;
+        delete object._mechanicsCollision;
+        delete object._mechanicsOriginalCollision;
+        object._playerInside = false;
+        return true;
+    }
+
     setMechanicsObjectPosition(id, x, y, options = {}) {
         if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 10000000 || Math.abs(y) > 10000000) return false;
         const object = this.getObjectById(id);
@@ -4090,6 +4116,7 @@ class World {
                 object._playerInside = false;
                 changed = true;
             }
+            if (this.resetMechanicsObjectCollision(object.id)) changed = true;
             if (object._mechanicsPosition === true) {
                 const original = object._mechanicsOriginalPosition;
                 if (original && Number.isFinite(original.x) && Number.isFinite(original.y)) {

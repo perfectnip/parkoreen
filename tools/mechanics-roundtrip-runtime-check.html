@@ -110,7 +110,8 @@
                 tag: 'enemies', maxInstances: 4, lifetime: 0 },
               { type: 'setObjectOpacity', objectId: 'phase-cube', mode: 'custom', opacity: 0.4 },
               { type: 'addVariable', variableId: 'variable-campaign-score', amount: 1 },
-              { type: 'appendListItem', variableId: 'variable-campaign-items', valueType: 'string', value: 'memory-shard' }], code: ''
+              { type: 'appendListItem', variableId: 'variable-campaign-items', valueType: 'string', value: 'memory-shard' },
+              { type: 'setObjectCollision', objectId: 'phase-platform', collisionEnabled: false }], code: ''
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
@@ -281,7 +282,8 @@
             event.actions[4]?.type === 'spawnObject' && event.actions[4].objectId === 'enemy-template' &&
             event.actions[5]?.type === 'setObjectOpacity' && event.actions[5].objectId === 'phase-cube' &&
             event.actions[6]?.variableId === 'variable-campaign-score' &&
-            event.actions[7]?.variableId === 'variable-campaign-items') &&
+            event.actions[7]?.variableId === 'variable-campaign-items' &&
+            event.actions[8]?.type === 'setObjectCollision' && event.actions[8].collisionEnabled === false) &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-enemy-frame' && event.actions[0]?.targetMode === 'touched') &&
@@ -316,9 +318,13 @@
           world.getRenderLayerDepths().behindPlayer.includes(1) &&
           world.getRenderLayerDepths().abovePlayer.includes(2),
           world.getRenderLayerDepths());
-        check('Event moves an authored object to its selected draw layer without changing collision',
-          world.getObjectById('phase-platform')?.layer === 2 && world.getObjectById('phase-platform')?.collision === true,
-          { layer: world.getObjectById('phase-platform')?.layer, collision: world.getObjectById('phase-platform')?.collision });
+        check('Event moves an authored object to its selected draw layer',
+          world.getObjectById('phase-platform')?.layer === 2,
+          { layer: world.getObjectById('phase-platform')?.layer });
+        check('Event makes an authored object pass-through without hiding it',
+          world.getObjectById('phase-platform')?.collision === false && world.getObjectById('phase-platform')?._mechanicsEnabled !== false,
+          { collision: world.getObjectById('phase-platform')?.collision,
+            enabled: world.getObjectById('phase-platform')?._mechanicsEnabled });
         check('Game Starts applies the Mechanics opacity to its object',
           world.getObjectById('phase-platform')?._mechanicsOpacity === 0.35,
           world.getObjectById('phase-platform')?._mechanicsOpacity);
@@ -396,6 +402,10 @@
         check('Mechanics reset restores an object to its authored draw layer',
           world.getObjectById('phase-platform')?.layer === 1,
           { layer: world.getObjectById('phase-platform')?.layer });
+        check('Mechanics reset restores authored object collision',
+          world.getObjectById('phase-platform')?.collision === true && world.getObjectById('phase-platform')?._mechanicsCollision === undefined,
+          { collision: world.getObjectById('phase-platform')?.collision,
+            override: world.getObjectById('phase-platform')?._mechanicsCollision });
         world.buildTileCache();
         const restoredPlatformPixel = world._getOrBuildRenderTile(1, 1, 1)?._ctx.getImageData(16, 16, 1, 1).data;
         check('Mechanics reset restores authored alpha in cached object pixels',

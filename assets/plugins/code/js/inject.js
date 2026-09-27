@@ -681,7 +681,7 @@
 
     const SHARED_MECHANICS_ACTIONS = new Set([
         'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'clearList', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
-        'setTriggerEnabled', 'setObjectEnabled', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
+        'setTriggerEnabled', 'setObjectEnabled', 'setObjectCollision', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
         'setObjectPosition', 'setObjectDrawLayer', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
     ]);
 
@@ -764,6 +764,7 @@
             if (Object.keys(cleanLists).length) playerLists[playerId] = cleanLists;
         }
         const objects = Object.create(null);
+        const objectCollisions = Object.create(null);
         const objectHealth = Object.create(null);
         const positions = Object.create(null);
         const motions = Object.create(null);
@@ -808,6 +809,7 @@
                 continue;
             }
             if (object.id && object._mechanicsEnabled !== undefined) objects[object.id] = object._mechanicsEnabled !== false;
+            if (object.id && typeof object._mechanicsCollision === 'boolean') objectCollisions[object.id] = object._mechanicsCollision;
             if (object.id && Number.isSafeInteger(object._mechanicsSpriteFrame) && object._mechanicsSpriteFrame >= 0) {
                 objectSpriteFrames[object.id] = object._mechanicsSpriteFrame;
             }
@@ -853,7 +855,7 @@
         for (const [layerId, visible] of world?._mechanicsLayerVisibility || []) {
             if (visible === false && (world.layerDefinitions || []).some(layer => layer.id === layerId)) layerVisibility[layerId] = false;
         }
-        return { variables, lists, objects, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, objectDrawLayers, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
+        return { variables, lists, objects, objectCollisions, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, objectDrawLayers, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
             gravity: Number.isFinite(world?._mechanicsGravity) ? world._mechanicsGravity : null,
             jumpForce: Number.isFinite(world?._mechanicsJumpForce) ? world._mechanicsJumpForce : null,
             playerSpeed: Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : null,
@@ -1047,6 +1049,18 @@
             const object = world?.getObjectById?.(objectId);
             if (!object || (object._mechanicsEnabled !== false) === enabled) continue;
             executeAction({ type: 'setObjectEnabled', objectId, enabled }, world, null, { authoritativeStateApplication: true });
+        }
+
+        const objectCollisions = snapshot.objectCollisions && typeof snapshot.objectCollisions === 'object' && !Array.isArray(snapshot.objectCollisions)
+            ? snapshot.objectCollisions : {};
+        for (const object of world?.objects || []) {
+            if (!Object.prototype.hasOwnProperty.call(objectCollisions, object.id) && object._mechanicsOriginalCollision !== undefined) {
+                world?.resetMechanicsObjectCollision?.(object.id);
+            }
+        }
+        for (const [objectId, collisionEnabled] of Object.entries(objectCollisions)) {
+            if (typeof collisionEnabled !== 'boolean' || !world?.getObjectById?.(objectId)) continue;
+            world?.setMechanicsObjectCollision?.(objectId, collisionEnabled);
         }
 
         const objectSpriteFrames = snapshot.objectSpriteFrames && typeof snapshot.objectSpriteFrames === 'object' && !Array.isArray(snapshot.objectSpriteFrames)
@@ -2835,6 +2849,24 @@
                         engine.updateCoinCounterUI?.();
                     }
                 }
+                break;
+            }
+            case 'setObjectCollision': {
+                if (typeof action.collisionEnabled !== 'boolean') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Collision needs a solid or pass-through state.');
+                    break;
+                }
+                const object = world?.getObjectById?.(action.objectId);
+                if (!object || object._mechanicsSpawned === true) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Collision needs an existing authored map object.');
+                    break;
+                }
+                const previous = typeof object._mechanicsCollision === 'boolean'
+                    ? object._mechanicsCollision : object.collision !== false;
+                if (!world?.setMechanicsObjectCollision?.(object.id, action.collisionEnabled)) break;
+                if (previous !== action.collisionEnabled && !context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                 break;
             }
             case 'setObjectHealth': {

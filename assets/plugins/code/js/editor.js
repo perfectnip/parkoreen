@@ -2111,6 +2111,11 @@
                 if (!(getWorld()?.objects || []).some(object => object.id === action.objectId)) return 'Select an object on this map';
                 if (typeof action.enabled !== 'boolean') return 'Choose whether the object should be enabled or disabled';
             }
+            if (action.type === 'setObjectCollision') {
+                const object = (getWorld()?.objects || []).find(candidate => candidate.id === action.objectId && candidate._mechanicsSpawned !== true);
+                if (!object) return 'Select an authored object on this map';
+                if (typeof action.collisionEnabled !== 'boolean') return 'Choose whether the object should block collisions';
+            }
             if (['setObjectHealth', 'damageObject'].includes(action.type)) {
                 if (!['fixed', 'touched'].includes(action.targetMode)) return 'Choose a fixed object or the object touched by this Event';
                 if (action.targetMode === 'fixed' && !(getWorld()?.objects || []).some(object => object.id === action.objectId)) {
@@ -5116,6 +5121,7 @@
             case 'setCheckpoint': return { type, objectId: '' };
             case 'setTriggerEnabled': return { type, triggerId: '', enabled: true };
             case 'setObjectEnabled': return { type, objectId: '', enabled: true, persist: false };
+            case 'setObjectCollision': return { type, objectId: '', collisionEnabled: true };
             case 'setObjectHealth': return { type, targetMode: 'fixed', objectId: '', health: 3, maxHealth: 3 };
             case 'damageObject': return { type, targetMode: 'touched', objectId: '', amount: 1, maxHealth: 3, defeatedEventId: '' };
             case 'spawnObject': return { type, objectId: '', xOffset: 32, yOffset: 0, tag: 'spawned', maxInstances: 16, lifetime: 10 };
@@ -5274,6 +5280,8 @@
                 return `<label class="trigger-form-label">Variable</label><select class="trigger-form-select event-action-field" data-field="variableId">${renderVariableOptions(action.variableId)}</select><label class="trigger-form-label">Panel title</label>${field('title', action.title || '', 'text', 'Score', 64)}<p class="trigger-description">Opens a local status panel that refreshes while the game runs. Map and Campaign variables show shared state; Campaign values save across maps for solo play. Player variables show the triggering local player’s value. The panel does not pause gameplay.</p>`;
             case 'setObjectEnabled':
                 return `<label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId">${renderObjectOptions(action.objectId)}</select><label class="trigger-form-label">State</label><select class="trigger-form-select event-action-field" data-field="enabled"><option value="true" ${action.enabled !== false ? 'selected' : ''}>Enabled</option><option value="false" ${action.enabled === false ? 'selected' : ''}>Disabled</option></select><label class="trigger-form-label" style="display:flex; gap:8px; align-items:center;"><input class="event-action-field" data-field="persist" type="checkbox" ${action.persist === true ? 'checked' : ''}> Remember this object state between visits</label><p class="trigger-description">Saved locally for solo play on this browser. Test runs and hosted rooms stay temporary.</p>`;
+            case 'setObjectCollision':
+                return `<label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId">${renderObjectOptions(action.objectId)}</select><label class="trigger-form-label">Collision</label><select class="trigger-form-select event-action-field" data-field="collisionEnabled"><option value="true" ${action.collisionEnabled !== false ? 'selected' : ''}>Solid</option><option value="false" ${action.collisionEnabled === false ? 'selected' : ''}>Pass through</option></select><p class="trigger-description">Changes collision for this play session while leaving the object's artwork visible. Reset restores the map setting. Hosted rooms apply the host's validated choice.</p>`;
             case 'setObjectHealth': {
                 const targetMode = action.targetMode === 'touched' ? 'touched' : 'fixed';
                 return `<label class="trigger-form-label">Target</label><select class="trigger-form-select event-action-field" data-field="targetMode"><option value="fixed" ${targetMode === 'fixed' ? 'selected' : ''}>Selected map object</option><option value="touched" ${targetMode === 'touched' ? 'selected' : ''}>Object that triggered this Event</option></select><label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId" ${targetMode === 'touched' ? 'disabled' : ''}>${renderObjectOptions(action.objectId)}</select><label class="trigger-form-label">Current health</label>${field('health', action.health ?? 3, 'number').replace('type="number"', 'type="number" min="0" max="99999" step="1"')}<label class="trigger-form-label">Maximum health</label>${field('maxHealth', action.maxHealth ?? 3, 'number').replace('type="number"', 'type="number" min="1" max="99999" step="1"')}<p class="trigger-description">Sets temporary object health for this play session. Setting health to 0 disables the object; setting positive health enables it again. Use a touched target from an object contact or attack Event.</p>`;
@@ -5484,7 +5492,7 @@
            if (!fieldName) return;
            if (input.type === 'checkbox') action[fieldName] = input.checked;
            else if (input.type === 'number') action[fieldName] = input.value.trim() === '' ? '' : Number(input.value);
-                else if (fieldName === 'enabled' || fieldName === 'repeat' || fieldName === 'equipped' || fieldName === 'loop' || fieldName === 'visible') action[fieldName] = input.value === 'true';
+                else if (fieldName === 'enabled' || fieldName === 'repeat' || fieldName === 'equipped' || fieldName === 'loop' || fieldName === 'visible' || fieldName === 'collisionEnabled') action[fieldName] = input.value === 'true';
            else action[fieldName] = input.value;
        });
        if (type === 'setMovementControl') {

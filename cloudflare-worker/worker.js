@@ -1550,7 +1550,7 @@ class GameRoom {
 
     sanitizeMechanicsState(mapData, state, validPlayerIds = new Set()) {
         if (!mapData || typeof mapData !== 'object' || !state || typeof state !== 'object' || Array.isArray(state)) return null;
-        if (Object.keys(state).some(key => !['variables', 'lists', 'objects', 'positions', 'motions', 'objectHealth', 'objectSpriteFrames', 'objectSpriteAnimations', 'objectOpacities', 'objectDrawLayers', 'playerVariables', 'playerLists', 'spawnedObjects', 'tilemapCells', 'layerVisibility', 'triggers', 'gravity', 'jumpForce', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed'].includes(key))) return null;
+        if (Object.keys(state).some(key => !['variables', 'lists', 'objects', 'objectCollisions', 'positions', 'motions', 'objectHealth', 'objectSpriteFrames', 'objectSpriteAnimations', 'objectOpacities', 'objectDrawLayers', 'playerVariables', 'playerLists', 'spawnedObjects', 'tilemapCells', 'layerVisibility', 'triggers', 'gravity', 'jumpForce', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed'].includes(key))) return null;
         if (state.gravity !== undefined && state.gravity !== null && (typeof state.gravity !== 'number' || !Number.isFinite(state.gravity) || state.gravity < 0 || state.gravity > 5)) return null;
         if (state.jumpForce !== undefined && state.jumpForce !== null && (typeof state.jumpForce !== 'number' || !Number.isFinite(state.jumpForce) || state.jumpForce < -100 || state.jumpForce > -0.1)) return null;
         if (state.playerSpeed !== undefined && state.playerSpeed !== null && (typeof state.playerSpeed !== 'number' || !Number.isFinite(state.playerSpeed) || state.playerSpeed < 0.1 || state.playerSpeed > 100)) return null;
@@ -1560,6 +1560,7 @@ class GameRoom {
         if (state.variables !== undefined && (!state.variables || typeof state.variables !== 'object' || Array.isArray(state.variables))) return null;
         if (state.lists !== undefined && (!state.lists || typeof state.lists !== 'object' || Array.isArray(state.lists))) return null;
         if (state.objects !== undefined && (!state.objects || typeof state.objects !== 'object' || Array.isArray(state.objects))) return null;
+        if (state.objectCollisions !== undefined && (!state.objectCollisions || typeof state.objectCollisions !== 'object' || Array.isArray(state.objectCollisions))) return null;
         if (state.positions !== undefined && (!state.positions || typeof state.positions !== 'object' || Array.isArray(state.positions))) return null;
         if (state.motions !== undefined && (!state.motions || typeof state.motions !== 'object' || Array.isArray(state.motions))) return null;
         if (state.objectHealth !== undefined && (!state.objectHealth || typeof state.objectHealth !== 'object' || Array.isArray(state.objectHealth))) return null;
@@ -1576,6 +1577,7 @@ class GameRoom {
         const variables = state.variables || {};
         const lists = state.lists || {};
         const objects = state.objects || {};
+        const objectCollisions = state.objectCollisions || {};
         const positions = state.positions || {};
         const motions = state.motions || {};
         const objectHealth = state.objectHealth || {};
@@ -1643,7 +1645,7 @@ class GameRoom {
                 !['zone', 'button', 'checkpoint', 'spawnpoint', 'endpoint'].includes(object.appearanceType) &&
                 !['checkpoint', 'spawnpoint', 'endpoint'].includes(object.actingType))
             .map(object => object.id));
-        if (Object.keys(variables).length > 1000 || Object.keys(lists).length > 1000 || Object.keys(objects).length > 2000 || Object.keys(positions).length > 2000 || Object.keys(motions).length > 2000 || Object.keys(objectHealth).length > 512 || Object.keys(objectSpriteFrames).length > 2000 || Object.keys(objectSpriteAnimations).length > 2000 || Object.keys(objectOpacities).length > 2000 || Object.keys(objectDrawLayers).length > 2000 || Object.keys(playerVariables).length > 100 || Object.keys(playerLists).length > 100 || Object.keys(spawnedObjects).length > 64 || Object.keys(tilemapCells).length > 2000 || Object.keys(layerVisibility).length > 64 || Object.keys(triggers).length > 1000) return null;
+        if (Object.keys(variables).length > 1000 || Object.keys(lists).length > 1000 || Object.keys(objects).length > 2000 || Object.keys(objectCollisions).length > 2000 || Object.keys(positions).length > 2000 || Object.keys(motions).length > 2000 || Object.keys(objectHealth).length > 512 || Object.keys(objectSpriteFrames).length > 2000 || Object.keys(objectSpriteAnimations).length > 2000 || Object.keys(objectOpacities).length > 2000 || Object.keys(objectDrawLayers).length > 2000 || Object.keys(playerVariables).length > 100 || Object.keys(playerLists).length > 100 || Object.keys(spawnedObjects).length > 64 || Object.keys(tilemapCells).length > 2000 || Object.keys(layerVisibility).length > 64 || Object.keys(triggers).length > 1000) return null;
 
         const cleanVariables = Object.create(null);
         for (const [id, value] of Object.entries(variables)) {
@@ -1695,6 +1697,11 @@ class GameRoom {
         for (const [id, enabled] of Object.entries(objects)) {
             if (!objectIds.has(id) || typeof enabled !== 'boolean') return null;
             cleanObjects[id] = enabled;
+        }
+        const cleanObjectCollisions = Object.create(null);
+        for (const [id, collisionEnabled] of Object.entries(objectCollisions)) {
+            if (!objectIds.has(id) || typeof collisionEnabled !== 'boolean') return null;
+            cleanObjectCollisions[id] = collisionEnabled;
         }
         const cleanPositions = Object.create(null);
         for (const [id, position] of Object.entries(positions)) {
@@ -1880,7 +1887,7 @@ class GameRoom {
             if (!triggerDefs.has(id) || typeof enabled !== 'boolean') return null;
             cleanTriggers[id] = enabled;
         }
-        const cleanState = { variables: cleanVariables, lists: cleanLists, objects: cleanObjects, positions: cleanPositions, motions: cleanMotions, objectHealth: cleanObjectHealth, objectSpriteFrames: cleanObjectSpriteFrames, objectSpriteAnimations: cleanObjectSpriteAnimations, objectOpacities: cleanObjectOpacities, objectDrawLayers: cleanObjectDrawLayers, playerVariables: cleanPlayerVariables, playerLists: cleanPlayerLists, spawnedObjects: cleanSpawnedObjects, tilemapCells: cleanTilemapCells, layerVisibility: cleanLayerVisibility, triggers: cleanTriggers, gravity, jumpForce, playerSpeed, horizontalAcceleration, airControl, terminalFallSpeed };
+        const cleanState = { variables: cleanVariables, lists: cleanLists, objects: cleanObjects, objectCollisions: cleanObjectCollisions, positions: cleanPositions, motions: cleanMotions, objectHealth: cleanObjectHealth, objectSpriteFrames: cleanObjectSpriteFrames, objectSpriteAnimations: cleanObjectSpriteAnimations, objectOpacities: cleanObjectOpacities, objectDrawLayers: cleanObjectDrawLayers, playerVariables: cleanPlayerVariables, playerLists: cleanPlayerLists, spawnedObjects: cleanSpawnedObjects, tilemapCells: cleanTilemapCells, layerVisibility: cleanLayerVisibility, triggers: cleanTriggers, gravity, jumpForce, playerSpeed, horizontalAcceleration, airControl, terminalFallSpeed };
         if (new TextEncoder().encode(JSON.stringify(cleanState)).byteLength > MAX_MECHANICS_STATE_BYTES) return null;
         return cleanState;
     }
