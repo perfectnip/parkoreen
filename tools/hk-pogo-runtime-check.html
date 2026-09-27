@@ -52,11 +52,28 @@
       const results = [];
 
       function simulate({ label, kind = 'block', shape = 'box', platformY = 200,
-        playerY = null, vy = 0, disabled = false, oneWayPolygon = true }) {
+        playerY = null, vy = 0, disabled = false, oneWayPolygon = true, nestedQuery = false }) {
         const world = new World();
         world.gravity = 0.71;
         world.jumpForce = -13.2;
         world.terminalFallSpeed = 16;
+
+        // Mechanics attack Events can query the World synchronously. This
+        // harmless, non-hittable overlap runs that hook before the platform
+        // candidate and detects whether the active attack list survives the
+        // spatial hash's reusable query buffer being replaced.
+        let nestedQueryTriggered = false;
+        if (nestedQuery) {
+          world.addObject(new WorldObject({ id: 'nested-query-interceptor', x: 103, y: 198, width: 26, height: 8,
+            type: 'coin', appearanceType: 'coin', actingType: 'coin', collision: false }));
+          window.PluginManager.registerHook('player.attack.hit', data => {
+            if (data.player?._pogoTestNestedQuery) {
+              nestedQueryTriggered = true;
+              data.world.queryNear(4096, 4096, 32, 32);
+            }
+            return data;
+          }, 'pogo-runtime-check');
+        }
 
         let object;
         if (kind.startsWith('tilemap:')) {
@@ -94,6 +111,7 @@
         player.vy = vy;
         player.input.attack = true;
         player.input.down = true;
+        player._pogoTestNestedQuery = nestedQuery;
         window.PluginManager.executeHook('player.init', { player, world });
 
         const hookResult = window.PluginManager.executeHook('player.update', {
@@ -104,6 +122,7 @@
         if (hookResult.skipPhysics) player.moveWithCollision(world);
         else player.update(world, null);
         return { label, hit, skipPhysics: hookResult.skipPhysics === true, velocityY: player.vy,
+          nestedQueryTriggered,
           object: { type: object.type, appearanceType: object.appearanceType, actingType: object.actingType,
             collision: object.collision, available: object._mechanicsEnabled !== false },
           attackCandidates: nearby.length };
@@ -141,6 +160,10 @@
         check('rising player cannot pogo', !rising.hit && !rising.skipPhysics, rising);
         const decorative = simulate({ label: 'decorative tile cell', kind: 'tilemap:decorative', platformY: 192 });
         check('decorative tile cannot pogo', !decorative.hit && !decorative.skipPhysics, decorative);
+        const nestedQuery = simulate({ label: 'platform after nested Mechanics query', nestedQuery: true });
+        check('pogo target remains reachable after an attack Event queries the World',
+          nestedQuery.nestedQueryTriggered && nestedQuery.hit && nestedQuery.skipPhysics && nestedQuery.velocityY < 0,
+          nestedQuery);
 
         const report = { total: results.length, passed: results.filter(item => item.passed).length, results };
         const output = document.getElementById('results');
