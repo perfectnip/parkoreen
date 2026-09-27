@@ -573,6 +573,18 @@
         return trigger.enabled !== false;
     };
 
+    // Trigger actions run synchronously, but toggles take effect on the next
+    // dispatch pass. Snapshotting enabled state prevents one trigger from
+    // changing which later triggers run based on their order in map data.
+    const snapshotMechanicsTriggerEnabled = (world, triggers) => {
+        const enabled = new Map();
+        for (const trigger of triggers || []) enabled.set(trigger, isMechanicsTriggerEnabled(world, trigger));
+        return enabled;
+    };
+
+    const isMechanicsTriggerEnabledInSnapshot = (world, trigger, snapshot) =>
+        snapshot?.has(trigger) ? snapshot.get(trigger) : isMechanicsTriggerEnabled(world, trigger);
+
     const writeObjectHealth = (worldState, objectId, current, maximum) => {
         if (!worldState || typeof objectId !== 'string' || !objectId ||
             !Number.isSafeInteger(current) || !Number.isSafeInteger(maximum) ||
@@ -4465,12 +4477,12 @@
     };
 
     // Check if trigger should fire
-    const evaluateTrigger = (trigger, world, player, data) => {
+    const evaluateTrigger = (trigger, world, player, data, enabledSnapshot = null) => {
         if (!trigger) return false;
 
         // Keep edge state current while disabled so re-enabling a trigger does
         // not mistake an existing condition, held key, or contact for a new edge.
-        if (!isMechanicsTriggerEnabled(world, trigger)) {
+        if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) {
             if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType)) {
                 const state = getTriggerState(getPlayerState(player, world), trigger);
                 const touchedObject = findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape);
@@ -5059,9 +5071,11 @@
             data.touchedPlayerId = touchedPlayer?.id || null;
             // Evaluate all triggers
             const codeData = getCodeData(world);
-            for (const trigger of codeData.triggers || []) {
+            const updateTriggers = (codeData.triggers || []).slice();
+            const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, updateTriggers);
+            for (const trigger of updateTriggers) {
                 try {
-                    if (evaluateTrigger(trigger, world, player, data)) {
+                    if (evaluateTrigger(trigger, world, player, data, enabledSnapshot)) {
                         // Execute linked event if any (fall back to old actionId for backward compatibility)
                         const linkedEventId = trigger.config?.eventId || trigger.config?.actionId;
                         if (linkedEventId) {
@@ -5139,8 +5153,9 @@
                 const triggers = getCodeData(world).triggers.filter(trigger =>
                     trigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_JUMPS
                 );
+                const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
                 for (const trigger of triggers) {
-                    if (!isMechanicsTriggerEnabled(world, trigger)) continue;
+                    if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                     const eventId = trigger.config?.eventId || trigger.config?.actionId;
                     if (!eventId) continue;
                     executeEvent(eventId, world, player, {
@@ -5166,8 +5181,12 @@
             if (!player || !world || !object || object._mechanicsEnabled === false || object._collected === true) return data;
             activateWorldRuntime(world);
             const objectId = object.id;
-            for (const trigger of getCodeData(world).triggers) {
-                if (!isMechanicsTriggerEnabled(world, trigger) || trigger?.triggerType !== CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT) continue;
+            const attackTriggers = getCodeData(world).triggers.filter(trigger =>
+                trigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT
+            );
+            const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, attackTriggers);
+            for (const trigger of attackTriggers) {
+                if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                 if (trigger.config?.objectId !== objectId && object._mechanicsSpawnTemplateId !== trigger.config?.objectId) continue;
                 const eventId = trigger.config?.eventId || trigger.config?.actionId;
                 if (!eventId) continue;
@@ -5192,8 +5211,12 @@
             const { player, world } = data || {};
             if (!player || !world) return data;
             activateWorldRuntime(world);
-            for (const trigger of getCodeData(world).triggers) {
-                if (!isMechanicsTriggerEnabled(world, trigger) || trigger?.triggerType !== CODE_TRIGGER_TYPES.GAME_ENDS) continue;
+            const triggers = getCodeData(world).triggers.filter(trigger =>
+                trigger?.triggerType === CODE_TRIGGER_TYPES.GAME_ENDS
+            );
+            const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
+            for (const trigger of triggers) {
+                if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                 const eventId = trigger.config?.eventId || trigger.config?.actionId;
                 if (!eventId) continue;
                 executeEvent(eventId, world, player, {
@@ -5218,8 +5241,12 @@
             const sourceId = typeof source?.id === 'string' ? source.id : null;
             const sourceName = source?.name || source?.displayName || source?.appearanceType || source?.actingType || source?.type || '';
             const sourceType = source?.appearanceType || source?.actingType || source?.type || '';
-            for (const trigger of getCodeData(world).triggers) {
-                if (!isMechanicsTriggerEnabled(world, trigger) || trigger?.triggerType !== CODE_TRIGGER_TYPES.PLAYER_DIES) continue;
+            const triggers = getCodeData(world).triggers.filter(trigger =>
+                trigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_DIES
+            );
+            const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
+            for (const trigger of triggers) {
+                if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                 const eventId = trigger.config?.eventId || trigger.config?.actionId;
                 if (!eventId) continue;
                 executeEvent(eventId, world, player, {
@@ -5247,8 +5274,9 @@
                 const triggers = getCodeData(currentWorld).triggers.filter(trigger =>
                     trigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_RESPAWNS
                 );
+                const enabledSnapshot = snapshotMechanicsTriggerEnabled(currentWorld, triggers);
                 for (const trigger of triggers) {
-                    if (!isMechanicsTriggerEnabled(currentWorld, trigger)) continue;
+                    if (!isMechanicsTriggerEnabledInSnapshot(currentWorld, trigger, enabledSnapshot)) continue;
                     const eventId = trigger.config?.eventId || trigger.config?.actionId;
                     if (!eventId) continue;
                     executeEvent(eventId, currentWorld, player, {
@@ -5277,8 +5305,9 @@
                 const triggers = getCodeData(world).triggers.filter(trigger =>
                     trigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_LANDS
                 );
+                const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
                 for (const trigger of triggers) {
-                    if (!isMechanicsTriggerEnabled(world, trigger)) continue;
+                    if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                     const eventId = trigger.config?.eventId || trigger.config?.actionId;
                     if (!eventId) continue;
                     executeEvent(eventId, world, player, {
@@ -5309,9 +5338,10 @@
             const triggers = (codeData?.triggers || []).filter(t =>
                 t.triggerType === CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON
             );
+            const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
 
             for (const trigger of triggers) {
-                if (!isMechanicsTriggerEnabled(world, trigger)) continue;
+                if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                 if (trigger.config?.buttonName === button.name) {
                     const linkedEventId = trigger.config?.eventId || trigger.config?.actionId;
                     if (linkedEventId) {
@@ -5338,9 +5368,10 @@
                 const playerUsername = typeof member.playerUsername === 'string' ? member.playerUsername.slice(0, 128) : '';
                 const eventPlayer = { id: playerId, name: playerName, username: playerUsername };
                 const triggers = getCodeData(world).triggers.filter(trigger => trigger?.triggerType === triggerType);
+                const enabledSnapshot = snapshotMechanicsTriggerEnabled(world, triggers);
 
                 for (const trigger of triggers) {
-                    if (!isMechanicsTriggerEnabled(world, trigger)) continue;
+                    if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) continue;
                     const eventId = trigger.config?.eventId || trigger.config?.actionId;
                     if (!eventId) continue;
                     executeEvent(eventId, world, eventPlayer, {
