@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mechanics Save/Load Runtime Check</title>
+  <style>
+    body { background: #111827; color: #e5e7eb; font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 850px; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    .hint { color: #a5b4fc; }
+    .pass { color: #86efac; }
+    .fail { color: #fca5a5; }
+    pre { white-space: pre-wrap; background: #1f2937; border-radius: 8px; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Mechanics save/load and trigger runtime check</h1>
+  <p class="hint">Serve the repository root locally, then open <code>/tools/mechanics-roundtrip-runtime-check.html</code>. This page round-trips an actual World and runs the actual Code plugin trigger/action hooks without an account.</p>
+  <pre id="results">Loading game and Mechanics plugin…</pre>
+  <script src="../assets/js/mechanicsData.js"></script>
+  <script src="../assets/js/game.js"></script>
+  <script src="../assets/plugins/code/js/globals.js"></script>
+  <script>
+    window.__mechanicsHooks = new Map();
+    window.PluginManager = {
+      __mechanicsHooks: window.__mechanicsHooks,
+      plugins: new Map(),
+      registerHook(name, callback, pluginId, priority = 0) {
+        if (!this.__mechanicsHooks.has(name)) this.__mechanicsHooks.set(name, []);
+        const hooks = this.__mechanicsHooks.get(name);
+        hooks.push({ callback, priority });
+        hooks.sort((left, right) => left.priority - right.priority);
+      },
+      executeHook(name, data) {
+        for (const hook of this.__mechanicsHooks.get(name) || []) data = hook.callback(data) || data;
+        return data;
+      },
+      playSound() {},
+      stopSound() {}
+    };
+    const ctx = {
+      api: { onCleanup() { return () => {}; } },
+      pluginManager: window.PluginManager,
+      pluginId: 'code',
+      world: null,
+      hooks: {},
+      sounds: {}
+    };
+  </script>
+  <script src="../assets/plugins/code/js/inject.js"></script>
+  <script>
+    (() => {
+      const checks = [];
+      const check = (label, passed, details = null) => checks.push({ label, passed: Boolean(passed), details });
+
+      try {
+        const source = new World();
+        source.mapName = 'Mechanics Round Trip';
+        source.persistCheckpoints = true;
+        source.codeData = {
+          triggers: [{
+            id: 'trigger-start', type: 'trigger', name: 'Start once', enabled: true,
+            triggerType: CODE_TRIGGER_TYPES.GAME_STARTS, config: { eventId: 'event-start' }
+          }, {
+            id: 'trigger-zone', type: 'trigger', name: 'Zone entry', enabled: true,
+            triggerType: CODE_TRIGGER_TYPES.PLAYER_ENTER_ZONE,
+            config: { eventId: 'event-zone', zoneName: 'start-area' }
+          }],
+          events: [{
+            id: 'event-start', type: 'event', name: 'Initialize score', enabled: true,
+            actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 }], code: ''
+          }, {
+            id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
+            actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
+          }],
+          variables: [{
+            id: 'variable-score', type: 'variable', name: 'Score', enabled: true,
+            variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
+          }, {
+            id: 'variable-zone-entries', type: 'variable', name: 'Zone Entries', enabled: true,
+            variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
+          }],
+          creatorExtension: { preserve: ['future-action-field', 3] }
+        };
+        source.addObject(new WorldObject({ id: 'zone-start', type: 'koreen', appearanceType: 'zone',
+          actingType: 'zone', zoneName: 'start-area', x: -16, y: -16, width: 64, height: 64, collision: false }));
+
+        const saved = JSON.parse(JSON.stringify(source.toJSON()));
+        const world = new World();
+        world.fromJSON(saved);
+        const restored = world.codeData;
+        check('World serialization retains its map and save options',
+          world.mapName === 'Mechanics Round Trip' && world.persistCheckpoints === true);
+        check('Trigger and Event link survive World save/load',
+          restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
+          restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
+          restored.events.some(event => event.id === 'event-start' && event.actions[0]?.type === 'addVariable') &&
+          restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
+          world.getObjectById('zone-start')?.zoneName === 'start-area', restored);
+        check('Variable definition and extension fields survive World save/load',
+          restored.variables[0]?.id === 'variable-score' &&
+          restored.variables[0]?.defaultValue === 0 &&
+          restored.creatorExtension?.preserve?.[0] === 'future-action-field', restored);
+
+        const player = new Player(0, 0, 'Round Trip Tester', '#fff');
+        player.id = 'local-player';
+        window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
+        window.PluginManager.executeHook('player.init', { player, world });
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        const state = window.__parkoreenCodeRuntimeState?.worldStates?.get(world);
+        const afterFirstUpdate = state?.variables?.get('variable-score');
+        const afterFirstZoneEntry = state?.variables?.get('variable-zone-entries');
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        const afterSecondUpdate = state?.variables?.get('variable-score');
+        const afterSecondZoneUpdate = state?.variables?.get('variable-zone-entries');
+        check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
+        check('Game Starts event runs once per world session', afterSecondUpdate === 1, { afterSecondUpdate });
+        check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
+        check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
+
+        const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
+        const output = document.getElementById('results');
+        output.className = report.passed === report.total ? 'pass' : 'fail';
+        output.textContent = JSON.stringify(report, null, 2);
+      } catch (error) {
+        const output = document.getElementById('results');
+        output.className = 'fail';
+        output.textContent = String(error.stack || error);
+      }
+    })();
+  </script>
+</body>
+</html>
