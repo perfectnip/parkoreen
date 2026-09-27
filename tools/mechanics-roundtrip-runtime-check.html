@@ -226,6 +226,11 @@
         const world = new World();
         world.fromJSON(importedWorldData);
         const loadedEnemyTemplate = world.getObjectById('enemy-template');
+        check('World load retains imported custom music and video background media',
+          world.music?.customData?.startsWith('data:audio/ogg;') === true &&
+            world.customBackground?.data?.startsWith('data:video/mp4;') === true,
+          { customMusic: world.music?.customData?.slice(0, 24),
+            backgroundVideo: world.customBackground?.data?.slice(0, 24) });
         check('World load retains the imported sprite-sheet template',
           loadedEnemyTemplate?.spriteSheet?.frameCount === 4 &&
             loadedEnemyTemplate.spriteSheet.animations.some(animation => animation.name === 'Hurt'),
