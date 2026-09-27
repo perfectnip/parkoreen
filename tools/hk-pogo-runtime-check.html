@@ -129,10 +129,13 @@
           player, world, audioManager: null, skipPhysics: false
         });
         const hit = player._attackHitThisSwing === true;
+        const beforePhysicsY = player.y;
         const nearby = world.queryNear(103, player.y + player.height - 2, 26, 92);
         if (hookResult.skipPhysics) player.moveWithCollision(world);
         else player.update(world, null);
         return { label, hit, skipPhysics: hookResult.skipPhysics === true, velocityY: player.vy,
+          beforePhysicsY, afterPhysicsY: player.y, movedUpAfterPhysics: player.y < beforePhysicsY,
+          groundedAfterPhysics: player.isOnGround === true,
           nestedQueryTriggered,
           object: { type: object.type, appearanceType: object.appearanceType, actingType: object.actingType,
             collision: object.collision, available: object._mechanicsEnabled !== false },
@@ -161,7 +164,9 @@
           simulate({ label: 'solid polygon tile cell', kind: 'tilemap:polygon', platformY: 192, oneWayPolygon: false })
         ];
         for (const result of bounceCases) {
-          check(`${result.label} rebounds upward`, result.hit && result.skipPhysics && result.velocityY < 0, result);
+          check(`${result.label} survives the next collision step`,
+            result.hit && result.skipPhysics && result.velocityY < 0 &&
+            result.movedUpAfterPhysics && !result.groundedAfterPhysics, result);
         }
 
         const early = simulate({ label: 'platform above nail reach', playerY: 120 });
@@ -208,8 +213,11 @@
           renderEffectPixels({ isAttacking: true, attackDirection: 'down', attackStartTime: now - 40 }, { slashEffects: false }) === 0);
         const pogoImpactPixels = renderEffectPixels({ _nailImpact: { time: now - 30, x: 160, y: 160, direction: 'down' } });
         check('down-slash nail impact sparks render', pogoImpactPixels > 0, pogoImpactPixels);
-        const bouncePixels = renderEffectPixels({ _pogoBounceImpact: { time: now - 30, x: 160, y: 160 } });
+        const bounceState = { _pogoBounceImpact: { time: now - 30, x: 160, y: 160 } };
+        const bouncePixels = renderEffectPixels(bounceState);
         check('pogo rebound flare renders', bouncePixels > 0, bouncePixels);
+        check('pogo rebound flare respects the impact-effects setting',
+          renderEffectPixels(bounceState, { impactEffects: false }) === 0);
         const trailPixels = renderEffectPixels({ dashTrail: [{ time: now, x: 130, y: 130 }] });
         check('dash afterimage renders', trailPixels > 0, trailPixels);
         check('dash afterimage respects its setting',
