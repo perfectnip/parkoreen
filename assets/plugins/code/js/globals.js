@@ -271,6 +271,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'toggleVariable', label: 'Toggle Boolean Variable' },
     { id: 'branchVariable', label: 'Branch on Variable' },
     { id: 'branchPlayerCount', label: 'Branch on Player Count' },
+    { id: 'branchPlayerHealth', label: 'Branch on Player Health' },
     { id: 'appendListItem', label: 'Add Item to List' },
     { id: 'removeListItem', label: 'Remove Item from List' },
     { id: 'clearList', label: 'Clear List' },

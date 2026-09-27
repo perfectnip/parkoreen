@@ -433,16 +433,22 @@
           events: [
             { id: 'health-any-event', type: 'event', name: 'Count health changes', enabled: true,
               actions: [{ type: 'setTriggerEnabled', triggerId: 'health-increase-trigger', enabled: false },
-                { type: 'addVariable', variableId: 'health-any-count', amount: 1 }], code: healthTriggerPythonCode },
+                { type: 'addVariable', variableId: 'health-any-count', amount: 1 },
+                { type: 'branchPlayerHealth', operator: 'greaterThanOrEqual', value: 4,
+                  trueEventId: 'health-high-event', falseEventId: 'health-low-event' }], code: healthTriggerPythonCode },
             { id: 'health-increase-event', type: 'event', name: 'Count health increases', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-increase-count', amount: 1 }], code: '' },
             { id: 'health-decrease-event', type: 'event', name: 'Count health decreases', enabled: true,
               actions: [{ type: 'setTriggerEnabled', triggerId: 'health-increase-trigger', enabled: true },
                 { type: 'addVariable', variableId: 'health-decrease-count', amount: 1 }], code: '' },
+            { id: 'health-low-event', type: 'event', name: 'Low health route', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-low-count', amount: 1 }], code: '' },
+            { id: 'health-high-event', type: 'event', name: 'High health route', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-high-count', amount: 1 }], code: '' },
             { id: 'health-respawn-event', type: 'event', name: 'Count respawns', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-respawn-count', amount: 1 }], code: '' }
           ],
-          variables: ['health-any-count', 'health-increase-count', 'health-decrease-count', 'health-respawn-count']
+          variables: ['health-any-count', 'health-increase-count', 'health-decrease-count', 'health-low-count', 'health-high-count', 'health-respawn-count']
             .map(id => ({ id, type: 'variable', name: id, enabled: true,
               variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0 }))
         };
@@ -471,6 +477,9 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count'), result: healthTriggerPythonResult });
+        check('Branch on Player Health follows the current player into the matching Event',
+          healthState?.variables?.get('health-high-count') === 1 && healthState?.variables?.get('health-low-count') === 0,
+          { highHealth: healthState?.variables?.get('health-high-count'), lowHealth: healthState?.variables?.get('health-low-count') });
         check('An Event trigger toggle does not reorder triggers within the current update pass',
           healthState?.triggerEnabled?.get('health-increase-trigger') === false &&
           healthState?.variables?.get('health-increase-count') === 1,
@@ -489,6 +498,9 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count') });
+        check('Branch on Player Health routes a low-health event',
+          healthState?.variables?.get('health-low-count') === 1 && healthState?.variables?.get('health-high-count') === 1,
+          { lowHealth: healthState?.variables?.get('health-low-count'), highHealth: healthState?.variables?.get('health-high-count') });
         window.PluginManager.executeHook('player.respawn', { player: healthPlayer, world: healthWorld });
         await Promise.resolve();
         check('Player Respawns runs its linked Event after the respawn hook',

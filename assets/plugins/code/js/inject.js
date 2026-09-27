@@ -703,21 +703,40 @@
 
     const getMultiplayerManager = () => typeof window !== 'undefined' ? window.MultiplayerManager || null : null;
 
-    const eventUsesSharedMechanics = (world, eventId, visited = new Set()) => {
+    const getMechanicsActionEventRoutes = action => {
+        if (action?.type === 'runEvent') return [action.eventId];
+        if (action?.type === 'damageObject') return [action.defeatedEventId];
+        if (['branchVariable', 'branchListContains', 'branchInventoryItemEquipped', 'consumeInventoryItem',
+            'branchPlayerCount', 'branchPlayerHealth', 'branchObjectHealth'].includes(action?.type)) {
+            return [action.trueEventId, action.falseEventId];
+        }
+        if (action?.type === 'showChoice' || action?.type === 'showMenu') {
+            return [...(Array.isArray(action.choices) ? action.choices.map(choice => choice?.eventId) : []),
+                ...(action.type === 'showMenu' && action.cancelEventId ? [action.cancelEventId] : [])];
+        }
+        return [];
+    };
+
+    const eventChainUsesLocalPlayerHealth = (world, eventId, visited = new Set()) => {
         if (!eventId || visited.has(eventId)) return false;
+        visited.add(eventId);
+        const event = getCodeData(world).events.find(item => item?.id === eventId);
+        for (const action of Array.isArray(event?.actions) ? event.actions : []) {
+            if (action?.type === 'branchPlayerHealth') return true;
+            if (getMechanicsActionEventRoutes(action).some(nextId =>
+                eventChainUsesLocalPlayerHealth(world, nextId, visited))) return true;
+        }
+        return false;
+    };
+
+    const eventUsesSharedMechanics = (world, eventId, visited = new Set()) => {
+        if (!eventId || visited.has(eventId) || eventChainUsesLocalPlayerHealth(world, eventId)) return false;
         visited.add(eventId);
         const event = getCodeData(world).events.find(item => item?.id === eventId);
         const actions = Array.isArray(event?.actions) ? event.actions : [];
         for (const action of actions) {
             if (SHARED_MECHANICS_ACTIONS.has(action?.type)) return true;
-            const nextEvents = action?.type === 'runEvent'
-                ? [action.eventId]
-                : action?.type === 'damageObject' ? [action.defeatedEventId]
-                : action?.type === 'branchVariable' || action?.type === 'branchListContains' || action?.type === 'branchInventoryItemEquipped' || action?.type === 'consumeInventoryItem' || action?.type === 'branchPlayerCount' || action?.type === 'branchObjectHealth'
-                    ? [action.trueEventId, action.falseEventId]
-                    : action?.type === 'showChoice' || action?.type === 'showMenu'
-                        ? [...(Array.isArray(action.choices) ? action.choices.map(choice => choice?.eventId) : []), ...(action.type === 'showMenu' && action.cancelEventId ? [action.cancelEventId] : [])]
-                    : [];
+            const nextEvents = getMechanicsActionEventRoutes(action);
             if (nextEvents.some(nextId => eventUsesSharedMechanics(world, nextId, visited))) return true;
         }
         return false;
@@ -2785,6 +2804,34 @@
                     : operator === 'lessThan' ? matches < threshold
                         : matches === threshold;
                 const eventId = count ? action.trueEventId : action.falseEventId;
+                if (eventId && typeof runEvent === 'function') return runEvent(eventId);
+                break;
+            }
+            case 'branchPlayerHealth': {
+                const health = player?.hp;
+                const value = Number(action.value);
+                const comparisons = {
+                    equals: (current, expected) => current === expected,
+                    notEquals: (current, expected) => current !== expected,
+                    lessThan: (current, expected) => current < expected,
+                    lessThanOrEqual: (current, expected) => current <= expected,
+                    greaterThan: (current, expected) => current > expected,
+                    greaterThanOrEqual: (current, expected) => current >= expected
+                };
+                if (!Number.isFinite(health) || health < 0) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Branch on Player Health needs a plugin that provides a non-negative numeric player.hp value.');
+                    break;
+                }
+                const compare = comparisons[action.operator];
+                if (!compare || !isFiniteMechanicsNumber(action.value) || !Number.isFinite(value) || value < 0 || value > 99999) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Player health comparison needs a supported operator and a number from 0 to 99,999.');
+                    break;
+                }
+                context.playerHealth = health;
+                context.playerMaxHealth = Number.isFinite(player?.maxHP) && player.maxHP >= 0 ? player.maxHP : null;
+                const eventId = compare(health, value) ? action.trueEventId : action.falseEventId;
                 if (eventId && typeof runEvent === 'function') return runEvent(eventId);
                 break;
             }
