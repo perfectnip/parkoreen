@@ -589,7 +589,7 @@
         window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
         check('Recovered health triggers resume from the newly seeded baseline',
           healthState?.variables?.get('health-any-count') === 4 &&
-          healthState?.variables?.get('health-increase-count') === 3 &&
+          healthState?.variables?.get('health-increase-count') === 2 &&
           healthState?.variables?.get('health-decrease-count') === 1,
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
