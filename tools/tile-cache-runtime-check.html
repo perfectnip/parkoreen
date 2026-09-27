@@ -79,6 +79,8 @@
       const fadedPixel = opacityWorld._getOrBuildRenderTile(1, 0, 0)?._ctx.getImageData(16, 16, 1, 1).data;
       check('Static cached ground renders Mechanics opacity', Boolean(fadedPixel && fadedPixel[3] >= 63 && fadedPixel[3] <= 65), fadedPixel ? Array.from(fadedPixel) : null);
       opacityWorld.resetMechanicsObjectStates();
+      check('Reset invalidates the static tile cache', opacityWorld._tileCacheReady === false && opacityWorld._tileCacheChunks.size === 0);
+      opacityWorld.buildTileCache();
       const restoredPixel = opacityWorld._getOrBuildRenderTile(1, 0, 0)?._ctx.getImageData(16, 16, 1, 1).data;
       check('Reset restores authored opacity in the rebuilt static cache', Boolean(restoredPixel && restoredPixel[3] === 255), restoredPixel ? Array.from(restoredPixel) : null);
 

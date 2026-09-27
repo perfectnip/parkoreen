@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFile, createReadStream, statSync } from 'node:fs';
+import { createReadStream, statSync } from 'node:fs';
+import { appendFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
