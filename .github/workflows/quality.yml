@@ -50,3 +50,11 @@ jobs:
           do
             node tools/validate-plugin.mjs "${manifest%/plugin.json}"
           done
+
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Run browser runtime checks
+        run: node tools/run-browser-runtime-checks.mjs
