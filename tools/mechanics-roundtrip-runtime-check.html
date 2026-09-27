@@ -427,6 +427,33 @@
           otherAccountState?.lists?.get('variable-campaign-items')?.length === 1,
           { score: otherAccountState?.variables?.get('variable-campaign-score'), items: otherAccountState?.lists?.get('variable-campaign-items') });
 
+        const transitionWorld = makeCampaignWorld('Game Ends Transition', 'game-ends-transition-map');
+        transitionWorld.codeData.variables.push({ id: 'variable-after-transition', type: 'variable', name: 'After Transition',
+          enabled: true, variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0 });
+        transitionWorld.codeData.triggers.push({ id: 'trigger-game-ends-transition', type: 'trigger', name: 'Next scene',
+          enabled: true, triggerType: CODE_TRIGGER_TYPES.GAME_ENDS, config: { eventId: 'event-game-ends-transition' } });
+        transitionWorld.codeData.events.push({ id: 'event-game-ends-transition', type: 'event', name: 'Load next scene', enabled: true,
+          actions: [
+            { type: 'transitionToMap', mapId: 'next-scene' },
+            { type: 'setVariable', variableId: 'variable-after-transition', value: 1 }
+          ], code: '' });
+        const transitionPlayer = new Player(0, 0, 'Transition Tester', '#fff');
+        transitionPlayer.id = 'transition-player';
+        window.engine = { world: transitionWorld, state: 'playing', localPlayer: transitionPlayer, remotePlayers: new Map() };
+        const previousTransitionHandler = window.ParkoreenTransitionToMap;
+        const requestedSceneIds = [];
+        window.ParkoreenTransitionToMap = async mapId => { requestedSceneIds.push(mapId); return true; };
+        window.PluginManager.executeHook('game.ended', {
+          player: transitionPlayer, world: transitionWorld, elapsedMs: 12000, wasTestMode: false
+        });
+        const transitionState = window.__parkoreenCodeRuntimeState?.worldStates?.get(transitionWorld);
+        await Promise.resolve();
+        window.ParkoreenTransitionToMap = previousTransitionHandler;
+        check('Game Ends can transition to a saved scene and stop later Event actions',
+          requestedSceneIds.length === 1 && requestedSceneIds[0] === 'next-scene' &&
+            transitionState?.variables?.get('variable-after-transition') === 0,
+          { requestedSceneIds, laterActionValue: transitionState?.variables?.get('variable-after-transition') });
+
         const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
         const output = document.getElementById('results');
         output.className = report.passed === report.total ? 'pass' : 'fail';
