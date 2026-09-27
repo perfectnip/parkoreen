@@ -32,7 +32,7 @@ Build parkour courses in the editor, test them locally, then host a real-time mu
 - **2D platformer physics** — smooth movement, jumping, variable gravity, and box, circle, capsule, ramp, or polygon ground-block colliders
 - **Full map editor** — place, move, rotate, resize, multi-select, undo/redo
 - **Real-time multiplayer** — live position sync across all players in a room
-- **Map mechanics** — visual triggers and ordered events with variables, timers, moving objects, and bounded temporary object spawning
+- **Map and campaign mechanics** — visual triggers and ordered events with map, cross-map campaign, and per-player variables/Lists, timers, moving objects, and bounded temporary object spawning
 - **Cloud map storage** — maps saved to the server; download as `.pkrn` files
 - **Export / Import** — `.pkrn` files are ZIP archives (JSON or compressed binary)
 - **Plugin system** — Hollow Knight–style ability plugins (HP bar, attacks, wall-cling, etc.)
