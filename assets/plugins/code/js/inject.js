@@ -548,8 +548,10 @@
             `The ${scope} “${label}” changed for this session, but its browser-local save could not be written.`);
     };
 
-    const reportTriggerTargetError = (world, trigger, message) => {
-        const triggerState = getWorldTriggerState(world, trigger);
+    const reportTriggerTargetError = (world, trigger, message, player = null) => {
+        const triggerState = player
+            ? getTriggerState(getPlayerState(player, world), trigger)
+            : getWorldTriggerState(world, trigger);
         if (triggerState.targetError === message) return;
         triggerState.targetError = message;
         reportMechanicsRuntimeError(world, null, 'trigger target', message, {
@@ -557,8 +559,10 @@
         });
     };
 
-    const clearTriggerTargetError = (world, trigger) => {
-        const triggerState = getWorldTriggerState(world, trigger);
+    const clearTriggerTargetError = (world, trigger, player = null) => {
+        const triggerState = player
+            ? getTriggerState(getPlayerState(player, world), trigger)
+            : getWorldTriggerState(world, trigger);
         delete triggerState.targetError;
     };
 
@@ -4812,7 +4816,13 @@
                 case CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED: {
                     const health = player?.hp;
                     const direction = config.direction || 'any';
-                    if (!Number.isFinite(health) || !['any', 'increased', 'decreased'].includes(direction)) return false;
+                    if (!Number.isFinite(health)) {
+                        reportTriggerTargetError(world, trigger,
+                            'Player Health Changed needs a plugin that provides a numeric player.hp value (for example, the HP plugin).', player);
+                        return false;
+                    }
+                    clearTriggerTargetError(world, trigger, player);
+                    if (!['any', 'increased', 'decreased'].includes(direction)) return false;
                     const healthTriggerState = getTriggerState(playerState, trigger);
                     const previousHealth = healthTriggerState.previousHealth;
                     healthTriggerState.previousHealth = health;

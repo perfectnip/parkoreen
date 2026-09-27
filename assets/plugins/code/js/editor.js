@@ -4722,7 +4722,7 @@
                         <select class="trigger-form-select" id="trigger-config-health-direction">
                             ${directions.map(item => `<option value="${item.id}" ${item.id === selectedDirection ? 'selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}
                         </select>
-                        <p class="trigger-description">Tracks changes to numeric <code>player.hp</code>. The first reading seeds the baseline and does not fire. In hosted rooms this presentation trigger is local; guest health is not host-validated.</p>
+                        <p class="trigger-description">Requires an enabled health plugin that supplies numeric <code>player.hp</code> (for example, HP). The first reading seeds the baseline and does not fire. If no numeric health value is available, Mechanics records a runtime error. In hosted rooms this presentation trigger is local; guest health is not host-validated.</p>
                     </div>
                 `;
                 break;
