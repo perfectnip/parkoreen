@@ -21,6 +21,9 @@
   <script src="../assets/js/game.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="../assets/js/exportImport.js"></script>
+  <script src="../assets/plugins/code/js/skulpt.min.js"></script>
+  <script src="../assets/plugins/code/js/skulpt-stdlib.js"></script>
+  <script src="../assets/plugins/code/js/pythonCompiler.js"></script>
   <script src="../assets/plugins/code/js/globals.js"></script>
   <script>
     window.__mechanicsHooks = new Map();
@@ -67,6 +70,18 @@
     (async () => {
       const checks = [];
       const check = (label, passed, details = null) => checks.push({ label, passed: Boolean(passed), details });
+      const healthApiPythonCode = [
+        'import parkoreen',
+        'assert parkoreen.API_VERSION == 1',
+        'assert parkoreen.get_object_health("phase-cube") is None',
+        'assert parkoreen.set_object_health("phase-cube", 3, 5) is True',
+        'health = parkoreen.get_object_health("phase-cube")',
+        'assert health["current"] == 3 and health["maximum"] == 5 and health["defeated"] is False',
+        'obj = parkoreen.get_object("phase-cube")',
+        'assert obj["object_health"] == 3 and obj["object_max_health"] == 5',
+        'assert parkoreen.set_object_health("phase-cube", 6, 5) is False',
+        'print("object-health-api-ok")'
+      ].join('\n');
 
       try {
         const source = new World();
@@ -101,7 +116,7 @@
             config: { eventId: 'event-enemy-animation', objectId: 'enemy-template' }
           }],
           events: [{
-            id: 'event-start', type: 'event', name: 'Initialize score', enabled: true, code: 'health-api-fixture',
+            id: 'event-start', type: 'event', name: 'Initialize score', enabled: true, code: healthApiPythonCode,
             actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 },
               { type: 'setLayerVisibility', layerId: 'behind-player', visible: false },
               { type: 'setObjectDrawLayer', objectId: 'phase-platform', layerId: 'above-player' },
@@ -241,7 +256,7 @@
           loaded: world.codeData?.events?.find(event => event.id === 'event-start')?.code
         };
         check('Event Python source survives map import',
-          eventCodeAtEachBoundary.loaded === 'health-api-fixture', eventCodeAtEachBoundary);
+          eventCodeAtEachBoundary.loaded === healthApiPythonCode, eventCodeAtEachBoundary);
         const loadedEnemyTemplate = world.getObjectById('enemy-template');
         check('World load retains imported custom music and video background media',
           world.music?.customData?.startsWith('data:audio/ogg;') === true &&
@@ -312,19 +327,22 @@
         player.id = 'local-player';
         window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
         let objectHealthApiResult = null;
+        let objectHealthApiPromise = null;
+        const actualRunPython = window.runPython;
         window.runPython = (code, options) => {
-          if (code !== 'health-api-fixture') return Promise.resolve();
-          const api = options?.parkoreenContext;
-          const before = api?.getObjectHealth('phase-cube');
-          const changed = api?.setObjectHealth('phase-cube', 3, 5);
-          const after = api?.getObjectHealth('phase-cube');
-          const snapshot = api?.getObject('phase-cube');
-          const rejected = api?.setObjectHealth('phase-cube', 6, 5);
-          objectHealthApiResult = { before, changed, after, snapshot, rejected };
-          return Promise.resolve();
+          const execution = actualRunPython(code, options);
+          if (code === healthApiPythonCode) {
+            objectHealthApiPromise = execution.then(result => {
+              objectHealthApiResult = result;
+              return result;
+            });
+            return objectHealthApiPromise;
+          }
+          return execution;
         };
         window.PluginManager.executeHook('player.init', { player, world });
         window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        await objectHealthApiPromise;
         const state = window.__parkoreenCodeRuntimeState?.worldStates?.get(world);
         const afterFirstUpdate = state?.variables?.get('variable-score');
         const afterFirstZoneEntry = state?.variables?.get('variable-zone-entries');
@@ -332,10 +350,7 @@
         const afterSecondUpdate = state?.variables?.get('variable-score');
         const afterSecondZoneUpdate = state?.variables?.get('variable-zone-entries');
         check('Python API reads and sets bounded object health through Mechanics state',
-          objectHealthApiResult?.before === null && objectHealthApiResult?.changed === true &&
-            objectHealthApiResult?.after?.current === 3 && objectHealthApiResult?.after?.maximum === 5 &&
-            objectHealthApiResult?.after?.defeated === false && objectHealthApiResult?.snapshot?.object_health === 3 &&
-            objectHealthApiResult?.snapshot?.object_max_health === 5 && objectHealthApiResult?.rejected === false,
+          objectHealthApiResult?.success === true && objectHealthApiResult?.output?.includes('object-health-api-ok'),
           { result: objectHealthApiResult, pythonType: typeof window.runPython,
             eventCode: eventCodeAtEachBoundary });
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });

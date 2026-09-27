@@ -27,9 +27,11 @@ jobs:
             assets/js/exportImport.js \
             assets/js/mechanicsData.js \
             assets/js/plugins.js \
+            assets/plugins/code/js/pythonCompiler.js \
             assets/plugins/code/js/editor.js \
             assets/plugins/code/js/inject.js \
-            assets/plugins/hk/js/inject.js
+            assets/plugins/hk/js/inject.js \
+            tools/run-browser-runtime-checks.mjs
           do
             node --check "$source"
           done
