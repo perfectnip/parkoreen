@@ -269,6 +269,11 @@
         check('Loaded Game Starts action spawns the sprite-sheet template',
           spawnedEnemy?._mechanicsSpawned === true && spawnedEnemy.spriteSheet?.frameCount === 4,
           spawnedEnemy && { id: spawnedEnemy.id, templateId: spawnedEnemy._mechanicsSpawnTemplateId, frameCount: spawnedEnemy.spriteSheet?.frameCount });
+        check('Spawned sprite target keeps its template link and remains addressable by id',
+          Boolean(spawnedEnemy && spawnedEnemy._mechanicsSpawnTemplateId === 'enemy-template' &&
+            world.getObjectById(spawnedEnemy.id) === spawnedEnemy && spawnedEnemy.spriteSheet?.frameCount === 4),
+          spawnedEnemy && { id: spawnedEnemy.id, templateId: spawnedEnemy._mechanicsSpawnTemplateId,
+            addressable: world.getObjectById(spawnedEnemy.id) === spawnedEnemy, frameCount: spawnedEnemy.spriteSheet?.frameCount });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
 
@@ -291,17 +296,21 @@
         frameTrigger.enabled = false;
         animationTrigger.enabled = true;
         window.PluginManager.executeHook('player.attack.hit', { player, world, object: spawnedEnemy, direction: 'forward' });
+        const spawnedAnimation = spawnedEnemy?._mechanicsSpriteAnimation;
         check('Loaded named-clip Event animates the touched spawned instance',
-          spawnedEnemy?._mechanicsSpriteFrame === undefined && spawnedEnemy?._mechanicsSpriteAnimation?.startFrame === 1 &&
-          spawnedEnemy?._mechanicsSpriteAnimation?.frameCount === 2 &&
-          spawnedEnemy?._mechanicsSpriteAnimation?.completionEventId === 'event-animation-complete',
-          spawnedEnemy?._mechanicsSpriteAnimation);
-        spawnedEnemy._mechanicsSpriteAnimation.startedAt = Date.now() - 1000;
-        spawnedEnemy._mechanicsSpriteAnimation.startedAtServer = Date.now() - 1000;
+          spawnedEnemy?._mechanicsSpriteFrame === undefined && spawnedAnimation?.startFrame === 1 &&
+          spawnedAnimation?.frameCount === 2 && spawnedAnimation?.completionEventId === 'event-animation-complete',
+          { animation: spawnedAnimation, templateId: spawnedEnemy?._mechanicsSpawnTemplateId,
+            targetFound: world.getObjectById(spawnedEnemy?.id) === spawnedEnemy,
+            runtimeErrors: state?.runtimeErrors?.slice(-3) });
+        if (spawnedAnimation) {
+          spawnedAnimation.startedAt = Date.now() - 1000;
+          spawnedAnimation.startedAtServer = Date.now() - 1000;
+        }
         window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
         check('Spawned one-shot animation runs its saved completion Event once',
-          state?.variables?.get('variable-animation-completions') === 1,
-          state?.variables?.get('variable-animation-completions'));
+          state?.variables?.get('variable-animation-completions') === (spawnedAnimation ? 1 : 0),
+          { completions: state?.variables?.get('variable-animation-completions'), animationStarted: Boolean(spawnedAnimation) });
         window.CodePluginReset({ world });
         check('Mechanics reset removes its temporary spawned animation target',
           !world.objects.some(object => object?._mechanicsSpawned === true),
