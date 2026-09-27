@@ -45,6 +45,9 @@ jobs:
       - name: Check hosted Mechanics validation
         run: node tools/mechanics-worker.test.mjs
 
+      - name: Check isolated plugin API v2 draft contract
+        run: node --test tools/plugin-v2-draft-contract.test.mjs
+
       - name: Preflight every bundled plugin
         shell: bash
         run: |

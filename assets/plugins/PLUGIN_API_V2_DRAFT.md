@@ -45,6 +45,12 @@ The draft's machine-readable [JSON Schema](api-v2-draft/plugin-protocol.schema.j
 and [TypeScript declarations](api-v2-draft/plugin-protocol.d.ts) define these
 envelopes and method-specific request fields. They are reference artifacts only;
 the runtime still needs to enforce them, and their method semantics need review.
+The offline [`protocol-guard.mjs`](api-v2-draft/protocol-guard.mjs) and
+`tools/plugin-v2-draft-contract.test.mjs` exercise exact plugin request fields,
+capability-to-method checks, package-declared inputs/assets/sounds, JSON depth,
+storage size, and adversarial payload rejection. CI runs these draft contract
+checks, but the game runtime does not load the guard and none of the checks
+create an isolation boundary or permit API v2 installation.
 
 The contract is intentionally JSON-only. `JsonValue` is null, boolean, finite
 number, string, array, or object composed recursively from those values. The
@@ -130,4 +136,5 @@ separate-origin sandbox, capability prompt and revocation UI, method-specific
 runtime enforcement of these schemas, resource cleanup, package
 identity/version pinning, dependency resolution, and adversarial tests for
 script escape attempts, message floods, malformed payloads, and infinite loops.
-This draft does not satisfy any release gate in [the security model](PLUGIN_SECURITY_MODEL.md).
+The offline request guard is contract tooling only and does not satisfy any
+release gate in [the security model](PLUGIN_SECURITY_MODEL.md).
