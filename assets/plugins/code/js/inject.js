@@ -139,7 +139,8 @@
         const nearby = world.queryNear(player.x, player.y, playerWidth, playerHeight);
         return nearby.find(object => object?._tilemapCell === true && object._tilemapId === tilemapId &&
             window.CODE_TILEMAP_CELL_MATCHES_TRIGGER_FILTER(object, collisionType) &&
-            (object.collisionShape === 'polygon' && typeof player.collisionShapeIntersectsBox === 'function'
+            (['polygon', 'slopeUpRight', 'slopeUpLeft'].includes(object.collisionShape) &&
+                typeof player.collisionShapeIntersectsBox === 'function'
                 ? player.collisionShapeIntersectsBox({ x: player.x, y: player.y, width: playerWidth, height: playerHeight }, object)
                 : isPlayerInZone(player, object))) || null;
     };
@@ -259,6 +260,13 @@
         const original = worldState.tilemapCellEnabledOriginals.get(id);
         const tilemap = original && (world?.tilemaps || []).find(item => item.id === original.tilemapId);
         return tilemap ? { tilemap, cell: original.cell, id } : null;
+    };
+
+    const getMechanicsTilemapCollider = (world, id) => {
+        const liveCollider = world?.getTilemapColliderById?.(id);
+        if (liveCollider) return liveCollider;
+        const target = resolveMechanicsTilemapCell(world, getWorldState(world), id);
+        return target ? world?._getTilemapCollider?.(target.tilemap, target.cell) || null : null;
     };
 
     const setMechanicsTilemapCellEnabled = (world, worldState, target, enabled, authoritative = false) => {
@@ -4779,11 +4787,13 @@
                 const touchedObject = findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape);
                 state.wasTouchingObject = Boolean(touchedObject);
                 if (touchedObject) state.lastTouchedObjectId = touchedObject.id;
-            } else if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP) {
+            } else if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP].includes(trigger.triggerType)) {
                 const state = getTriggerState(getPlayerState(player, world), trigger);
-                state.wasTouchingTilemap = Boolean(findTouchingTilemapCell(
+                const cell = findTouchingTilemapCell(
                     world, trigger.config?.tilemapId, trigger.config?.collisionType || 'any', player
-                ));
+                );
+                state.wasTouchingTilemap = Boolean(cell);
+                if (cell) state.lastTouchedTilemapCellId = cell.id;
             } else if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED && Number.isFinite(player?.hp)) {
                 getTriggerState(getPlayerState(player, world), trigger).previousHealth = player.hp;
             } else if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_KEY_INPUT) {
@@ -4910,20 +4920,27 @@
                     return true;
                 }
 
-                case CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP: {
+                case CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP:
+                case CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP: {
                     const tilemap = (world?.tilemaps || []).find(candidate => candidate?.id === config.tilemapId);
                     if (!tilemap) {
-                        reportTriggerTargetError(world, trigger, 'Player Touches Tilemap needs an existing tilemap layer.');
+                        reportTriggerTargetError(world, trigger,
+                            `${trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP ? 'Player Leaves Tilemap' : 'Player Touches Tilemap'} needs an existing tilemap layer.`);
                         return false;
                     }
                     clearTriggerTargetError(world, trigger);
                     const touchState = getTriggerState(playerState, trigger);
-                    const touching = Boolean(findTouchingTilemapCell(
+                    const cell = findTouchingTilemapCell(
                         world, config.tilemapId, config.collisionType || 'any', player
-                    ));
-                    const justTouched = touching && !touchState.wasTouchingTilemap;
+                    );
+                    const touching = Boolean(cell);
+                    const wasTouching = touchState.wasTouchingTilemap === true;
                     touchState.wasTouchingTilemap = touching;
-                    return justTouched;
+                    if (touching) touchState.lastTouchedTilemapCellId = cell?.id;
+                    if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP) return touching && !wasTouching;
+                    if (!wasTouching || touching) return false;
+                    touchState.leftTilemapCellId = touchState.lastTouchedTilemapCellId || null;
+                    return true;
                 }
 
                 case CODE_TRIGGER_TYPES.REPEAT:
@@ -5385,6 +5402,9 @@
                                     ? world?.getObjectById?.(getTriggerState(getPlayerState(player, world), trigger).leftObjectId)
                                 : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP
                                     ? findTouchingTilemapCell(world, trigger.config?.tilemapId, trigger.config?.collisionType || 'any', player)
+                                : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP
+                                        ? getMechanicsTilemapCollider(world,
+                                            getTriggerState(getPlayerState(player, world), trigger).leftTilemapCellId)
                                     : null;
                             const healthTriggerState = trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_HEALTH_CHANGED
                                 ? getTriggerState(getPlayerState(player, world), trigger)
@@ -5707,14 +5727,23 @@
                 const isRootEventRequest = linkedEventId === request.eventId && !choiceParentEventId;
                 const guestRequestableTypes = [CODE_TRIGGER_TYPES.PLAYER_ENTER_ZONE, CODE_TRIGGER_TYPES.PLAYER_LEAVE_ZONE,
                     CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
-                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_KEY_INPUT,
+                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_KEY_INPUT,
                     CODE_TRIGGER_TYPES.PLAYER_ACTION_INPUT, CODE_TRIGGER_TYPES.VARIABLE_CONDITION];
                 if (!trigger || !isMechanicsTriggerEnabled(world, trigger) || !guestRequestableTypes.includes(trigger.triggerType) ||
                     (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_ACTION_INPUT && trigger.config?.action !== 'touchOtherPlayer') ||
                     (!isRootEventRequest && (!choiceParentEventId || typeof request.playerId !== 'string' || !request.playerId)) ||
                     !eventUsesSharedMechanics(world, request.eventId)) return;
                 const requestedTouchObject = world.getObjectById?.(request.touchedObjectId);
-                const requestedTilemapCell = world.getTilemapColliderById?.(request.touchedObjectId);
+                const requestedTilemapCell = world.getTilemapColliderById?.(request.touchedObjectId) ||
+                    (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP
+                        ? getMechanicsTilemapCollider(world, request.touchedObjectId) : null);
+                const tilemapFilter = trigger.config?.collisionType || 'any';
+                const requestedTilemapCellMatches = requestedTilemapCell?._tilemapId === trigger.config?.tilemapId &&
+                    (tilemapFilter === 'any' || requestedTilemapCell._tilemapCollisionType === tilemapFilter ||
+                        (tilemapFilter === 'oneWay' && (
+                            ['rampUpLeft', 'rampUpRight'].includes(requestedTilemapCell._tilemapCollisionType) ||
+                            (requestedTilemapCell.collisionShape === 'polygon' && requestedTilemapCell.polygonOneWay !== false)
+                        )));
                 const touchedObject = [CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType) &&
                     requestedTouchObject && requestedTouchObject._mechanicsEnabled !== false &&
                     requestedTouchObject._collected !== true && (requestedTouchObject.id === trigger.config?.objectId ||
@@ -5727,13 +5756,11 @@
                         requestedTouchObject._mechanicsEnabled !== false &&
                         requestedTouchObject.name === trigger.config?.buttonName
                         ? requestedTouchObject
-                    : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP &&
-                        requestedTilemapCell?._tilemapId === trigger.config?.tilemapId &&
-                        ((trigger.config?.collisionType || 'any') === 'any' ||
-                            requestedTilemapCell._tilemapCollisionType === trigger.config?.collisionType)
+                    : [CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP].includes(trigger.triggerType) &&
+                        requestedTilemapCellMatches
                         ? requestedTilemapCell : null;
                 if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
-                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP].includes(trigger.triggerType) && !touchedObject) return;
+                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP].includes(trigger.triggerType) && !touchedObject) return;
                 if (!isRootEventRequest && !consumeSharedChoiceRoute(
                     world, request.triggerId, request.playerId, choiceParentEventId, request.eventId
                 )) return;

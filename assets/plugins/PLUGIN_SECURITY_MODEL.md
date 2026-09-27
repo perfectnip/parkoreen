@@ -151,8 +151,10 @@ enforcement or a permission to install third-party plugins.
 
 The bundled `tools/serve-plugin-dev.mjs` server binds only to `127.0.0.1`, serves
 the repository beneath `/parkoreen/`, rejects non-loopback Host headers, avoids
-cache reuse, refuses hidden paths, and accepts browser live-reload connections
-only from the matching localhost origin. Each server run prints a random
+cache reuse, omits Referer headers so the preview-token URL is not sent to linked
+sites, refuses hidden paths even when a visible symlink resolves into one, and
+accepts browser live-reload connections only from the matching localhost
+origin. Each server run prints a random
 preview token. The explicit `?pluginDev=<id>&pluginDevToken=<token>` query,
 unregistered plugin asset requests, and reload stream require that token; this
 reduces cross-site navigation from silently initiating a local preview. This

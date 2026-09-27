@@ -6,25 +6,27 @@ const workerSource = await readFile(new URL('../cloudflare-worker/worker.js', im
 const workerModule = await import(`data:text/javascript;base64,${Buffer.from(workerSource).toString('base64')}`);
 const { GameRoom } = workerModule;
 
-const makeRoom = (codeData, objects = []) => {
+const makeRoom = (codeData, objects = [], tilemaps = []) => {
     const messages = [];
+    const storedMechanics = new Map();
     const guest = { id: 'guest-session', roomCode: 'ROOM1', isHost: false, user: { name: 'Guest' } };
     const host = { id: 'host-session', roomCode: 'ROOM1', isHost: true, userId: 'host-user' };
     const room = new GameRoom({ storage: {
         get: async key => key === 'room:ROOM1'
-            ? JSON.stringify({ hostUserId: 'host-user', mapData: { codeData, objects } })
-            : null
+            ? JSON.stringify({ hostUserId: 'host-user', mapData: { codeData, objects, tilemaps } })
+            : storedMechanics.get(key) || null,
+        put: async (key, value) => storedMechanics.set(key, value)
     } }, {});
     room.getPlayersInRoom = () => [host, guest];
     room.send = (session, message) => messages.push({ session, message });
     room.broadcastToRoom = () => {};
     room.sessions.set(host.id, host);
     room.sessions.set(guest.id, guest);
-    return { room, guest, host, messages };
+    return { room, guest, host, messages, storedMechanics };
 };
 
 test('room worker forwards a legacy event when other canonical events exist', async () => {
-    const { room, guest, host, messages } = makeRoom({
+    const { room, guest, host, messages, storedMechanics } = makeRoom({
         triggers: [{ id: 'trigger-1', triggerType: 'playerKeyInput', enabled: true,
             config: { eventId: 'legacy-event', keys: ['KeyA'] } }],
         events: [{ id: 'current-event', enabled: true }],
@@ -108,6 +110,124 @@ test('room worker validates and rearms Player Leaves Object contact edges', asyn
     room.handlePosition(guest, { x: 600, y: 600 });
     await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
     assert.equal(eventRequests().length, 3, 'object movement updates the contact latch bounds');
+});
+
+test('room worker validates and rearms Player Leaves Tilemap edges across matching cells', async () => {
+    const cells = [
+        { x: 0, y: 0, collisionType: 'solid' },
+        { x: 64, y: 0, collisionType: 'solid' },
+        { x: 128, y: 0, collisionType: 'hazard' }
+    ];
+    const { room, guest, host, messages } = makeRoom({
+        triggers: [{ id: 'leave-trigger', triggerType: 'playerLeaveTilemap', enabled: true,
+            config: { tilemapId: 'ground', collisionType: 'solid', eventId: 'leave-event' } }],
+        events: [{ id: 'leave-event', enabled: true }]
+    }, [], [{ id: 'ground', layer: 0, cells }]);
+    guest.x = 8;
+    guest.y = 8;
+    guest.previousPosition = { x: 8, y: 8 };
+    guest.previousPositionAt = Date.now() - 40;
+    guest.lastPositionAt = Date.now();
+
+    // The 32 px player body reaches the next matching cell across a gap.
+    guest.x = 40;
+    await room.handleMechanicsEventRequest(guest, {
+        triggerId: 'leave-trigger', eventId: 'leave-event', touchedObjectId: 'tile-ground-0-0'
+    });
+    assert.equal(messages.length, 0, 'remaining on another matching cell is not a leave edge');
+
+    room.handlePosition(guest, { x: 200, y: 200 });
+    await room.handleMechanicsEventRequest(guest, {
+        triggerId: 'leave-trigger', eventId: 'leave-event', touchedObjectId: 'tile-ground-64-0'
+    });
+    const eventRequests = () => messages.filter(item => item.message.type === 'mechanics_event_request');
+    assert.equal(eventRequests().length, 1);
+    assert.equal(eventRequests()[0].session, host);
+    assert.equal(eventRequests()[0].message.touchedObjectId, 'tile-ground-64-0', 'Worker derives the last matching cell');
+
+    await room.handleMechanicsEventRequest(guest, {
+        triggerId: 'leave-trigger', eventId: 'leave-event', touchedObjectId: 'tile-ground-64-0'
+    });
+    assert.equal(eventRequests().length, 1, 'staying outside cannot repeat the edge');
+
+    room.handlePosition(guest, { x: 40, y: 8 });
+    room.handlePosition(guest, { x: 200, y: 200 });
+    await room.handleMechanicsEventRequest(guest, {
+        triggerId: 'leave-trigger', eventId: 'leave-event', touchedObjectId: 'forged-cell'
+    });
+    assert.equal(eventRequests().length, 2, 're-entering any matching cell rearms the exit edge');
+    assert.equal(eventRequests()[1].message.touchedObjectId, 'tile-ground-64-0', 'forged touched-cell ids are ignored');
+
+    room.handlePosition(guest, { x: 120, y: 8 });
+    room.handlePosition(guest, { x: 200, y: 200 });
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    assert.equal(eventRequests().length, 2, 'a hazard cell does not match the configured solid filter');
+});
+
+test('room worker excludes runtime-disabled tilemap cells from contact checks', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        tilemaps: [{ id: 'ground', layer: 0, cells: [{ x: 64, y: 64, collisionType: 'solid' }] }]
+    };
+    const player = { x: 64, y: 64 };
+    const disabledCell = { tilemapCellEnabled: { 'tile-ground-64-64': false } };
+
+    assert.equal(room.findMechanicsTilemapContact(mapData, 'ground', 'solid', player, disabledCell), null);
+    assert.equal(room.findMechanicsTilemapContact(mapData, 'ground', 'solid', player, {})?.id, 'tile-ground-64-64');
+});
+
+test('room worker matches ramp tilemap contact to the triangle collider', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        tilemaps: [{ id: 'ground', layer: 0, cells: [{ x: 64, y: 64, collisionType: 'rampUpRight' }] }]
+    };
+
+    assert.equal(room.findMechanicsTilemapContact(mapData, 'ground', 'oneWay', { x: 40, y: 40 }), null,
+        'the empty upper-left half of the ramp must not count as contact');
+    assert.equal(room.findMechanicsTilemapContact(mapData, 'ground', 'oneWay', { x: 64, y: 64 })?.id,
+        'tile-ground-64-64', 'the sloped solid area still counts as contact');
+});
+
+test('room worker validates a tilemap exit caused by a host-disabled cell', async () => {
+    const { room, guest, host, messages, storedMechanics } = makeRoom({
+        triggers: [{ id: 'leave-trigger', triggerType: 'playerLeaveTilemap', enabled: true,
+            config: { tilemapId: 'ground', collisionType: 'solid', eventId: 'leave-event' } }],
+        events: [{ id: 'leave-event', enabled: true }]
+    }, [], [{ id: 'ground', layer: 0, cells: [{ x: 0, y: 0, collisionType: 'solid' }] }]);
+    let removalEdgeCalls = 0;
+    const recordRemovalEdges = room.recordMechanicsTilemapRemovalExits.bind(room);
+    room.recordMechanicsTilemapRemovalExits = (...args) => {
+        removalEdgeCalls++;
+        return recordRemovalEdges(...args);
+    };
+    guest.x = 8;
+    guest.y = 8;
+    guest.lastPositionAt = Date.now();
+
+    await room.handleMechanicsState(host, {
+        state: { tilemapCellEnabled: { 'tile-ground-0-0': false } }
+    });
+    assert.equal(messages.some(item => item.message.type === 'error'), false, JSON.stringify(messages));
+    assert.equal(JSON.parse(storedMechanics.get('mechanics:ROOM1'))?.state?.tilemapCellEnabled['tile-ground-0-0'], false);
+    assert.equal(removalEdgeCalls, 1);
+    assert.equal(guest.mechanicsContactLatches.get('leave-trigger')?.kind, 'tilemap-pending-exit');
+
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    let requests = messages.filter(item => item.message.type === 'mechanics_event_request');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].session, host);
+    assert.equal(requests[0].message.touchedObjectId, 'tile-ground-0-0');
+
+    await room.handleMechanicsState(host, { state: {} });
+    assert.equal(guest.mechanicsContactLatches.has('leave-trigger'), false,
+        'restoring a matching cell rearms the trigger');
+    await room.handleMechanicsState(host, {
+        state: { tilemapCellEnabled: { 'tile-ground-0-0': false } }
+    });
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    requests = messages.filter(item => item.message.type === 'mechanics_event_request');
+    assert.equal(requests.length, 2, 'restoring a matching cell rearms the exit');
+    assert.equal(requests[1].message.touchedObjectId, 'tile-ground-0-0');
 });
 
 test('room worker validates draw-layer visibility against saved map layers', () => {

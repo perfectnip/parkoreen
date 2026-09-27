@@ -100,6 +100,7 @@
         source.setTilemapCell(0, 64, { collisionType: 'solid', atlasFrame: 0 }, 1);
         source.setTilemapCell(32, 64, { collisionType: 'decorative', animation: { atlasFrames: [0, 1], fps: 4 } }, 1);
         const testTilemap = source.tilemaps.find(tilemap => tilemap.layer === 1);
+        source.setTilemapCell(64, 64, { collisionType: 'solid', atlasFrame: 0 }, 1);
         healthApiPythonCode = [
           'import parkoreen',
           'assert parkoreen.API_VERSION == 1',
@@ -155,6 +156,10 @@
             triggerType: CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT,
             config: { eventId: 'event-object-leave', objectId: 'zone-start', shape: 'box' }
           }, {
+            id: 'trigger-tilemap-leave', type: 'trigger', name: 'Tilemap leave', enabled: true,
+            triggerType: CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP,
+            config: { eventId: 'event-tilemap-leave', tilemapId: testTilemap?.id, collisionType: 'solid' }
+          }, {
             id: 'trigger-enemy-frame', type: 'trigger', name: 'Enemy frame', enabled: true,
             triggerType: CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT,
             config: { eventId: 'event-enemy-frame', objectId: 'enemy-template', pogoable: true }
@@ -184,6 +189,10 @@
             id: 'event-object-leave', type: 'event', name: 'Count object leave', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-object-leaves', amount: 1 }], code: ''
           }, {
+            id: 'event-tilemap-leave', type: 'event', name: 'Close tilemap behind player', enabled: true,
+            actions: [{ type: 'addVariable', variableId: 'variable-tilemap-leaves', amount: 1 },
+              { type: 'setTilemapCellEnabled', tilemapId: testTilemap?.id, targetMode: 'touched', enabled: false }], code: ''
+          }, {
             id: 'event-enemy-frame', type: 'event', name: 'Set spawned enemy frame', enabled: true,
             actions: [{ type: 'setObjectSpriteFrame', objectId: 'enemy-template', targetMode: 'touched', mode: 'custom', frame: 2 }], code: ''
           }, {
@@ -201,6 +210,9 @@
             variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
           }, {
             id: 'variable-object-leaves', type: 'variable', name: 'Object Leaves', enabled: true,
+            variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
+          }, {
+            id: 'variable-tilemap-leaves', type: 'variable', name: 'Tilemap Leaves', enabled: true,
             variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
           }, {
             id: 'variable-animation-completions', type: 'variable', name: 'Animation Completions', enabled: true,
@@ -350,7 +362,13 @@
         check('Tilemap enabled action target and state survive PKRN and World save/load',
           restoredTilemapEnabledAction?.tilemapId === testTilemap?.id && restoredTilemapEnabledAction.targetMode === 'fixed' &&
             restoredTilemapEnabledAction.x === 0 && restoredTilemapEnabledAction.y === 64 && restoredTilemapEnabledAction.enabled === false,
-          restoredTilemapEnabledAction);
+            restoredTilemapEnabledAction);
+        const restoredTilemapLeaveTrigger = restored.triggers?.find(trigger => trigger.id === 'trigger-tilemap-leave');
+        check('Player Leaves Tilemap trigger links and filter survive PKRN and World save/load',
+          restoredTilemapLeaveTrigger?.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP &&
+          restoredTilemapLeaveTrigger.config?.tilemapId === testTilemap?.id &&
+          restoredTilemapLeaveTrigger.config?.collisionType === 'solid' &&
+          restoredTilemapLeaveTrigger.config?.eventId === 'event-tilemap-leave', restoredTilemapLeaveTrigger);
         const restoredPlayerHealthBranch = restoredActionCatalogEvent?.actions?.find(action => action.type === 'branchPlayerHealth');
         check('Player Health branch condition and routes survive PKRN and World save/load',
           restoredPlayerHealthBranch?.comparisonMode === 'percent' &&
@@ -665,6 +683,62 @@
         check('Object leave is edge-triggered while the player stays outside',
           afterSecondObjectLeaveUpdate === 1, { afterSecondObjectLeaveUpdate });
 
+        player.x = 72;
+        player.y = 64;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Player Leaves Tilemap waits until matching tile contact ends',
+          state?.variables?.get('variable-tilemap-leaves') === 0,
+          { count: state?.variables?.get('variable-tilemap-leaves') });
+        player.x = 200;
+        player.y = 200;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Player Leaves Tilemap fires on exit and passes the last cell to touched-cell actions',
+          state?.variables?.get('variable-tilemap-leaves') === 1 &&
+          !world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.some(cell => cell.x === 64 && cell.y === 64),
+          { count: state?.variables?.get('variable-tilemap-leaves'), cells: world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells,
+            runtimeErrors: state?.runtimeErrors?.slice(-4) });
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Player Leaves Tilemap fires once per exit edge',
+          state?.variables?.get('variable-tilemap-leaves') === 1,
+          { count: state?.variables?.get('variable-tilemap-leaves') });
+
+        const tilemapLeaveTrigger = world.codeData.triggers.find(trigger => trigger.id === 'trigger-tilemap-leave');
+        tilemapLeaveTrigger.config.collisionType = 'oneWay';
+        world.setTilemapCell(64, 64, { collisionType: 'rampUpRight' }, testTilemap.layer);
+        player.x = 40;
+        player.y = 40;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        player.x = 200;
+        player.y = 200;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Tilemap exit does not start in the empty half of a ramp collider',
+          state?.variables?.get('variable-tilemap-leaves') === 1,
+          { count: state?.variables?.get('variable-tilemap-leaves') });
+        player.x = 64;
+        player.y = 64;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        player.x = 200;
+        player.y = 200;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Tilemap exit fires after actual contact with a one-way ramp',
+          state?.variables?.get('variable-tilemap-leaves') === 2,
+          { count: state?.variables?.get('variable-tilemap-leaves'), runtimeErrors: state?.runtimeErrors?.slice(-4) });
+
+        world.setTilemapCell(96, 64, { collisionType: 'oneWay' }, testTilemap.layer);
+        tilemapLeaveTrigger.triggerType = CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP;
+        player.x = 96;
+        player.y = 64;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Tilemap touch Event can remove the cell under the player',
+          state?.variables?.get('variable-tilemap-leaves') === 3 &&
+          !world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.some(cell => cell.x === 96 && cell.y === 64),
+          { count: state?.variables?.get('variable-tilemap-leaves'), cells: world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells });
+        tilemapLeaveTrigger.triggerType = CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        check('Player Leaves Tilemap resolves its last cell after an Event removes it',
+          state?.variables?.get('variable-tilemap-leaves') === 4,
+          { count: state?.variables?.get('variable-tilemap-leaves'), runtimeErrors: state?.runtimeErrors?.slice(-4) });
+
         const configuredPogoHit = window.PluginManager.executeHook('player.attack.hit', {
           player, world, object: spawnedEnemy, direction: 'down', pogoable: false
         });
@@ -820,7 +894,10 @@
         const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
         const output = document.getElementById('results');
         output.className = report.passed === report.total ? 'pass' : 'fail';
-        output.textContent = JSON.stringify(report, null, 2);
+        const failuresOnly = new URLSearchParams(window.location.search).get('summary') === 'failures';
+        output.textContent = JSON.stringify(failuresOnly
+          ? { total: report.total, passed: report.passed, failures: report.checks.filter(item => !item.passed) }
+          : report, null, 2);
       } catch (error) {
         const output = document.getElementById('results');
         output.className = 'fail';

@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvesThroughHiddenPath } from './plugin-dev-paths.mjs';
 
 const repositoryRoot = await realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'));
 const previewToken = randomBytes(32).toString('base64url');
@@ -251,12 +252,18 @@ const server = createServer(async (request, response) => {
             response.end('Forbidden');
             return;
         }
+        if (resolvesThroughHiddenPath(repositoryRoot, resolvedFilePath)) {
+            response.writeHead(404, { 'Cache-Control': 'no-store' });
+            response.end('Not found');
+            return;
+        }
         const fileStats = await stat(resolvedFilePath);
         if (!fileStats.isFile()) throw new Error('Not a file');
         response.writeHead(200, {
             'Cache-Control': 'no-store',
             'Content-Length': fileStats.size,
             'Content-Type': contentTypes.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream',
+            'Referrer-Policy': 'no-referrer',
             'X-Content-Type-Options': 'nosniff'
         });
         if (request.method === 'HEAD') response.end();

@@ -25,6 +25,8 @@ const MAX_MECHANICS_STATE_BYTES = 32 * 1024;
 const MAX_MECHANICS_TILEMAP_ATLAS_DATA_URL_LENGTH = 1500000;
 const MAX_MECHANICS_TILEMAP_ATLAS_PIXELS = 16000000;
 const MAX_MECHANICS_TILEMAP_ATLAS_TOTAL_PIXELS = 32000000;
+const MECHANICS_PLAYER_WIDTH = 32;
+const MECHANICS_PLAYER_HEIGHT = 32;
 
 // ============================================
 // UTILITIES
@@ -840,6 +842,7 @@ class GameRoom {
         this.mechanicsTilemapCellIndexes = new Map();
         this.mechanicsTilemapCellIndexesBuilt = false;
         this.mechanicsTilemapCellOverrides = Object.create(null);
+        this.mechanicsTilemapCellEnabled = Object.create(null);
         this.mechanicsObjectPositions = Object.create(null);
         this.mechanicsSpawnedObjects = Object.create(null);
     }
@@ -1049,6 +1052,7 @@ class GameRoom {
         this.mechanicsTilemapCellIndexes.clear();
         this.mechanicsTilemapCellIndexesBuilt = false;
         this.mechanicsTilemapCellOverrides = Object.create(null);
+        this.mechanicsTilemapCellEnabled = Object.create(null);
         this.mechanicsObjectPositions = Object.create(null);
         this.mechanicsSpawnedObjects = Object.create(null);
 
@@ -1284,7 +1288,7 @@ class GameRoom {
         if (!position || !bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) ||
             !Number.isFinite(bounds.width) || bounds.width <= 0 ||
             !Number.isFinite(bounds.height) || bounds.height <= 0) return false;
-        const player = { x: position.x, y: position.y, width: 24, height: 24 };
+        const player = { x: position.x, y: position.y, width: MECHANICS_PLAYER_WIDTH, height: MECHANICS_PLAYER_HEIGHT };
         if (bounds.shape === 'capsule') {
             const radius = Math.min(bounds.width, bounds.height) / 2;
             const horizontal = bounds.width > bounds.height;
@@ -1459,8 +1463,8 @@ class GameRoom {
         const filter = collisionType || 'any';
         const cells = this.getMechanicsTilemapCellIndex(mapData).get(tilemapId);
         if (!cells) return null;
-        const width = 24;
-        const height = 24;
+        const width = MECHANICS_PLAYER_WIDTH;
+        const height = MECHANICS_PLAYER_HEIGHT;
         const firstX = Math.floor(position.x / 32) * 32;
         const lastX = (Math.ceil((position.x + width) / 32) - 1) * 32;
         const firstY = Math.floor(position.y / 32) * 32;
@@ -1469,6 +1473,7 @@ class GameRoom {
             for (let x = firstX; x <= lastX; x += 32) {
                 const savedCell = cells.get(`${x},${y}`);
                 if (!savedCell) continue;
+                if (mechanicsState.tilemapCellEnabled?.[savedCell.id] === false) continue;
                 const effectiveCollisionType = mechanicsState.tilemapCells?.[savedCell.id] || savedCell.collisionType;
                 const polygonOneWay = savedCell.collisionShape === 'polygon' && savedCell.polygonOneWay !== false;
                 if (!this.mechanicsTilemapCellMatchesTriggerFilter(effectiveCollisionType, filter, polygonOneWay)) continue;
@@ -1482,6 +1487,39 @@ class GameRoom {
             }
         }
         return null;
+    }
+
+    recordMechanicsTilemapRemovalExits(roomCode, mapData, previousState, nextState) {
+        const codeData = mapData?.codeData || {};
+        const triggers = Array.isArray(codeData.triggers) ? codeData.triggers : [];
+        const sessions = Array.from(this.sessions.values()).filter(session =>
+            session.roomCode === roomCode && !session.isHost && Number.isFinite(session.x) && Number.isFinite(session.y)
+        );
+        for (const session of sessions) {
+            if (!(session.mechanicsContactLatches instanceof Map)) session.mechanicsContactLatches = new Map();
+            for (const trigger of triggers) {
+                if (trigger?.triggerType !== 'playerLeaveTilemap' || !trigger.id ||
+                    trigger.enabled === false || previousState.triggers?.[trigger.id] === false ||
+                    nextState.triggers?.[trigger.id] === false ||
+                    session.mechanicsContactLatches.has(trigger.id) || session.mechanicsContactLatches.size >= 256) continue;
+                const config = trigger.config && typeof trigger.config === 'object' ? trigger.config : {};
+                const collisionType = config.collisionType === undefined ? 'any' : config.collisionType;
+                if (!['any', 'solid', 'oneWay', 'hazard'].includes(collisionType)) continue;
+                const previousContact = this.findMechanicsTilemapContact(
+                    mapData, config.tilemapId, collisionType, session, previousState
+                );
+                if (!previousContact || this.findMechanicsTilemapContact(
+                    mapData, config.tilemapId, collisionType, session, nextState
+                )) continue;
+                session.mechanicsContactLatches.set(trigger.id, {
+                    kind: 'tilemap-pending-exit',
+                    objectId: previousContact.id,
+                    mapData,
+                    tilemapId: config.tilemapId,
+                    collisionType
+                });
+            }
+        }
     }
 
     refreshMechanicsContactLatches(roomCode) {
@@ -1512,10 +1550,16 @@ class GameRoom {
                         effectiveType, latch.collisionType, latch.polygonOneWay
                     ) &&
                         this.playerOverlapsMechanicsBounds(session, latch.bounds);
+                } else if (latch.kind === 'tilemap-group-outside' || latch.kind === 'tilemap-pending-exit') {
+                    stillActive = !this.findMechanicsTilemapContact(
+                        latch.mapData, latch.tilemapId, latch.collisionType, session,
+                        { tilemapCells: this.mechanicsTilemapCellOverrides, tilemapCellEnabled: this.mechanicsTilemapCellEnabled }
+                    );
                 } else if (latch.kind === 'player-contact') {
                     stillActive = roomSessions.some(other => other !== session &&
                         Number.isFinite(other.x) && Number.isFinite(other.y) &&
-                        this.playerOverlapsMechanicsBounds(session, { x: other.x, y: other.y, width: 24, height: 24 }));
+                        this.playerOverlapsMechanicsBounds(session, { x: other.x, y: other.y,
+                            width: MECHANICS_PLAYER_WIDTH, height: MECHANICS_PLAYER_HEIGHT }));
                 }
                 if (!stillActive) latches.delete(triggerId);
             }
@@ -1975,7 +2019,9 @@ class GameRoom {
                 ? previous.revision : 0;
             const revision = previousRevision < Number.MAX_SAFE_INTEGER ? previousRevision + 1 : 1;
             await this.state.storage.put(`mechanics:${roomCode}`, JSON.stringify({ revision, updatedAt: serverTimestamp, state }));
+            this.recordMechanicsTilemapRemovalExits(roomCode, room.mapData, previous?.state || {}, state);
             this.mechanicsTilemapCellOverrides = state.tilemapCells;
+            this.mechanicsTilemapCellEnabled = state.tilemapCellEnabled;
             this.mechanicsObjectPositions = state.positions;
             this.mechanicsSpawnedObjects = state.spawnedObjects;
             this.refreshMechanicsContactLatches(roomCode);
@@ -2056,7 +2102,8 @@ class GameRoom {
         const positionIsRecent = currentPosition && Number.isSafeInteger(session.lastPositionAt) &&
             now >= session.lastPositionAt && now - session.lastPositionAt <= 3000;
         let touchedPlayerId = null;
-        const playerBounds = position => position && ({ x: position.x, y: position.y, width: 24, height: 24 });
+        const playerBounds = position => position && ({ x: position.x, y: position.y,
+            width: MECHANICS_PLAYER_WIDTH, height: MECHANICS_PLAYER_HEIGHT });
         let contactLatch = null;
         const overlaps = (position, bounds) => {
             return this.playerOverlapsMechanicsBounds(position, bounds);
@@ -2072,6 +2119,8 @@ class GameRoom {
         if (triggerOverride === false || (triggerOverride !== true && trigger.enabled === false)) return;
         this.mechanicsTilemapCellOverrides = mechanicsState.tilemapCells && typeof mechanicsState.tilemapCells === 'object'
             ? mechanicsState.tilemapCells : Object.create(null);
+        this.mechanicsTilemapCellEnabled = mechanicsState.tilemapCellEnabled && typeof mechanicsState.tilemapCellEnabled === 'object'
+            ? mechanicsState.tilemapCellEnabled : Object.create(null);
         this.mechanicsObjectPositions = mechanicsState.positions && typeof mechanicsState.positions === 'object'
             ? mechanicsState.positions : Object.create(null);
         this.mechanicsSpawnedObjects = mechanicsState.spawnedObjects && typeof mechanicsState.spawnedObjects === 'object'
@@ -2091,7 +2140,7 @@ class GameRoom {
         const triggerConfig = trigger.config && typeof trigger.config === 'object' ? trigger.config : {};
         const triggerType = trigger.triggerType;
         if (!['playerEnterZone', 'playerLeaveZone', 'playerTouchObject', 'playerLeaveObject', 'playerPressButton',
-            'playerTouchTilemap', 'playerKeyInput', 'playerActionInput', 'variableCondition'].includes(triggerType)) return;
+            'playerTouchTilemap', 'playerLeaveTilemap', 'playerKeyInput', 'playerActionInput', 'variableCondition'].includes(triggerType)) return;
         if (triggerType === 'playerActionInput' && triggerConfig.action !== 'touchOtherPlayer') return;
 
         if (triggerType === 'variableCondition') {
@@ -2245,6 +2294,37 @@ class GameRoom {
                 cellCollisionType: touched.collisionType,
                 polygonOneWay: touched.polygonOneWay === true
             };
+        } else if (triggerType === 'playerLeaveTilemap') {
+            const collisionType = triggerConfig.collisionType === undefined ? 'any' : triggerConfig.collisionType;
+            if (!['any', 'solid', 'oneWay', 'hazard'].includes(collisionType)) return;
+            const pendingExit = session.mechanicsContactLatches instanceof Map
+                ? session.mechanicsContactLatches.get(triggerId) : null;
+            const stateChangeExit = pendingExit?.kind === 'tilemap-pending-exit' &&
+                pendingExit.tilemapId === triggerConfig.tilemapId && pendingExit.collisionType === collisionType;
+            if (stateChangeExit) {
+                if (!positionIsRecent || this.findMechanicsTilemapContact(
+                    room.mapData, triggerConfig.tilemapId, collisionType, currentPosition, mechanicsState
+                )) return;
+                contactLatch = { ...pendingExit, kind: 'tilemap-group-outside' };
+            } else {
+                const previousPosition = session.previousPosition;
+                const previousIsRecent = previousPosition && Number.isSafeInteger(session.previousPositionAt) &&
+                    now >= session.previousPositionAt && now - session.previousPositionAt <= 3000;
+                if (!positionIsRecent || !previousIsRecent) return;
+                const previousContact = this.findMechanicsTilemapContact(
+                    room.mapData, triggerConfig.tilemapId, collisionType, previousPosition, mechanicsState
+                );
+                if (!previousContact || this.findMechanicsTilemapContact(
+                    room.mapData, triggerConfig.tilemapId, collisionType, currentPosition, mechanicsState
+                )) return;
+                contactLatch = {
+                    kind: 'tilemap-group-outside',
+                    objectId: previousContact.id,
+                    mapData: room.mapData,
+                    tilemapId: triggerConfig.tilemapId,
+                    collisionType
+                };
+            }
         } else if (triggerType === 'playerActionInput' && triggerConfig.action === 'touchOtherPlayer') {
             if (!positionIsRecent) return;
             const touchedPlayer = roomPlayers.find(other => other.id !== session.id &&
@@ -2262,8 +2342,14 @@ class GameRoom {
         if (contactLatch) {
             this.refreshMechanicsContactLatches(roomCode);
             if (!(session.mechanicsContactLatches instanceof Map)) session.mechanicsContactLatches = new Map();
-            if (session.mechanicsContactLatches.has(triggerId) || session.mechanicsContactLatches.size >= 256) return;
-            session.mechanicsContactLatches.set(triggerId, contactLatch);
+            const previousLatch = session.mechanicsContactLatches.get(triggerId);
+            if (previousLatch?.kind === 'tilemap-pending-exit' && contactLatch.kind === 'tilemap-group-outside' &&
+                previousLatch.objectId === contactLatch.objectId && previousLatch.tilemapId === contactLatch.tilemapId) {
+                session.mechanicsContactLatches.set(triggerId, contactLatch);
+            } else {
+                if (previousLatch || session.mechanicsContactLatches.size >= 256) return;
+                session.mechanicsContactLatches.set(triggerId, contactLatch);
+            }
         }
         this.send(hostSession, {
             type: 'mechanics_event_request',

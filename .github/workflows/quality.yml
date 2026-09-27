@@ -39,6 +39,9 @@ jobs:
       - name: Check Mechanics action catalog
         run: node tools/mechanics-action-catalog.test.mjs
 
+      - name: Check Mechanics trigger catalog
+        run: node tools/mechanics-trigger-catalog.test.mjs
+
       - name: Check Mechanics save normalization
         run: node tools/mechanics-data.test.js
 
