@@ -295,6 +295,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'playObjectSpriteAnimation', label: 'Play Object Sprite Animation' },
     { id: 'setCameraFollowMode', label: 'Set Camera Follow Axes' },
     { id: 'setCameraBounds', label: 'Set Camera Bounds' },
+    { id: 'setLayerVisibility', label: 'Set Draw Layer Visibility' },
     { id: 'setGravity', label: 'Set Gravity' },
     { id: 'setJumpForce', label: 'Set Jump Force' },
     { id: 'setPlayerSpeed', label: 'Set Player Speed' },

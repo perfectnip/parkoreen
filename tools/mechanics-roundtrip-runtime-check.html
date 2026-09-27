@@ -74,7 +74,8 @@
           }],
           events: [{
             id: 'event-start', type: 'event', name: 'Initialize score', enabled: true,
-            actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 }], code: ''
+            actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 },
+              { type: 'setLayerVisibility', layerId: 'behind-player', visible: false }], code: ''
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
@@ -96,6 +97,7 @@
         };
         source.addObject(new WorldObject({ id: 'zone-start', type: 'koreen', appearanceType: 'zone',
           actingType: 'zone', zoneName: 'start-area', x: -16, y: -16, width: 64, height: 64, collision: false }));
+        source.addDrawLayer('Reveal Layer', 'behind');
 
         const worldSnapshot = JSON.parse(JSON.stringify(source.toJSON()));
         const jsonRestoredWorld = new World();
@@ -144,7 +146,7 @@
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-object-leave' && trigger.config?.eventId === 'event-object-leave') &&
-          restored.events.some(event => event.id === 'event-start' && event.actions[0]?.type === 'addVariable') &&
+          restored.events.some(event => event.id === 'event-start' && event.actions[1]?.type === 'setLayerVisibility' && event.actions[1].layerId === 'behind-player') &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           world.getObjectById('zone-start')?.zoneName === 'start-area', restored);
@@ -165,6 +167,9 @@
         const afterSecondUpdate = state?.variables?.get('variable-score');
         const afterSecondZoneUpdate = state?.variables?.get('variable-zone-entries');
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
+        check('Event hides its selected draw layer without changing other render layers',
+          world.getRenderLayerDepths().behindPlayer.length === 0 && world.getRenderLayerDepths().abovePlayer.includes(2),
+          world.getRenderLayerDepths());
         check('Game Starts event runs once per world session', afterSecondUpdate === 1, { afterSecondUpdate });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
@@ -178,6 +183,10 @@
         check('Loaded Player Leaves Object trigger runs when contact ends', afterObjectLeave === 1, { afterObjectLeave });
         check('Object leave is edge-triggered while the player stays outside',
           afterSecondObjectLeaveUpdate === 1, { afterSecondObjectLeaveUpdate });
+        window.CodePluginReset({ world });
+        check('Mechanics reset restores default draw-layer visibility',
+          world.getRenderLayerDepths().behindPlayer.includes(0) && world.getRenderLayerDepths().abovePlayer.includes(2),
+          world.getRenderLayerDepths());
 
         const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
         const output = document.getElementById('results');

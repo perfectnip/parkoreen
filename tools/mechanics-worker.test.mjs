@@ -110,6 +110,15 @@ test('room worker validates and rearms Player Leaves Object contact edges', asyn
     assert.equal(eventRequests().length, 3, 'object movement updates the contact latch bounds');
 });
 
+test('room worker validates draw-layer visibility against saved map layers', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = { layerDefinitions: [{ id: 'hidden-layer', depth: 3 }], codeData: {} };
+    const valid = room.sanitizeMechanicsState(mapData, { layerVisibility: { 'hidden-layer': false } });
+    assert.equal(valid?.layerVisibility['hidden-layer'], false);
+    assert.equal(room.sanitizeMechanicsState(mapData, { layerVisibility: { 'not-on-map': false } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { layerVisibility: { 'hidden-layer': 'false' } }), null);
+});
+
 test('room worker rejects zone entry requests without an outside-to-inside transition', async () => {
     const zone = { id: 'zone-1', appearanceType: 'zone', zoneName: 'Hideout', x: 100, y: 100, width: 100, height: 100 };
     const { room, guest, messages } = makeRoom({

@@ -2184,6 +2184,10 @@
                     if (!(tilemap.cells || []).some(cell => cell.x === x && cell.y === y)) return 'Select an existing cell on this tilemap';
                 }
             }
+            if (action.type === 'setLayerVisibility') {
+                if (!(getWorld()?.layerDefinitions || []).some(layer => layer.id === action.layerId)) return 'Select a draw layer on this map';
+                if (typeof action.visible !== 'boolean') return 'Choose whether the draw layer is visible or hidden';
+            }
             if (action.type === 'moveObject') {
                 if (!(getWorld()?.objects || []).some(object => object.id === action.objectId)) return 'Select an object on this map';
                 if (!isFiniteActionNumber(action.x) || !isFiniteActionNumber(action.y) ||
@@ -5111,6 +5115,7 @@
             case 'playObjectSpriteAnimation': return { type, objectId: '', mode: 'play', animationName: '', startFrame: 0, frameCount: 1, fps: 8, loop: false, completionEventId: '' };
             case 'setCameraFollowMode': return { type, mode: 'both' };
             case 'setCameraBounds': return { type, mode: 'map', x: 0, y: 0, width: 2000, height: 1200 };
+            case 'setLayerVisibility': return { type, layerId: '', visible: true };
             case 'setGravity': return { type, mode: 'map', gravity: 0.8 };
             case 'setJumpForce': return { type, mode: 'map', jumpForce: -13.2 };
             case 'setPlayerSpeed': return { type, mode: 'map', speed: 5 };
@@ -5321,6 +5326,10 @@
                 return `<label class="trigger-form-label">Follow axes</label><select class="trigger-form-select event-action-field" data-field="mode"><option value="both" ${action.mode === 'both' ? 'selected' : ''}>Horizontal and vertical</option><option value="horizontal" ${action.mode === 'horizontal' ? 'selected' : ''}>Horizontal only</option><option value="vertical" ${action.mode === 'vertical' ? 'selected' : ''}>Vertical only</option></select><p class="trigger-description">Changes this client's camera for the current play session. The saved map setting is restored when the session resets. Use it for room transitions or side-scrolling sections.</p>`;
             case 'setCameraBounds':
                 return `<label class="trigger-form-label">Bounds mode</label><select class="trigger-form-select event-action-field" data-field="mode"><option value="map" ${action.mode === 'map' ? 'selected' : ''}>Use Map Config bounds</option><option value="unbounded" ${action.mode === 'unbounded' ? 'selected' : ''}>Disable bounds</option><option value="bounds" ${action.mode === 'bounds' ? 'selected' : ''}>Use custom rectangle</option></select><label class="trigger-form-label">Left X</label>${field('x', action.x ?? 0, 'number').replace('type="number"', 'type="number" min="-10000000" max="10000000" step="any"')}<label class="trigger-form-label">Top Y</label>${field('y', action.y ?? 0, 'number').replace('type="number"', 'type="number" min="-10000000" max="10000000" step="any"')}<label class="trigger-form-label">Width</label>${field('width', action.width ?? 2000, 'number').replace('type="number"', 'type="number" min="0.01" max="20000000" step="any"')}<label class="trigger-form-label">Height</label>${field('height', action.height ?? 1200, 'number').replace('type="number"', 'type="number" min="0.01" max="20000000" step="any"')}<p class="trigger-description">Changes the camera rectangle for this client's current session. Custom bounds must stay within ±10,000,000 map pixels. Use Map Config restores the authored setting; reset also restores it.</p>`;
+            case 'setLayerVisibility': {
+                const layers = getWorld()?.layerDefinitions || [];
+                return `<label class="trigger-form-label">Draw layer</label><select class="trigger-form-select event-action-field" data-field="layerId"><option value="">Select a draw layer…</option>${layers.map(layer => `<option value="${escapeHtml(layer.id)}" ${layer.id === action.layerId ? 'selected' : ''}>${escapeHtml(layer.name || `Layer ${layer.depth}`)}</option>`).join('')}</select><label class="trigger-form-label">Visibility</label><select class="trigger-form-select event-action-field" data-field="visible"><option value="true" ${action.visible !== false ? 'selected' : ''}>Visible</option><option value="false" ${action.visible === false ? 'selected' : ''}>Hidden</option></select><p class="trigger-description">Shows or hides everything drawn on this layer for the current session. Collision and object behavior stay active. Reset restores the map's default visibility.</p>`;
+            }
             case 'setGravity':
                 return `<label class="trigger-form-label">Gravity mode</label><select class="trigger-form-select event-action-field" data-field="mode"><option value="map" ${action.mode === 'map' ? 'selected' : ''}>Use Map Config gravity</option><option value="custom" ${action.mode === 'custom' ? 'selected' : ''}>Custom gravity</option></select><label class="trigger-form-label">Gravity (0–5)</label>${field('gravity', action.gravity ?? 0.8, 'number').replace('type="number"', 'type="number" min="0" max="5" step="any"')}<p class="trigger-description">Changes gravity for the current play session and syncs from the host in multiplayer. Use Map Config or reset to restore the saved value.</p>`;
             case 'setJumpForce':
@@ -5447,7 +5456,7 @@
            if (!fieldName) return;
            if (input.type === 'checkbox') action[fieldName] = input.checked;
            else if (input.type === 'number') action[fieldName] = input.value.trim() === '' ? '' : Number(input.value);
-                else if (fieldName === 'enabled' || fieldName === 'repeat' || fieldName === 'equipped' || fieldName === 'loop') action[fieldName] = input.value === 'true';
+                else if (fieldName === 'enabled' || fieldName === 'repeat' || fieldName === 'equipped' || fieldName === 'loop' || fieldName === 'visible') action[fieldName] = input.value === 'true';
            else action[fieldName] = input.value;
        });
        if (type === 'setMovementControl') {

@@ -3661,9 +3661,10 @@ class World {
     }
 
     getRenderLayerDepths() {
+        const isVisible = layer => this._mechanicsLayerVisibility?.get(layer.id) !== false;
         return {
-            behindPlayer: this.layerDefinitions.filter(layer => layer.depth <= 1).map(layer => layer.depth),
-            abovePlayer: this.layerDefinitions.filter(layer => layer.depth >= 2).map(layer => layer.depth)
+            behindPlayer: this.layerDefinitions.filter(layer => isVisible(layer) && layer.depth <= 1).map(layer => layer.depth),
+            abovePlayer: this.layerDefinitions.filter(layer => isVisible(layer) && layer.depth >= 2).map(layer => layer.depth)
         };
     }
 

@@ -682,7 +682,7 @@
     const SHARED_MECHANICS_ACTIONS = new Set([
         'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'clearList', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
         'setTriggerEnabled', 'setObjectEnabled', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
-        'setObjectPosition', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
+        'setObjectPosition', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
     ]);
 
     const getMultiplayerManager = () => typeof window !== 'undefined' ? window.MultiplayerManager || null : null;
@@ -772,6 +772,7 @@
         const objectSpriteAnimations = Object.create(null);
         const objectOpacities = Object.create(null);
         const tilemapCells = Object.create(null);
+        const layerVisibility = Object.create(null);
         for (const object of world?.objects || []) {
             if (object._mechanicsSpawned === true) {
                 if (object.id && typeof object._mechanicsSpawnTemplateId === 'string' &&
@@ -824,7 +825,10 @@
         for (const [cellId, collisionType] of worldState.tilemapCellOverrides) {
             if (MECHANICS_TILEMAP_CELL_BEHAVIORS.has(collisionType)) tilemapCells[cellId] = collisionType;
         }
-        return { variables, lists, objects, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, playerVariables, playerLists, spawnedObjects, tilemapCells, triggers,
+        for (const [layerId, visible] of world?._mechanicsLayerVisibility || []) {
+            if (visible === false && (world.layerDefinitions || []).some(layer => layer.id === layerId)) layerVisibility[layerId] = false;
+        }
+        return { variables, lists, objects, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
             gravity: Number.isFinite(world?._mechanicsGravity) ? world._mechanicsGravity : null,
             jumpForce: Number.isFinite(world?._mechanicsJumpForce) ? world._mechanicsJumpForce : null,
             playerSpeed: Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : null,
@@ -885,6 +889,11 @@
             const target = getTilemapCellById(world, cellId);
             if (target) setMechanicsTilemapCellBehavior(world, worldState, target, collisionType, true);
         }
+        const layerVisibility = snapshot.layerVisibility && typeof snapshot.layerVisibility === 'object' && !Array.isArray(snapshot.layerVisibility)
+            ? snapshot.layerVisibility : {};
+        const validLayerIds = new Set((world?.layerDefinitions || []).map(layer => layer?.id).filter(id => typeof id === 'string' && id));
+        world._mechanicsLayerVisibility = new Map(Object.entries(layerVisibility)
+            .filter(([layerId, visible]) => validLayerIds.has(layerId) && typeof visible === 'boolean' && visible === false));
         const variables = snapshot.variables && typeof snapshot.variables === 'object' && !Array.isArray(snapshot.variables)
             ? snapshot.variables : {};
         for (const [variableId, value] of Object.entries(variables)) {
@@ -2885,6 +2894,19 @@
                 setMechanicsTilemapCellBehavior(world, worldState, target, action.collisionType, context.authoritativeStateApplication === true);
                 break;
             }
+            case 'setLayerVisibility': {
+                const layerExists = (world?.layerDefinitions || []).some(layer => layer.id === action.layerId);
+                if (!layerExists || typeof action.visible !== 'boolean') {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Draw Layer Visibility needs an existing layer and a visible or hidden state.');
+                    break;
+                }
+                if (!(world._mechanicsLayerVisibility instanceof Map)) world._mechanicsLayerVisibility = new Map();
+                if (action.visible) world._mechanicsLayerVisibility.delete(action.layerId);
+                else world._mechanicsLayerVisibility.set(action.layerId, false);
+                if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
+                break;
+            }
             case 'setCameraFollowMode': {
                 if (!['both', 'horizontal', 'vertical'].includes(action.mode)) {
                     reportMechanicsRuntimeError(world, event, actionSource,
@@ -4696,6 +4718,7 @@
             const playerSpeedChanged = Number.isFinite(world._mechanicsPlayerSpeed);
             const movementControlChanged = Number.isFinite(world._mechanicsHorizontalAcceleration) ||
                 Number.isFinite(world._mechanicsAirControl) || Number.isFinite(world._mechanicsTerminalFallSpeed);
+            const layerVisibilityChanged = world?._mechanicsLayerVisibility instanceof Map && world._mechanicsLayerVisibility.size > 0;
             delete world._mechanicsCameraFollowMode;
             delete world._mechanicsCameraBounds;
             delete world._mechanicsGravity;
@@ -4704,6 +4727,7 @@
             delete world._mechanicsHorizontalAcceleration;
             delete world._mechanicsAirControl;
             delete world._mechanicsTerminalFallSpeed;
+            delete world._mechanicsLayerVisibility;
             clearWorldTimers(world);
             const spawned = (world.objects || []).filter(object => object?._mechanicsSpawned === true);
             for (const object of spawned) world.removeObject?.(object.id);
@@ -4719,7 +4743,7 @@
                 tilemapCellsRestored = restoreMechanicsTilemapCell(world, state, cellId, true) || tilemapCellsRestored;
             }
             const triggersChanged = hadTriggerOverrides && !preserveTriggerState;
-            if (spawned.length || tilemapCellsRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged) {
+            if (spawned.length || tilemapCellsRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged || layerVisibilityChanged) {
                 state.sharedMechanicsDirty = true;
                 state.lastSharedMechanicsState = undefined;
                 publishSharedMechanicsState(world);
