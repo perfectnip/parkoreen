@@ -234,9 +234,14 @@
             dataLength: importedEnemyData?.spriteSheet?.data?.length });
         const world = new World();
         world.fromJSON(importedWorldData);
+        const eventCodeAtEachBoundary = {
+          source: source.codeData?.events?.find(event => event.id === 'event-start')?.code,
+          serialized: pkrnPayload.codeData?.events?.find(event => event.id === 'event-start')?.code,
+          imported: importedWorldData.codeData?.events?.find(event => event.id === 'event-start')?.code,
+          loaded: world.codeData?.events?.find(event => event.id === 'event-start')?.code
+        };
         check('Event Python source survives map import',
-          world.codeData?.events?.find(event => event.id === 'event-start')?.code === 'health-api-fixture',
-          world.codeData?.events?.find(event => event.id === 'event-start')?.code);
+          eventCodeAtEachBoundary.loaded === 'health-api-fixture', eventCodeAtEachBoundary);
         const loadedEnemyTemplate = world.getObjectById('enemy-template');
         check('World load retains imported custom music and video background media',
           world.music?.customData?.startsWith('data:audio/ogg;') === true &&
@@ -332,7 +337,7 @@
             objectHealthApiResult?.after?.defeated === false && objectHealthApiResult?.snapshot?.object_health === 3 &&
             objectHealthApiResult?.snapshot?.object_max_health === 5 && objectHealthApiResult?.rejected === false,
           { result: objectHealthApiResult, pythonType: typeof window.runPython,
-            eventCode: world.codeData?.events?.find(event => event.id === 'event-start')?.code });
+            eventCode: eventCodeAtEachBoundary });
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
         check('Event hides its selected draw layer without changing other render layers',
           !world.getRenderLayerDepths().behindPlayer.includes(0) &&
