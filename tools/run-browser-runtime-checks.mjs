@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createReadStream, statSync } from 'node:fs';
+import { appendFile, createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
@@ -61,6 +61,7 @@ const server = createServer((request, response) => {
 });
 
 let browser;
+const summaryLines = ['## Browser runtime checks', ''];
 try {
     await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -108,14 +109,19 @@ try {
             if (report.error || total === 0 || passed !== total || failedCases.length) {
                 failures++;
                 process.stderr.write(`FAIL ${check.description}: ${passed}/${total} passed\n`);
+                summaryLines.push(`- **FAIL** ${check.description}: ${passed}/${total} passed`);
                 for (const failed of failedCases) process.stderr.write(`  ${failed.label || 'unnamed check'}\n`);
+                for (const failed of failedCases) summaryLines.push(`  - ${failed.label || 'unnamed check'}`);
                 if (report.error) process.stderr.write(`  ${report.error}\n`);
+                if (report.error) summaryLines.push(`  - ${report.error.slice(0, 500)}`);
             } else {
                 process.stdout.write(`PASS ${check.description}: ${passed}/${total}\n`);
+                summaryLines.push(`- **PASS** ${check.description}: ${passed}/${total}`);
             }
         } catch (error) {
             failures++;
             process.stderr.write(`FAIL ${check.description}: ${error.message}\n`);
+            summaryLines.push(`- **FAIL** ${check.description}: ${error.message.slice(0, 500)}`);
         } finally {
             await page.close();
         }
@@ -125,4 +131,7 @@ try {
 } finally {
     await browser?.close();
     if (server.listening) await new Promise(resolve => server.close(resolve));
+    if (process.env.GITHUB_STEP_SUMMARY) {
+        await appendFile(process.env.GITHUB_STEP_SUMMARY, `${summaryLines.join('\n')}\n`);
+    }
 }
