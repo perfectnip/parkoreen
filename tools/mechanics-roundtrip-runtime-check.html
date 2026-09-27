@@ -234,6 +234,9 @@
             dataLength: importedEnemyData?.spriteSheet?.data?.length });
         const world = new World();
         world.fromJSON(importedWorldData);
+        check('Event Python source survives map import',
+          world.codeData?.events?.find(event => event.id === 'event-start')?.code === 'health-api-fixture',
+          world.codeData?.events?.find(event => event.id === 'event-start')?.code);
         const loadedEnemyTemplate = world.getObjectById('enemy-template');
         check('World load retains imported custom music and video background media',
           world.music?.customData?.startsWith('data:audio/ogg;') === true &&
@@ -328,7 +331,8 @@
             objectHealthApiResult?.after?.current === 3 && objectHealthApiResult?.after?.maximum === 5 &&
             objectHealthApiResult?.after?.defeated === false && objectHealthApiResult?.snapshot?.object_health === 3 &&
             objectHealthApiResult?.snapshot?.object_max_health === 5 && objectHealthApiResult?.rejected === false,
-          objectHealthApiResult);
+          { result: objectHealthApiResult, pythonType: typeof window.runPython,
+            eventCode: world.codeData?.events?.find(event => event.id === 'event-start')?.code });
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
         check('Event hides its selected draw layer without changing other render layers',
           !world.getRenderLayerDepths().behindPlayer.includes(0) &&
