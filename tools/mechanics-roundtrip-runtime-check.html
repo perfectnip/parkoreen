@@ -529,6 +529,29 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count') });
+        window.CodePluginReset({ world: healthWorld });
+        const resetHealthPlayer = new Player(0, 0, 'Trigger Reset Tester', '#fff');
+        resetHealthPlayer.id = 'health-trigger-reset-player';
+        window.engine = { world: healthWorld, state: 'playing', localPlayer: resetHealthPlayer, remotePlayers: new Map() };
+        window.PluginManager.executeHook('player.init', { player: resetHealthPlayer, world: healthWorld });
+        resetHealthPlayer.hp = 2;
+        window.PluginManager.executeHook('player.update', { player: resetHealthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        const resetHealthState = window.__parkoreenCodeRuntimeState?.worldStates?.get(healthWorld);
+        check('Reset clears session trigger overrides and keeps authored trigger settings',
+          resetHealthState?.triggerEnabled?.size === 0 && healthWorld.codeData.triggers
+            .filter(trigger => [ 'health-any-trigger', 'health-increase-trigger', 'health-decrease-trigger' ].includes(trigger.id))
+            .every(trigger => trigger.enabled === true),
+          { triggerOverrides: resetHealthState?.triggerEnabled?.size,
+            authoredEnabled: healthWorld.codeData.triggers
+              .filter(trigger => [ 'health-any-trigger', 'health-increase-trigger', 'health-decrease-trigger' ].includes(trigger.id))
+              .map(trigger => ({ id: trigger.id, enabled: trigger.enabled })) });
+        resetHealthPlayer.hp = 3;
+        window.PluginManager.executeHook('player.update', { player: resetHealthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Authored trigger fires again after reset clears its previous session override',
+          resetHealthState?.variables?.get('health-increase-count') === 1 &&
+          resetHealthState?.triggerEnabled?.get('health-increase-trigger') === false,
+          { increaseCount: resetHealthState?.variables?.get('health-increase-count'),
+            overrideAfterNewEvent: resetHealthState?.triggerEnabled?.get('health-increase-trigger') });
         window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
 
         player.x = 128;
