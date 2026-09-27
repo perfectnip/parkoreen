@@ -563,11 +563,6 @@
             recentErrors: healthState?.runtimeErrors?.slice(-4) });
         playerWithoutHealth.hp = 7;
         window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
-        const missingMaximumHealthErrors = healthState?.runtimeErrors?.filter(error =>
-          error.message.includes('percentage comparison needs a positive numeric player.maxHP')).length;
-        check('Percentage health branches report a missing maximum instead of guessing',
-          missingMaximumHealthErrors === 1,
-          { missingMaximumHealthErrors, latestErrors: healthState?.runtimeErrors?.slice(-3) });
         check('A restored health source seeds a new baseline without firing a false change',
           healthState?.variables?.get('health-any-count') === 2 &&
           healthState?.variables?.get('health-increase-count') === 1 &&
@@ -575,12 +570,26 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count') });
-        playerWithoutHealth.maxHP = 10;
         playerWithoutHealth.hp = 8;
         window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
-        check('Recovered health triggers resume from the newly seeded baseline',
+        const missingMaximumHealthErrors = healthState?.runtimeErrors?.filter(error =>
+          error.message.includes('percentage comparison needs a positive numeric player.maxHP')).length;
+        check('Percentage health branches report a missing maximum instead of guessing',
+          missingMaximumHealthErrors === 1,
+          { missingMaximumHealthErrors, latestErrors: healthState?.runtimeErrors?.slice(-3) });
+        check('A percentage branch without maxHP does not stop other actions in its Event',
           healthState?.variables?.get('health-any-count') === 3 &&
           healthState?.variables?.get('health-increase-count') === 2 &&
+          healthState?.variables?.get('health-decrease-count') === 1,
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count') });
+        playerWithoutHealth.maxHP = 10;
+        playerWithoutHealth.hp = 9;
+        window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Recovered health triggers resume from the newly seeded baseline',
+          healthState?.variables?.get('health-any-count') === 4 &&
+          healthState?.variables?.get('health-increase-count') === 3 &&
           healthState?.variables?.get('health-decrease-count') === 1,
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
