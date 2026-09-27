@@ -4220,6 +4220,23 @@
             return changed;
         };
 
+        const setTilemapCellFrame = (tilemapId, x, y, atlasFrame) => {
+            const gridSize = window.GRID_SIZE || 32;
+            if (typeof tilemapId !== 'string' || !tilemapId || tilemapId.length > 80 ||
+                !Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+                x % gridSize !== 0 || y % gridSize !== 0 || Math.abs(x) > 10000000 || Math.abs(y) > 10000000 ||
+                !Number.isSafeInteger(atlasFrame) || atlasFrame < 0) return false;
+            const target = getTilemapCellAt(world, tilemapId, x, y);
+            if (!target?.tilemap?.atlas || target.cell.animation) return false;
+            const frameCount = Number(target.tilemap.atlas.columns) * Number(target.tilemap.atlas.rows);
+            if (!Number.isSafeInteger(frameCount) || frameCount < 1 || atlasFrame >= frameCount) return false;
+            const multiplayer = getMultiplayerManager();
+            if (multiplayer?.getRoomCode?.() && !multiplayer.isHost) return false;
+            const changed = setMechanicsTilemapCellFrame(world, getWorldState(world), target, atlasFrame);
+            if (changed && multiplayer?.getRoomCode?.() && multiplayer.isHost) publishSharedMechanicsState(world);
+            return changed;
+        };
+
         const setObjectEnabled = (objectId, enabled) => {
             if (typeof objectId !== 'string' || !objectId || objectId.length > 128 || typeof enabled !== 'boolean') return false;
             const multiplayer = getMultiplayerManager();
@@ -4377,6 +4394,7 @@
             getTilemaps,
             getTilemapCells,
             setTilemapCellBehavior,
+            setTilemapCellFrame,
             setObjectEnabled,
             setObjectPosition,
             getObjectHealth,

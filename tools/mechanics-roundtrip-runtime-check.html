@@ -23,7 +23,7 @@
   <script src="../assets/js/exportImport.js"></script>
   <script src="../assets/plugins/code/js/skulpt.min.js"></script>
   <script src="../assets/plugins/code/js/skulpt-stdlib.js"></script>
-  <script src="../assets/plugins/code/js/pythonCompiler.js"></script>
+  <script src="../assets/plugins/code/js/pythonCompiler.js?tilemap-frame-python-api"></script>
   <script src="../assets/plugins/code/js/globals.js"></script>
   <script>
     window.__mechanicsHooks = new Map();
@@ -70,18 +70,7 @@
     (async () => {
       const checks = [];
       const check = (label, passed, details = null) => checks.push({ label, passed: Boolean(passed), details });
-      const healthApiPythonCode = [
-        'import parkoreen',
-        'assert parkoreen.API_VERSION == 1',
-        'assert parkoreen.get_object_health("phase-cube") is None',
-        'assert parkoreen.set_object_health("phase-cube", 3, 5) is True',
-        'health = parkoreen.get_object_health("phase-cube")',
-        'assert health["current"] == 3 and health["maximum"] == 5 and health["defeated"] is False',
-        'obj = parkoreen.get_object("phase-cube")',
-        'assert obj["object_health"] == 3 and obj["object_max_health"] == 5',
-        'assert parkoreen.set_object_health("phase-cube", 6, 5) is False',
-        'print("object-health-api-ok")'
-      ].join('\n');
+      let healthApiPythonCode = '';
       const healthTriggerPythonCode = [
         'import parkoreen',
         'context = parkoreen.get_context()',
@@ -109,7 +98,33 @@
         tilemapAtlasContext.fillRect(32, 0, 32, 32);
         source.setTilemapAtlas({ data: tilemapAtlasCanvas.toDataURL('image/png'), frameWidth: 32, frameHeight: 32, columns: 2, rows: 1 }, 1);
         source.setTilemapCell(0, 64, { collisionType: 'solid', atlasFrame: 0 }, 1);
+        source.setTilemapCell(32, 64, { collisionType: 'decorative', animation: { atlasFrames: [0, 1], fps: 4 } }, 1);
         const testTilemap = source.tilemaps.find(tilemap => tilemap.layer === 1);
+        healthApiPythonCode = [
+          'import parkoreen',
+          'assert parkoreen.API_VERSION == 1',
+          'assert parkoreen.get_object_health("phase-cube") is None',
+          'assert parkoreen.set_object_health("phase-cube", 3, 5) is True',
+          'health = parkoreen.get_object_health("phase-cube")',
+          'assert health["current"] == 3 and health["maximum"] == 5 and health["defeated"] is False',
+          'obj = parkoreen.get_object("phase-cube")',
+          'assert obj["object_health"] == 3 and obj["object_max_health"] == 5',
+          'assert parkoreen.set_object_health("phase-cube", 6, 5) is False',
+          `tilemap_id = "${testTilemap.id}"`,
+          'cells = parkoreen.get_tilemap_cells(tilemap_id)',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 1 for cell in cells)',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["collision_type"] == "solid" for cell in cells)',
+          'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 0, 64, 0) is True',
+          'cells = parkoreen.get_tilemap_cells(tilemap_id)',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 0 for cell in cells)',
+          'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 0, 64, 1) is True',
+          'cells = parkoreen.get_tilemap_cells(tilemap_id)',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 1 and cell["collision_type"] == "solid" for cell in cells)',
+          'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 0, 64, 2) is False',
+          'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 1, 64, 0) is False',
+          'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 32, 64, 0) is False',
+          'print("object-health-api-ok")'
+        ].join('\n');
         source.mapName = 'Mechanics Round Trip';
         source.persistCheckpoints = true;
         source.music = {
