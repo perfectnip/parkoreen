@@ -488,6 +488,40 @@
           healthState?.variables?.get('health-respawn-count') === 1,
           { respawns: healthState?.variables?.get('health-respawn-count'),
             runtimeErrors: healthState?.runtimeErrors?.slice(-3) });
+        healthWorld.codeData.events.find(event => event.id === 'health-any-event').code = '';
+        const playerWithoutHealth = new Player(0, 0, 'Missing Health Tester', '#fff');
+        playerWithoutHealth.id = 'missing-health-trigger-player';
+        window.engine = { world: healthWorld, state: 'playing', localPlayer: playerWithoutHealth, remotePlayers: new Map() };
+        window.PluginManager.executeHook('player.init', { player: playerWithoutHealth, world: healthWorld });
+        window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        const missingHealthErrorCount = healthState?.runtimeErrors?.filter(error =>
+          error.message.includes('needs a plugin that provides a numeric player.hp value')).length;
+        window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Health triggers report a missing numeric health source once per trigger and player',
+          missingHealthErrorCount === 3 && healthState?.runtimeErrors?.filter(error =>
+            error.message.includes('needs a plugin that provides a numeric player.hp value')).length === missingHealthErrorCount,
+          { initialErrors: missingHealthErrorCount,
+            repeatedErrors: healthState?.runtimeErrors?.filter(error =>
+              error.message.includes('needs a plugin that provides a numeric player.hp value')).length,
+            recentErrors: healthState?.runtimeErrors?.slice(-4) });
+        playerWithoutHealth.hp = 7;
+        window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('A restored health source seeds a new baseline without firing a false change',
+          healthState?.variables?.get('health-any-count') === 2 &&
+          healthState?.variables?.get('health-increase-count') === 1 &&
+          healthState?.variables?.get('health-decrease-count') === 1,
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count') });
+        playerWithoutHealth.hp = 8;
+        window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        check('Recovered health triggers resume from the newly seeded baseline',
+          healthState?.variables?.get('health-any-count') === 3 &&
+          healthState?.variables?.get('health-increase-count') === 2 &&
+          healthState?.variables?.get('health-decrease-count') === 1,
+          { any: healthState?.variables?.get('health-any-count'),
+            increase: healthState?.variables?.get('health-increase-count'),
+            decrease: healthState?.variables?.get('health-decrease-count') });
         window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
 
         player.x = 128;
