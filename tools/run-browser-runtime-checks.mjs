@@ -111,8 +111,15 @@ try {
                 failures++;
                 process.stderr.write(`FAIL ${check.description}: ${passed}/${total} passed\n`);
                 summaryLines.push(`- **FAIL** ${check.description}: ${passed}/${total} passed`);
-                for (const failed of failedCases) process.stderr.write(`  ${failed.label || 'unnamed check'}\n`);
-                for (const failed of failedCases) summaryLines.push(`  - ${failed.label || 'unnamed check'}`);
+                for (const failed of failedCases) {
+                    process.stderr.write(`  ${failed.label || 'unnamed check'}\n`);
+                    summaryLines.push(`  - ${failed.label || 'unnamed check'}`);
+                    if (failed.details !== undefined) {
+                        const details = JSON.stringify(failed.details);
+                        process.stderr.write(`    details: ${details}\n`);
+                        summaryLines.push(`    - Details: \`${details.slice(0, 1000)}\``);
+                    }
+                }
                 if (report.error) process.stderr.write(`  ${report.error}\n`);
                 if (report.error) summaryLines.push(`  - ${report.error.slice(0, 500)}`);
             } else {
