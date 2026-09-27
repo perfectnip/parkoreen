@@ -51,6 +51,9 @@ jobs:
       - name: Check isolated plugin API v2 draft contract
         run: node --test tools/plugin-v2-draft-contract.test.mjs
 
+      - name: Check plugin authoring workflow
+        run: node --test tools/plugin-authoring-workflow.test.mjs
+
       - name: Preflight every bundled plugin
         shell: bash
         run: |
