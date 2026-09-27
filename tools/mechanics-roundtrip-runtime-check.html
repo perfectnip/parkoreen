@@ -432,11 +432,13 @@
           ],
           events: [
             { id: 'health-any-event', type: 'event', name: 'Count health changes', enabled: true,
-              actions: [{ type: 'addVariable', variableId: 'health-any-count', amount: 1 }], code: healthTriggerPythonCode },
+              actions: [{ type: 'setTriggerEnabled', triggerId: 'health-increase-trigger', enabled: false },
+                { type: 'addVariable', variableId: 'health-any-count', amount: 1 }], code: healthTriggerPythonCode },
             { id: 'health-increase-event', type: 'event', name: 'Count health increases', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-increase-count', amount: 1 }], code: '' },
             { id: 'health-decrease-event', type: 'event', name: 'Count health decreases', enabled: true,
-              actions: [{ type: 'addVariable', variableId: 'health-decrease-count', amount: 1 }], code: '' },
+              actions: [{ type: 'setTriggerEnabled', triggerId: 'health-increase-trigger', enabled: true },
+                { type: 'addVariable', variableId: 'health-decrease-count', amount: 1 }], code: '' },
             { id: 'health-respawn-event', type: 'event', name: 'Count respawns', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-respawn-count', amount: 1 }], code: '' }
           ],
@@ -469,6 +471,11 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count'), result: healthTriggerPythonResult });
+        check('An Event trigger toggle does not reorder triggers within the current update pass',
+          healthState?.triggerEnabled?.get('health-increase-trigger') === false &&
+          healthState?.variables?.get('health-increase-count') === 1,
+          { enabledAfterEvent: healthState?.triggerEnabled?.get('health-increase-trigger'),
+            increaseCount: healthState?.variables?.get('health-increase-count') });
         window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });
         check('Player Health Changed does not fire when its numeric value is unchanged',
           healthState?.variables?.get('health-any-count') === 1 && healthState?.variables?.get('health-increase-count') === 1,
