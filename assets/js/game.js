@@ -4197,6 +4197,9 @@ class World {
         if (obj.rotation !== 0) return false;
         if (obj.flipHorizontal) return false;
         if (obj.oneWayPlatform) return false;
+        // Mechanics opacity is applied by WorldObject.render. Merged blocks
+        // bypass that method, so keep overridden objects in the regular path.
+        if (obj._mechanicsOpacity !== undefined) return false;
         if (obj.width !== GRID_SIZE || obj.height !== GRID_SIZE) return false;
         if (Math.round(obj.x) % GRID_SIZE !== 0 || Math.round(obj.y) % GRID_SIZE !== 0) return false;
         return true;
