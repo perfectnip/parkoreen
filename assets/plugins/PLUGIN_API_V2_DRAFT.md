@@ -48,9 +48,10 @@ the runtime still needs to enforce them, and their method semantics need review.
 The offline [`protocol-guard.mjs`](api-v2-draft/protocol-guard.mjs) and
 `tools/plugin-v2-draft-contract.test.mjs` exercise exact plugin request fields,
 capability-to-method checks, package-declared inputs/assets/sounds, JSON depth,
-storage size, and adversarial payload rejection. CI runs these draft contract
-checks, but the game runtime does not load the guard and none of the checks
-create an isolation boundary or permit API v2 installation.
+storage size, adversarial payload rejection, request/response correlation, and
+method-specific host result shapes. CI runs these draft contract checks, but
+the game runtime does not load the guard and none of the checks create an
+isolation boundary or permit API v2 installation.
 
 The contract is intentionally JSON-only. `JsonValue` is null, boolean, finite
 number, string, array, or object composed recursively from those values. The

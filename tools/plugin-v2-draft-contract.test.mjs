@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     API_V2_LIMITS,
     API_V2_METHOD_CAPABILITY,
+    validateHostResponse,
     validatePluginRequest
 } from '../assets/plugins/api-v2-draft/protocol-guard.mjs';
 
@@ -13,6 +14,9 @@ const request = (method, args = {}, requestId = 'request_1') => ({
 });
 const validate = (message, capability, declarations = {}) =>
     validatePluginRequest(message, capability ? [capability] : [], declarations);
+const response = (value, responseTo = 'request_1') => ({
+    type: 'response', apiVersion: 2, responseTo, ok: true, value
+});
 
 test('draft capability map stays aligned with the protocol schema method and capability enums', () => {
     assert.deepEqual(Object.keys(API_V2_METHOD_CAPABILITY).sort(), schema.$defs.pluginMethod.enum.slice().sort());
@@ -94,4 +98,47 @@ test('rejects cyclic, non-finite, and oversized messages before method dispatch'
         commands: Array.from({ length: 256 }, () => ({ op: 'text', x: 0, y: 0, text: longText, color: '#ffffff', fontSize: 64 }))
     });
     assert.equal(validate(oversized, 'render.commands').error.code, 'MESSAGE_TOO_LARGE');
+});
+
+test('host success replies correlate to the pending request and validate method results', () => {
+    const mapRequest = request('map.getSnapshot', { objectOffset: 0, objectLimit: 1 });
+    const mapValue = {
+        mapId: 'map-1', mapName: 'Test Map', gravity: 1, objectCount: 2, objectOffset: 0, nextObjectOffset: 1,
+        objects: [{ id: 'floor-1', name: 'Floor', type: 'block', x: 0, y: 64, width: 128, height: 32, enabled: true }]
+    };
+    assert.equal(validateHostResponse(response(mapValue), mapRequest).ok, true);
+    assert.equal(validateHostResponse(response(mapValue, 'another_request'), mapRequest).error.code, 'RESPONSE_MISMATCH');
+    assert.equal(validateHostResponse(response({ ...mapValue, nextObjectOffset: null }), mapRequest).error.code, 'INVALID_RESULT');
+    assert.equal(validateHostResponse(response({ ...mapValue, ignored: true }), mapRequest).error.code, 'INVALID_RESULT');
+
+    const playerRequest = request('players.getSnapshot');
+    const player = id => ({ playerId: id, name: id, x: 0, y: 0, width: 32, height: 48,
+        vx: 0, vy: 0, isGrounded: true, isDead: false });
+    const playersValue = { playerCount: 2, playerOffset: 0, nextPlayerOffset: null,
+        players: [player('a-session'), player('b-session')] };
+    assert.equal(validateHostResponse(response(playersValue), playerRequest).ok, true);
+    assert.equal(validateHostResponse(response({ ...playersValue, players: [player('b-session'), player('a-session')] }), playerRequest).error.code, 'INVALID_RESULT');
+});
+
+test('host success result fields stay coupled to accepted request payloads', () => {
+    const inputRequest = request('input.subscribe', { controlIds: ['interact', 'dash'] });
+    assert.equal(validateHostResponse(response({ subscribedControlIds: ['dash'] }), inputRequest).ok, true);
+    assert.equal(validateHostResponse(response({ subscribedControlIds: ['undeclared'] }), inputRequest).error.code, 'INVALID_RESULT');
+    const renderRequest = request('render.submit', { commands: [{ op: 'rect', x: 0, y: 0, width: 4, height: 4, color: '#ffffff' }] });
+    assert.equal(validateHostResponse(response({ queuedCommands: 1 }), renderRequest).ok, true);
+    assert.equal(validateHostResponse(response({ queuedCommands: 2 }), renderRequest).error.code, 'INVALID_RESULT');
+});
+
+test('host error envelopes remain bounded and exact', () => {
+    const pending = request('audio.play', { soundName: 'hit' });
+    const validError = { type: 'response', apiVersion: 2, responseTo: 'request_1', ok: false,
+        error: { code: 'NOT_DECLARED', message: 'The sound is not part of this package.' } };
+    assert.equal(validateHostResponse(validError, pending).ok, true);
+    assert.equal(validateHostResponse({ ...validError, extra: true }, pending).error.code, 'INVALID_RESPONSE');
+    assert.equal(validateHostResponse({ ...validError, error: { code: 'bad code', message: '' } }, pending).error.code, 'INVALID_RESPONSE');
+    let getterCalled = false;
+    const accessorResponse = { apiVersion: 2, responseTo: 'request_1', ok: false, error: validError.error };
+    Object.defineProperty(accessorResponse, 'type', { enumerable: true, get() { getterCalled = true; return 'response'; } });
+    assert.equal(validateHostResponse(accessorResponse, pending).error.code, 'INVALID_RESPONSE');
+    assert.equal(getterCalled, false, 'response validation does not execute property accessors');
 });

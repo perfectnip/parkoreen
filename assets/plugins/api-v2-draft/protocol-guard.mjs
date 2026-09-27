@@ -221,3 +221,133 @@ export function validatePluginRequest(message, grants, declarations = {}) {
     }
     return { ok: true, capability, request: JSON.parse(JSON.stringify(message)) };
 }
+
+function validMapObjectResult(object) {
+    return hasOnlyKeys(object,
+        ['id', 'name', 'type', 'x', 'y', 'width', 'height', 'enabled', 'collisionShape'],
+        ['id', 'name', 'type', 'x', 'y', 'width', 'height', 'enabled']) &&
+        isString(object.id, 1, 128) && isString(object.name, 0, 128) && isString(object.type, 1, 64) &&
+        isFiniteInRange(object.x, -10000000, 10000000) && isFiniteInRange(object.y, -10000000, 10000000) &&
+        isFiniteInRange(object.width, 0, 10000000) && isFiniteInRange(object.height, 0, 10000000) &&
+        typeof object.enabled === 'boolean' &&
+        (object.collisionShape === undefined ||
+            ['box', 'circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(object.collisionShape));
+}
+
+function validPlayerResult(player) {
+    return hasOnlyKeys(player,
+        ['playerId', 'name', 'x', 'y', 'width', 'height', 'vx', 'vy', 'isGrounded', 'isDead'],
+        ['playerId', 'name', 'x', 'y', 'width', 'height', 'vx', 'vy', 'isGrounded', 'isDead']) &&
+        isString(player.playerId, 1, 128) && isString(player.name, 0, 128) &&
+        isFiniteInRange(player.x, -10000000, 10000000) && isFiniteInRange(player.y, -10000000, 10000000) &&
+        isFiniteInRange(player.width, 0, 10000) && isFiniteInRange(player.height, 0, 10000) &&
+        isFiniteInRange(player.vx, -10000, 10000) && isFiniteInRange(player.vy, -10000, 10000) &&
+        (typeof player.isGrounded === 'boolean' || player.isGrounded === null) &&
+        (typeof player.isDead === 'boolean' || player.isDead === null);
+}
+
+function validMethodResult(method, value, request) {
+    if (!inspectJsonValue(value)) return false;
+    switch (method) {
+        case 'map.getSnapshot': {
+            if (!hasOnlyKeys(value,
+                ['mapId', 'mapName', 'gravity', 'objectCount', 'objectOffset', 'nextObjectOffset', 'objects'],
+                ['mapId', 'mapName', 'gravity', 'objectCount', 'objectOffset', 'nextObjectOffset', 'objects']) ||
+                !(value.mapId === null || isString(value.mapId, 0, 128)) || !isString(value.mapName, 0, 128) ||
+                !isFiniteInRange(value.gravity, 0, 100) || !isIntegerInRange(value.objectCount, 0, 1000000) ||
+                !isIntegerInRange(value.objectOffset, 0, 1000000) ||
+                !(value.nextObjectOffset === null || isIntegerInRange(value.nextObjectOffset, 0, 1000000)) ||
+                !Array.isArray(value.objects) || value.objects.length > 64 || !value.objects.every(validMapObjectResult)) return false;
+            const expectedOffset = request.args.objectOffset ?? 0;
+            const requestedLimit = request.args.objectLimit ?? 64;
+            if (value.objectOffset !== expectedOffset || value.objects.length > requestedLimit) return false;
+            const followingOffset = value.objectOffset + value.objects.length;
+            return value.nextObjectOffset === null
+                ? followingOffset >= value.objectCount
+                : value.nextObjectOffset === followingOffset && followingOffset < value.objectCount;
+        }
+        case 'players.getSnapshot': {
+            if (!hasOnlyKeys(value,
+                ['playerCount', 'playerOffset', 'nextPlayerOffset', 'players'],
+                ['playerCount', 'playerOffset', 'nextPlayerOffset', 'players']) ||
+                !isIntegerInRange(value.playerCount, 0, 1024) || !isIntegerInRange(value.playerOffset, 0, 1024) ||
+                !(value.nextPlayerOffset === null || isIntegerInRange(value.nextPlayerOffset, 0, 1024)) ||
+                !Array.isArray(value.players) || value.players.length > 32 || !value.players.every(validPlayerResult)) return false;
+            const expectedOffset = request.args.playerOffset ?? 0;
+            const requestedLimit = request.args.playerLimit ?? 32;
+            if (value.playerOffset !== expectedOffset || value.players.length > requestedLimit) return false;
+            const ids = value.players.map(player => player.playerId);
+            if (new Set(ids).size !== ids.length || ids.some((id, index) => index > 0 && ids[index - 1] >= id)) return false;
+            const followingOffset = value.playerOffset + value.players.length;
+            return value.nextPlayerOffset === null
+                ? followingOffset >= value.playerCount
+                : value.nextPlayerOffset === followingOffset && followingOffset < value.playerCount;
+        }
+        case 'input.subscribe':
+            return Array.isArray(request.args.controlIds) &&
+                hasOnlyKeys(value, ['subscribedControlIds'], ['subscribedControlIds']) &&
+                Array.isArray(value.subscribedControlIds) && value.subscribedControlIds.length <= 32 &&
+                value.subscribedControlIds.every(id => request.args.controlIds.includes(id)) &&
+                new Set(value.subscribedControlIds).size === value.subscribedControlIds.length;
+        case 'render.submit':
+            return Array.isArray(request.args.commands) &&
+                hasOnlyKeys(value, ['queuedCommands'], ['queuedCommands']) &&
+                isIntegerInRange(value.queuedCommands, 0, Math.min(256, request.args.commands.length));
+        case 'audio.play':
+            return hasOnlyKeys(value, ['played'], ['played']) && typeof value.played === 'boolean';
+        case 'gameplay.request':
+            return hasOnlyKeys(value, ['queuedForTick'], ['queuedForTick']) &&
+                isIntegerInRange(value.queuedForTick, 0, 2147483647);
+        case 'storage.get':
+            if (!isPlainObject(value)) return false;
+            if (value.found === false) return hasOnlyKeys(value, ['found'], ['found']);
+            if (value.found !== true || !hasOnlyKeys(value, ['found', 'value'], ['found', 'value'])) return false;
+            return new TextEncoder().encode(JSON.stringify(value.value)).byteLength <= API_V2_LIMITS.storageValueBytes;
+        case 'storage.set':
+            return hasOnlyKeys(value, ['stored'], ['stored']) && typeof value.stored === 'boolean';
+        default:
+            return false;
+    }
+}
+
+/**
+ * Validate a host response against the pending plugin request. The pending
+ * request must be retained by a future broker until this check completes.
+ */
+export function validateHostResponse(message, pendingRequest) {
+    if (!isPlainObject(pendingRequest) || pendingRequest.type !== 'request' ||
+        !isString(pendingRequest.requestId, 1, 64, requestIdPattern) ||
+        !Object.hasOwn(API_V2_METHOD_CAPABILITY, pendingRequest.method) || !isPlainObject(pendingRequest.args) ||
+        !inspectJsonValue(pendingRequest)) {
+        return fail('INVALID_PENDING_REQUEST', 'The pending request context is missing or invalid.');
+    }
+    if (!isPlainObject(message) || !inspectJsonValue(message)) {
+        return fail('INVALID_RESPONSE', 'Response must be bounded plain JSON data.');
+    }
+    if (message.type !== 'response' || message.apiVersion !== 2 ||
+        message.responseTo !== pendingRequest.requestId || typeof message.ok !== 'boolean') {
+        return fail('RESPONSE_MISMATCH', 'Response type, version, or request correlation is invalid.');
+    }
+    const expectedKeys = message.ok
+        ? ['type', 'apiVersion', 'responseTo', 'ok', 'value']
+        : ['type', 'apiVersion', 'responseTo', 'ok', 'error'];
+    if (!hasOnlyKeys(message, expectedKeys, expectedKeys)) return fail('INVALID_RESPONSE', 'Response contains missing or unknown fields.');
+    let encoded;
+    try {
+        encoded = new TextEncoder().encode(JSON.stringify(message)).byteLength;
+    } catch {
+        return fail('INVALID_RESPONSE', 'Response cannot be encoded as JSON.');
+    }
+    if (encoded > API_V2_LIMITS.messageBytes || !inspectJsonValue(message)) {
+        return fail('INVALID_RESPONSE', 'Response exceeds the bounded JSON message contract.');
+    }
+    if (message.ok) {
+        if (!validMethodResult(pendingRequest.method, message.value, pendingRequest)) {
+            return fail('INVALID_RESULT', 'The success result does not match the pending method contract.');
+        }
+    } else if (!hasOnlyKeys(message.error, ['code', 'message'], ['code', 'message']) ||
+        !isString(message.error.code, 1, 64, /^[A-Z0-9_]+$/) || !isString(message.error.message, 0, 256)) {
+        return fail('INVALID_RESPONSE', 'Error response fields do not match the contract.');
+    }
+    return { ok: true, response: JSON.parse(JSON.stringify(message)) };
+}
