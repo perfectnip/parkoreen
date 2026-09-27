@@ -23,6 +23,7 @@ export type ParkoreenPluginIdV2 = string;
 
 export type ParkoreenPluginMethodV2 =
     | 'map.getSnapshot'
+    | 'tilemap.getSnapshot'
     | 'players.getSnapshot'
     | 'input.subscribe'
     | 'render.submit'
@@ -94,6 +95,28 @@ export interface ParkoreenMapSnapshotResultV2 {
     objects: ParkoreenMapObjectSnapshotV2[];
 }
 
+export interface ParkoreenTilemapCellV2 {
+    /** World pixel coordinates on the native 32 px tile grid. */
+    x: number;
+    y: number;
+    collisionType: 'solid' | 'oneWay' | 'rampUpRight' | 'rampUpLeft' | 'hazard' | 'decorative';
+    collisionShape: 'box' | 'polygon' | 'rampUpRight' | 'rampUpLeft';
+    /** Normalized [0, 1] cell-local vertices; null for non-polygon collision. */
+    collisionPoints: [number, number][] | null;
+    polygonOneWay: boolean | null;
+}
+
+export interface ParkoreenTilemapSnapshotResultV2 {
+    tilemapId: string;
+    tilemapName: string;
+    layer: number;
+    cellCount: number;
+    cellOffset: number;
+    nextCellOffset: number | null;
+    /** At most 128 unique cells, sorted by y then x; re-read after gameplay changes. */
+    cells: ParkoreenTilemapCellV2[];
+}
+
 export interface ParkoreenPlayerSnapshotV2 {
     /** Opaque, room-session-scoped id; never an account id. */
     playerId: string;
@@ -123,6 +146,7 @@ export type ParkoreenStorageGetResultV2 =
 
 export type ParkoreenPluginResultV2 =
     | ParkoreenMapSnapshotResultV2
+    | ParkoreenTilemapSnapshotResultV2
     | ParkoreenPlayersSnapshotResultV2
     | { subscribedControlIds: string[] }
     | { queuedCommands: number }
@@ -162,6 +186,7 @@ export type ParkoreenGameplayRequestV2 =
 
 export type ParkoreenPluginRequestV2 =
     | ParkoreenPluginRequestEnvelopeV2<'map.getSnapshot', { objectOffset?: number; objectLimit?: number }>
+    | ParkoreenPluginRequestEnvelopeV2<'tilemap.getSnapshot', { tilemapId: string; cellOffset?: number; cellLimit?: number }>
     | ParkoreenPluginRequestEnvelopeV2<'players.getSnapshot', { playerOffset?: number; playerLimit?: number }>
     | ParkoreenPluginRequestEnvelopeV2<'input.subscribe', { controlIds: string[] }>
     | ParkoreenPluginRequestEnvelopeV2<'render.submit', { commands: ParkoreenRenderCommandV2[] }>

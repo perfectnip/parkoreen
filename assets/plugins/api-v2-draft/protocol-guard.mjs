@@ -15,6 +15,7 @@ export const API_V2_LIMITS = Object.freeze({
 
 export const API_V2_METHOD_CAPABILITY = Object.freeze({
     'map.getSnapshot': 'map.read',
+    'tilemap.getSnapshot': 'map.read',
     'players.getSnapshot': 'players.read',
     'input.subscribe': 'input.read',
     'render.submit': 'render.commands',
@@ -141,6 +142,11 @@ function validateMethodArguments(method, args, declarations) {
             return hasOnlyKeys(args, ['objectOffset', 'objectLimit']) &&
                 (args.objectOffset === undefined || isIntegerInRange(args.objectOffset, 0, 1000000)) &&
                 (args.objectLimit === undefined || isIntegerInRange(args.objectLimit, 1, 64));
+        case 'tilemap.getSnapshot':
+            return hasOnlyKeys(args, ['tilemapId', 'cellOffset', 'cellLimit'], ['tilemapId']) &&
+                isString(args.tilemapId, 1, 128) &&
+                (args.cellOffset === undefined || isIntegerInRange(args.cellOffset, 0, 100000)) &&
+                (args.cellLimit === undefined || isIntegerInRange(args.cellLimit, 1, 128));
         case 'players.getSnapshot':
             return hasOnlyKeys(args, ['playerOffset', 'playerLimit']) &&
                 (args.playerOffset === undefined || isIntegerInRange(args.playerOffset, 0, 1024)) &&
@@ -256,6 +262,47 @@ function validPlayerResult(player) {
         (typeof player.isDead === 'boolean' || player.isDead === null);
 }
 
+function validTilemapCellResult(cell) {
+    if (!hasOnlyKeys(cell, ['x', 'y', 'collisionType', 'collisionShape', 'collisionPoints', 'polygonOneWay'],
+        ['x', 'y', 'collisionType', 'collisionShape', 'collisionPoints', 'polygonOneWay']) ||
+        !isIntegerInRange(cell.x, -10000000, 10000000) || cell.x % 32 !== 0 ||
+        !isIntegerInRange(cell.y, -10000000, 10000000) || cell.y % 32 !== 0 ||
+        !['solid', 'oneWay', 'rampUpRight', 'rampUpLeft', 'hazard', 'decorative'].includes(cell.collisionType) ||
+        !['box', 'polygon', 'rampUpRight', 'rampUpLeft'].includes(cell.collisionShape)) return false;
+    if (cell.collisionShape === 'polygon') {
+        const points = cell.collisionPoints;
+        if (!['solid', 'oneWay'].includes(cell.collisionType) || !Array.isArray(points) || points.length < 3 || points.length > 12 ||
+            !points.every(point => Array.isArray(point) && point.length === 2 &&
+                isFiniteInRange(point[0], 0, 1) && isFiniteInRange(point[1], 0, 1)) ||
+            typeof cell.polygonOneWay !== 'boolean' || (cell.collisionType === 'oneWay' && !cell.polygonOneWay)) return false;
+        for (let first = 0; first < points.length; first++) {
+            for (let second = first + 1; second < points.length; second++) {
+                if (Math.abs(points[first][0] - points[second][0]) < 1e-8 &&
+                    Math.abs(points[first][1] - points[second][1]) < 1e-8) return false;
+            }
+        }
+        let turnSign = 0;
+        let doubledArea = 0;
+        for (let index = 0; index < points.length; index++) {
+            const a = points[index];
+            const b = points[(index + 1) % points.length];
+            const c = points[(index + 2) % points.length];
+            const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+            if (Math.abs(cross) > 1e-8) {
+                const sign = Math.sign(cross);
+                if (turnSign && sign !== turnSign) return false;
+                turnSign = sign;
+            }
+            doubledArea += a[0] * b[1] - b[0] * a[1];
+        }
+        return turnSign !== 0 && Math.abs(doubledArea) >= 1e-8;
+    }
+    return cell.collisionPoints === null && cell.polygonOneWay === null &&
+        (cell.collisionType === 'rampUpRight' || cell.collisionType === 'rampUpLeft'
+            ? cell.collisionShape === cell.collisionType
+            : cell.collisionShape === 'box');
+}
+
 function validMethodResult(method, value, request) {
     if (!inspectJsonValue(value)) return false;
     switch (method) {
@@ -275,6 +322,28 @@ function validMethodResult(method, value, request) {
             return value.nextObjectOffset === null
                 ? followingOffset >= value.objectCount
                 : value.nextObjectOffset === followingOffset && followingOffset < value.objectCount;
+        }
+        case 'tilemap.getSnapshot': {
+            if (!hasOnlyKeys(value,
+                ['tilemapId', 'tilemapName', 'layer', 'cellCount', 'cellOffset', 'nextCellOffset', 'cells'],
+                ['tilemapId', 'tilemapName', 'layer', 'cellCount', 'cellOffset', 'nextCellOffset', 'cells']) ||
+                value.tilemapId !== request.args.tilemapId || !isString(value.tilemapName, 0, 128) ||
+                !isIntegerInRange(value.layer, -1000, 1000) || !isIntegerInRange(value.cellCount, 0, 100000) ||
+                !isIntegerInRange(value.cellOffset, 0, 100000) ||
+                !(value.nextCellOffset === null || isIntegerInRange(value.nextCellOffset, 0, 100000)) ||
+                !Array.isArray(value.cells) || value.cells.length > 128 || !value.cells.every(validTilemapCellResult)) return false;
+            const expectedOffset = request.args.cellOffset ?? 0;
+            const requestedLimit = request.args.cellLimit ?? 128;
+            if (value.cellOffset !== expectedOffset || value.cells.length > requestedLimit) return false;
+            for (let index = 1; index < value.cells.length; index++) {
+                const previous = value.cells[index - 1];
+                const current = value.cells[index];
+                if (previous.y > current.y || (previous.y === current.y && previous.x >= current.x)) return false;
+            }
+            const followingOffset = value.cellOffset + value.cells.length;
+            return value.nextCellOffset === null
+                ? followingOffset >= value.cellCount
+                : value.nextCellOffset === followingOffset && followingOffset < value.cellCount;
         }
         case 'players.getSnapshot': {
             if (!hasOnlyKeys(value,

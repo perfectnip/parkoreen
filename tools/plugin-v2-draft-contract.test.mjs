@@ -41,6 +41,15 @@ test('accepts a bounded map snapshot request only with its read grant', () => {
     assert.equal(validate(request('map.getSnapshot', { objectLimit: 65 }), 'map.read').error.code, 'INVALID_ARGUMENTS');
 });
 
+test('tilemap cell snapshots use bounded pages and the map read grant', () => {
+    const valid = request('tilemap.getSnapshot', { tilemapId: 'tilemap-2', cellOffset: 128, cellLimit: 64 });
+    assert.equal(validate(valid, 'map.read').ok, true);
+    assert.equal(validate(valid, 'players.read').error.code, 'CAPABILITY_DENIED');
+    assert.equal(validate(request('tilemap.getSnapshot', { tilemapId: 'tilemap-2', cellOffset: 100001 }), 'map.read').error.code, 'INVALID_ARGUMENTS');
+    assert.equal(validate(request('tilemap.getSnapshot', { tilemapId: 'tilemap-2', cellLimit: 129 }), 'map.read').error.code, 'INVALID_ARGUMENTS');
+    assert.equal(validate(request('tilemap.getSnapshot', { tilemapId: 'tilemap-2', extra: true }), 'map.read').error.code, 'INVALID_ARGUMENTS');
+});
+
 test('rejects unknown envelope fields, invalid ids, unsupported versions, and methods', () => {
     assert.equal(validate({ ...request('map.getSnapshot'), origin: 'https://untrusted.test' }, 'map.read').error.code, 'INVALID_ENVELOPE');
     assert.equal(validate(request('map.getSnapshot', {}, 'id with spaces'), 'map.read').error.code, 'INVALID_ENVELOPE');
@@ -129,6 +138,22 @@ test('host success replies correlate to the pending request and validate method 
         players: [player('a-session'), player('b-session')] };
     assert.equal(validateHostResponse(response(playersValue), playerRequest).ok, true);
     assert.equal(validateHostResponse(response({ ...playersValue, players: [player('b-session'), player('a-session')] }), playerRequest).error.code, 'INVALID_RESULT');
+
+    const tilemapRequest = request('tilemap.getSnapshot', { tilemapId: 'tilemap-1', cellLimit: 2 });
+    const tilemapValue = { tilemapId: 'tilemap-1', tilemapName: 'Ground', layer: 1, cellCount: 2,
+        cellOffset: 0, nextCellOffset: null, cells: [
+            { x: 0, y: 0, collisionType: 'solid', collisionShape: 'box', collisionPoints: null, polygonOneWay: null },
+            { x: 32, y: 0, collisionType: 'oneWay', collisionShape: 'box', collisionPoints: null, polygonOneWay: null }
+        ] };
+    assert.equal(validateHostResponse(response(tilemapValue), tilemapRequest).ok, true);
+    assert.equal(validateHostResponse(response({ ...tilemapValue, tilemapId: 'other-map' }), tilemapRequest).error.code, 'INVALID_RESULT');
+    assert.equal(validateHostResponse(response({ ...tilemapValue, cells: [tilemapValue.cells[1], tilemapValue.cells[0]] }), tilemapRequest).error.code, 'INVALID_RESULT');
+    assert.equal(validateHostResponse(response({ ...tilemapValue, cells: [{ ...tilemapValue.cells[0], x: 16 }, tilemapValue.cells[1]] }), tilemapRequest).error.code, 'INVALID_RESULT');
+    assert.equal(validateHostResponse(response({ ...tilemapValue, cells: [{ ...tilemapValue.cells[0], collisionType: 'rampUpRight' }, tilemapValue.cells[1]] }), tilemapRequest).error.code, 'INVALID_RESULT');
+    assert.equal(validateHostResponse(response({ ...tilemapValue, cells: [{ x: 0, y: 0, collisionType: 'solid', collisionShape: 'polygon',
+        collisionPoints: [[0, 0], [1, 0], [0.5, 1]], polygonOneWay: false }, tilemapValue.cells[1]] }), tilemapRequest).ok, true);
+    assert.equal(validateHostResponse(response({ ...tilemapValue, cells: [{ x: 0, y: 0, collisionType: 'solid', collisionShape: 'polygon',
+        collisionPoints: [[0, 0], [1, 0], [0.5, 0.5], [1, 1], [0, 1]], polygonOneWay: false }, tilemapValue.cells[1]] }), tilemapRequest).error.code, 'INVALID_RESULT');
 });
 
 test('host success result fields stay coupled to accepted request payloads', () => {

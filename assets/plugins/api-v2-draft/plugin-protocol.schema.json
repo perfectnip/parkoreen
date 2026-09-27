@@ -24,7 +24,7 @@
     },
     "pluginMethod": {
       "type": "string",
-      "enum": ["map.getSnapshot", "players.getSnapshot", "input.subscribe", "render.submit", "audio.play", "gameplay.request", "storage.get", "storage.set"]
+      "enum": ["map.getSnapshot", "tilemap.getSnapshot", "players.getSnapshot", "input.subscribe", "render.submit", "audio.play", "gameplay.request", "storage.get", "storage.set"]
     },
     "jsonValue": {
       "anyOf": [
@@ -71,6 +71,48 @@
       "required": ["mapId", "mapName", "gravity", "objectCount", "objectOffset", "nextObjectOffset", "objects"],
       "additionalProperties": false
     },
+    "tilemapCellSnapshot": {
+      "type": "object",
+      "description": "Cell positions are world pixels on the 32 px grid. Polygon points are normalized to the cell and are present only for polygon collision.",
+      "properties": {
+        "x": { "type": "integer", "minimum": -10000000, "maximum": 10000000, "multipleOf": 32 },
+        "y": { "type": "integer", "minimum": -10000000, "maximum": 10000000, "multipleOf": 32 },
+        "collisionType": { "enum": ["solid", "oneWay", "rampUpRight", "rampUpLeft", "hazard", "decorative"] },
+        "collisionShape": { "enum": ["box", "polygon", "rampUpRight", "rampUpLeft"] },
+        "collisionPoints": {
+          "type": ["array", "null"], "minItems": 3, "maxItems": 12,
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 0, "maximum": 1 } }
+        },
+        "polygonOneWay": { "type": ["boolean", "null"] }
+      },
+      "required": ["x", "y", "collisionType", "collisionShape", "collisionPoints", "polygonOneWay"],
+      "allOf": [
+        {
+          "if": { "properties": { "collisionShape": { "const": "polygon" } }, "required": ["collisionShape"] },
+          "then": { "properties": { "collisionType": { "enum": ["solid", "oneWay"] }, "collisionPoints": { "type": "array" }, "polygonOneWay": { "type": "boolean" } } },
+          "else": { "properties": { "collisionShape": { "enum": ["box", "rampUpRight", "rampUpLeft"] }, "collisionPoints": { "type": "null" }, "polygonOneWay": { "type": "null" } } }
+        },
+        { "if": { "properties": { "collisionShape": { "const": "rampUpRight" } }, "required": ["collisionShape"] }, "then": { "properties": { "collisionType": { "const": "rampUpRight" } } } },
+        { "if": { "properties": { "collisionShape": { "const": "rampUpLeft" } }, "required": ["collisionShape"] }, "then": { "properties": { "collisionType": { "const": "rampUpLeft" } } } },
+        { "if": { "properties": { "collisionShape": { "const": "polygon" }, "collisionType": { "const": "oneWay" } }, "required": ["collisionShape", "collisionType"] }, "then": { "properties": { "polygonOneWay": { "const": true } } } }
+      ],
+      "additionalProperties": false
+    },
+    "tilemapSnapshotResult": {
+      "type": "object",
+      "description": "The host sorts the full cell list by y then x before paging, and rechecks the current map/session for each request.",
+      "properties": {
+        "tilemapId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "tilemapName": { "type": "string", "maxLength": 128 },
+        "layer": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+        "cellCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "cellOffset": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "nextCellOffset": { "type": ["integer", "null"], "minimum": 0, "maximum": 100000 },
+        "cells": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/tilemapCellSnapshot" } }
+      },
+      "required": ["tilemapId", "tilemapName", "layer", "cellCount", "cellOffset", "nextCellOffset", "cells"],
+      "additionalProperties": false
+    },
     "playerSnapshot": {
       "type": "object",
       "properties": {
@@ -103,6 +145,7 @@
     "pluginResult": {
       "oneOf": [
         { "$ref": "#/$defs/mapSnapshotResult" },
+        { "$ref": "#/$defs/tilemapSnapshotResult" },
         { "$ref": "#/$defs/playersSnapshotResult" },
         {
           "type": "object",
@@ -227,6 +270,27 @@
             "objectOffset": { "type": "integer", "minimum": 0, "maximum": 1000000, "default": 0 },
             "objectLimit": { "type": "integer", "minimum": 1, "maximum": 64, "default": 64 }
           },
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "apiVersion", "requestId", "method", "args"],
+      "additionalProperties": false
+    },
+    "tilemapSnapshotRequest": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "request" },
+        "apiVersion": { "const": 2 },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "tilemap.getSnapshot" },
+        "args": {
+          "type": "object",
+          "properties": {
+            "tilemapId": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "cellOffset": { "type": "integer", "minimum": 0, "maximum": 100000, "default": 0 },
+            "cellLimit": { "type": "integer", "minimum": 1, "maximum": 128, "default": 128 }
+          },
+          "required": ["tilemapId"],
           "additionalProperties": false
         }
       },
@@ -468,6 +532,7 @@
     "pluginRequest": {
       "oneOf": [
         { "$ref": "#/$defs/mapSnapshotRequest" },
+        { "$ref": "#/$defs/tilemapSnapshotRequest" },
         { "$ref": "#/$defs/playersSnapshotRequest" },
         { "$ref": "#/$defs/inputSubscribeRequest" },
         { "$ref": "#/$defs/renderSubmitRequest" },

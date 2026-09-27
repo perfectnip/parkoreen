@@ -35,7 +35,7 @@ type PluginMessage =
 
 type Capability = 'map.read' | 'players.read' | 'input.read' | 'render.commands' | 'audio.play'
   | 'gameplay.request' | 'storage.local';
-type PluginMethod = 'map.getSnapshot' | 'players.getSnapshot' | 'input.subscribe'
+type PluginMethod = 'map.getSnapshot' | 'tilemap.getSnapshot' | 'players.getSnapshot' | 'input.subscribe'
   | 'render.submit' | 'audio.play' | 'gameplay.request' | 'storage.get' | 'storage.set';
 ```
 
@@ -65,14 +65,16 @@ number, string, array, or object composed recursively from those values. The
 host rejects values nested beyond 16 levels, arrays longer than 256 entries,
 and objects with more than 64 fields; JSON Schema expresses the collection
 limits, while the broker must enforce depth iteratively before dispatch. The
-map snapshot is separately paged at 64 objects per response so its bounded
-records stay within the 64 KiB message budget.
+map snapshot is separately paged at 64 objects per response, and each tilemap
+snapshot is paged at 128 cells per response, so bounded records stay within the
+64 KiB message budget.
 
 ## Initial method-to-capability map
 
 | Method | Capability | Contract |
 | --- | --- | --- |
 | `map.getSnapshot` | `map.read` | Returns a bounded, immutable map snapshot with stable object ids and no account data. |
+| `tilemap.getSnapshot` | `map.read` | Returns a bounded page of collision behavior and normalized polygon geometry for a selected native tilemap. It is read-only and rechecks the current map/session on every page. |
 | `players.getSnapshot` | `players.read` | Returns a bounded page of live players with opaque, room-session ids and gameplay state; never account identifiers. |
 | `input.subscribe` | `input.read` | Registers named input events declared in the package manifest. |
 | `render.submit` | `render.commands` | Queues bounded drawing commands for the next render frame; no live canvas is exposed. |
@@ -108,6 +110,7 @@ disjoint variants; a future broker must enforce the schema at runtime.
 | Method | Result `value` | Bound and behavior |
 | --- | --- | --- |
 | `map.getSnapshot` | `{ mapId, mapName, gravity, objectCount, objectOffset, nextObjectOffset, objects }` | Request `objectOffset` defaults to 0 and `objectLimit` defaults to 64 (maximum 64); invalid ranges return an error. An unsaved map has `mapId: null`; object ids are stable for the map. Each page reflects current map state, so plugins should re-read objects they need after gameplay changes. `nextObjectOffset: null` means the last page. |
+| `tilemap.getSnapshot` | `{ tilemapId, tilemapName, layer, cellCount, cellOffset, nextCellOffset, cells }` | Requires a selected `tilemapId`; `cellOffset` defaults to 0 and `cellLimit` defaults to 128 (maximum 128). The host sorts cells by world y then x before paging. Cells expose world pixel coordinates on the 32 px grid, collision behavior, shape, and normalized cell-local polygon points where relevant. Each page rechecks the current map/session; cell positions or contents can change between pages, so the result is not a transactional snapshot. `nextCellOffset: null` means the last page. |
 | `players.getSnapshot` | `{ playerCount, playerOffset, nextPlayerOffset, players }` | Request `playerOffset` defaults to 0 and `playerLimit` defaults to 32 (maximum 32); invalid ranges return an error. Each record contains an opaque session-scoped `playerId`, display `name`, position, size, velocity, and nullable grounded/dead flags. A display name can itself identify a person, so the separate `players.read` grant must describe those fields. The host sorts by `playerId` before paging. The snapshot omits usernames and account ids, reflects current client-visible players, and may change between pages; it is not proof of authoritative position or gameplay state. `nextPlayerOffset: null` means the last page. |
 | `input.subscribe` | `{ subscribedControlIds }` | Echoes only the validated controls accepted for this plugin; at most 32 unique ids. |
 | `render.submit` | `{ queuedCommands }` | Counts commands accepted for the next frame, from 0 to 256. |
@@ -129,6 +132,8 @@ and per-method result check remain broker responsibilities.
 - 2 MiB storage per plugin id, with 32 KiB maximum for one stored value.
 - 256 render commands per frame, with a bounded allowlist of shapes, colors,
   transforms, and declared image assets.
+- 128 native tilemap cells per read response; each map is limited to 100,000
+  cells by the current editor/runtime.
 - 128 gameplay requests queued per tick; excess requests are rejected and
   reported to the plugin manager.
 
