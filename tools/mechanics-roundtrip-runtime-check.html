@@ -15,10 +15,11 @@
 </head>
 <body>
   <h1>Mechanics save/load and trigger runtime check</h1>
-  <p class="hint">Serve the repository root locally, then open <code>/tools/mechanics-roundtrip-runtime-check.html</code>. This page runs the actual PKRN serializer/importer, round-trips a World, and executes Code plugin trigger/action hooks without an account.</p>
+  <p class="hint">Serve the repository root locally, then open <code>/tools/mechanics-roundtrip-runtime-check.html</code>. This page exports and imports a real PKRN ZIP archive, round-trips a World, and executes Code plugin trigger/action hooks without an account.</p>
   <pre id="results">Loading game and Mechanics plugin…</pre>
   <script src="../assets/js/mechanicsData.js"></script>
   <script src="../assets/js/game.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="../assets/js/exportImport.js"></script>
   <script src="../assets/plugins/code/js/globals.js"></script>
   <script>
@@ -50,7 +51,7 @@
   </script>
   <script src="../assets/plugins/code/js/inject.js"></script>
   <script>
-    (() => {
+    (async () => {
       const checks = [];
       const check = (label, passed, details = null) => checks.push({ label, passed: Boolean(passed), details });
 
@@ -93,13 +94,42 @@
         const importer = new ImportManager();
         const pkrnPayload = JSON.parse(JSON.stringify(exporter.serialize(source)));
         const importValidation = importer.validate(pkrnPayload);
-        const importedWorldData = importer.deserialize(pkrnPayload);
+        let archiveBlob = null;
+        let downloadedFilename = '';
+        const originalCreateObjectURL = URL.createObjectURL;
+        const originalRevokeObjectURL = URL.revokeObjectURL;
+        const originalAnchorClick = HTMLAnchorElement.prototype.click;
+        URL.createObjectURL = blob => {
+          archiveBlob = blob;
+          return 'blob:mechanics-round-trip';
+        };
+        URL.revokeObjectURL = () => {};
+        HTMLAnchorElement.prototype.click = function () {
+          downloadedFilename = this.download;
+        };
+        let exportSucceeded = false;
+        try {
+          exportSucceeded = await exporter.exportToFile(source, 'mechanics-round-trip');
+        } finally {
+          URL.createObjectURL = originalCreateObjectURL;
+          URL.revokeObjectURL = originalRevokeObjectURL;
+          HTMLAnchorElement.prototype.click = originalAnchorClick;
+        }
+        check('PKRN export creates the expected downloadable archive',
+          exportSucceeded && archiveBlob instanceof Blob && downloadedFilename === 'mechanics_round_trip.pkrn',
+          { exportSucceeded, downloadedFilename, archiveSize: archiveBlob?.size });
+        const archiveBuffer = await archiveBlob.arrayBuffer();
+        const archiveHeader = Array.from(new Uint8Array(archiveBuffer.slice(0, 4)));
+        const importedWorldData = await importer.importFromZip(archiveBuffer);
         const world = new World();
         world.fromJSON(importedWorldData);
         const restored = world.codeData;
         check('World serialization retains its map and save options',
           jsonRestoredWorld.mapName === 'Mechanics Round Trip' && jsonRestoredWorld.persistCheckpoints === true);
         check('PKRN serializer and importer validate the Mechanics payload', importValidation.valid === true, importValidation);
+        check('PKRN ZIP archive imports through the production ZIP reader',
+          archiveHeader[0] === 0x50 && archiveHeader[1] === 0x4b && world.mapName === 'Mechanics Round Trip',
+          { archiveHeader, mapName: world.mapName });
         check('Trigger and Event link survive World save/load',
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
