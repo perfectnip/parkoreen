@@ -785,6 +785,26 @@
                         tag: object._mechanicsSpawnTag
                     };
                 }
+                if (object.id && Number.isSafeInteger(object._mechanicsSpriteFrame) && object._mechanicsSpriteFrame >= 0 &&
+                    object._mechanicsSpriteFrame < (object.spriteSheet?.frameCount || 0)) {
+                    objectSpriteFrames[object.id] = object._mechanicsSpriteFrame;
+                }
+                const spawnedAnimation = object._mechanicsSpriteAnimation;
+                if (object.id && spawnedAnimation && Number.isSafeInteger(spawnedAnimation.startFrame) &&
+                    Number.isSafeInteger(spawnedAnimation.frameCount) && Number.isFinite(spawnedAnimation.fps) &&
+                    spawnedAnimation.fps >= 1 && spawnedAnimation.fps <= 30 && typeof spawnedAnimation.loop === 'boolean' &&
+                    Number.isSafeInteger(spawnedAnimation.startedAtServer) && spawnedAnimation.startFrame >= 0 &&
+                    spawnedAnimation.frameCount >= 1 && spawnedAnimation.startFrame + spawnedAnimation.frameCount <= (object.spriteSheet?.frameCount || 0)) {
+                    objectSpriteAnimations[object.id] = {
+                        startFrame: spawnedAnimation.startFrame,
+                        frameCount: spawnedAnimation.frameCount,
+                        fps: spawnedAnimation.fps,
+                        loop: spawnedAnimation.loop,
+                        startedAtServer: spawnedAnimation.startedAtServer,
+                        completionEventId: typeof spawnedAnimation.completionEventId === 'string' ? spawnedAnimation.completionEventId : '',
+                        completionEventFired: spawnedAnimation.completionEventFired === true
+                    };
+                }
                 continue;
             }
             if (object.id && object._mechanicsEnabled !== undefined) objects[object.id] = object._mechanicsEnabled !== false;
@@ -3164,9 +3184,13 @@
                 break;
             }
             case 'setObjectSpriteFrame': {
-                const object = world?.getObjectById?.(action.objectId);
-                if (!object?.spriteSheet) {
-                    reportMechanicsRuntimeError(world, event, actionSource, 'Set Object Sprite Frame needs an existing object with a sprite sheet.');
+                const targetMode = action.targetMode === undefined ? 'fixed' : action.targetMode;
+                const object = ['fixed', 'touched'].includes(targetMode)
+                    ? getMechanicsObjectTarget(world, { ...action, targetMode }, context) : null;
+                if (!object?.spriteSheet ||
+                    (object.id !== action.objectId && object._mechanicsSpawnTemplateId !== action.objectId)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Sprite Frame needs the selected sprite-sheet object or its touched spawned instance.');
                     break;
                 }
                 if (action.mode === 'automatic') {
@@ -3195,9 +3219,13 @@
                 break;
             }
             case 'playObjectSpriteAnimation': {
-                const object = world?.getObjectById?.(action.objectId);
-                if (!object?.spriteSheet) {
-                    reportMechanicsRuntimeError(world, event, actionSource, 'Play Object Sprite Animation needs an existing object with a sprite sheet.');
+                const targetMode = action.targetMode === undefined ? 'fixed' : action.targetMode;
+                const object = ['fixed', 'touched'].includes(targetMode)
+                    ? getMechanicsObjectTarget(world, { ...action, targetMode }, context) : null;
+                if (!object?.spriteSheet ||
+                    (object.id !== action.objectId && object._mechanicsSpawnTemplateId !== action.objectId)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Play Object Sprite Animation needs the selected sprite-sheet object or its touched spawned instance.');
                     break;
                 }
                 if (action.mode === 'automatic') {

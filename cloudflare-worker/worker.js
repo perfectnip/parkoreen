@@ -1817,14 +1817,18 @@ class GameRoom {
         const cleanObjectSpriteFrames = Object.create(null);
         const mapObjectsById = new Map(mapObjects.filter(object => object && typeof object.id === 'string').map(object => [object.id, object]));
         for (const [id, frame] of Object.entries(objectSpriteFrames)) {
-            const spriteSheet = mapObjectsById.get(id)?.spriteSheet;
+            const spriteSource = mapObjectsById.get(id) ||
+                mapObjectsById.get(cleanSpawnedObjects[id]?.templateId);
+            const spriteSheet = spriteSource?.spriteSheet;
             if (!spriteSheet || !Number.isSafeInteger(spriteSheet.frameCount) || spriteSheet.frameCount < 1 || spriteSheet.frameCount > 256 ||
                 !Number.isSafeInteger(frame) || frame < 0 || frame >= spriteSheet.frameCount) return null;
             cleanObjectSpriteFrames[id] = frame;
         }
         const cleanObjectSpriteAnimations = Object.create(null);
         for (const [id, animation] of Object.entries(objectSpriteAnimations)) {
-            const frameLimit = mapObjectsById.get(id)?.spriteSheet?.frameCount;
+            const spriteSource = mapObjectsById.get(id) ||
+                mapObjectsById.get(cleanSpawnedObjects[id]?.templateId);
+            const frameLimit = spriteSource?.spriteSheet?.frameCount;
             const completionEventId = animation?.completionEventId === undefined ? '' : animation.completionEventId;
             const completionEventFired = animation?.completionEventFired === undefined ? false : animation.completionEventFired;
             if (!Number.isSafeInteger(frameLimit) || frameLimit < 1 || frameLimit > 256 ||

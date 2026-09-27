@@ -139,6 +139,39 @@ test('room worker validates object draw-layer overrides against map objects and 
     assert.equal(room.sanitizeMechanicsState(mapData, { objectDrawLayers: { backdrop: 'parallax' } })?.objectDrawLayers.backdrop, 'parallax');
 });
 
+test('room worker validates sprite frame and animation state for spawned objects through their template', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        objects: [{ id: 'enemy-template', spriteSheet: { frameCount: 4 } }],
+        codeData: { events: [{ id: 'animation-done', enabled: true }] }
+    };
+    const startedAtServer = Date.now();
+    const state = {
+        spawnedObjects: { mspawn_enemy1: { templateId: 'enemy-template', x: 50, y: 60, tag: 'enemy' } },
+        objectSpriteFrames: { mspawn_enemy1: 2 },
+        objectSpriteAnimations: { mspawn_enemy1: {
+            startFrame: 0, frameCount: 3, fps: 8, loop: false, startedAtServer,
+            completionEventId: 'animation-done', completionEventFired: false
+        } }
+    };
+
+    const valid = room.sanitizeMechanicsState(mapData, state);
+    assert.equal(valid?.objectSpriteFrames.mspawn_enemy1, 2);
+    assert.equal(valid?.objectSpriteAnimations.mspawn_enemy1.frameCount, 3);
+
+    assert.equal(room.sanitizeMechanicsState(mapData, {
+        ...state, objectSpriteFrames: { mspawn_enemy1: 4 }
+    }), null, 'spawned frame must fit the template sheet');
+    assert.equal(room.sanitizeMechanicsState(mapData, {
+        ...state, objectSpriteAnimations: { mspawn_enemy1: {
+            ...state.objectSpriteAnimations.mspawn_enemy1, startFrame: 2, frameCount: 3
+        } }
+    }), null, 'spawned animation range must fit the template sheet');
+    assert.equal(room.sanitizeMechanicsState(mapData, {
+        ...state, objectSpriteFrames: { unknown: 1 }
+    }), null, 'unknown spawned IDs must remain invalid');
+});
+
 test('room worker rejects zone entry requests without an outside-to-inside transition', async () => {
     const zone = { id: 'zone-1', appearanceType: 'zone', zoneName: 'Hideout', x: 100, y: 100, width: 100, height: 100 };
     const { room, guest, messages } = makeRoom({
