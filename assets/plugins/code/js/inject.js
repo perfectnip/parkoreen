@@ -682,7 +682,7 @@
     const SHARED_MECHANICS_ACTIONS = new Set([
         'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'clearList', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
         'setTriggerEnabled', 'setObjectEnabled', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
-        'setObjectPosition', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
+        'setObjectPosition', 'setObjectDrawLayer', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
     ]);
 
     const getMultiplayerManager = () => typeof window !== 'undefined' ? window.MultiplayerManager || null : null;
@@ -771,6 +771,7 @@
         const objectSpriteFrames = Object.create(null);
         const objectSpriteAnimations = Object.create(null);
         const objectOpacities = Object.create(null);
+        const objectDrawLayers = Object.create(null);
         const tilemapCells = Object.create(null);
         const layerVisibility = Object.create(null);
         for (const object of world?.objects || []) {
@@ -808,6 +809,10 @@
             if (object.id && Number.isFinite(object._mechanicsOpacity) && object._mechanicsOpacity >= 0 && object._mechanicsOpacity <= 1) {
                 objectOpacities[object.id] = object._mechanicsOpacity;
             }
+            if (object.id && typeof object._mechanicsDrawLayerId === 'string' &&
+                (world?.layerDefinitions || []).some(layer => layer.id === object._mechanicsDrawLayerId)) {
+                objectDrawLayers[object.id] = object._mechanicsDrawLayerId;
+            }
             if (object.id && object._mechanicsPosition === true && Number.isFinite(object.x) && Number.isFinite(object.y)) {
                 positions[object.id] = { x: object.x, y: object.y };
             }
@@ -828,7 +833,7 @@
         for (const [layerId, visible] of world?._mechanicsLayerVisibility || []) {
             if (visible === false && (world.layerDefinitions || []).some(layer => layer.id === layerId)) layerVisibility[layerId] = false;
         }
-        return { variables, lists, objects, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
+        return { variables, lists, objects, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, objectDrawLayers, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
             gravity: Number.isFinite(world?._mechanicsGravity) ? world._mechanicsGravity : null,
             jumpForce: Number.isFinite(world?._mechanicsJumpForce) ? world._mechanicsJumpForce : null,
             playerSpeed: Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : null,
@@ -894,6 +899,23 @@
         const validLayerIds = new Set((world?.layerDefinitions || []).map(layer => layer?.id).filter(id => typeof id === 'string' && id));
         world._mechanicsLayerVisibility = new Map(Object.entries(layerVisibility)
             .filter(([layerId, visible]) => validLayerIds.has(layerId) && typeof visible === 'boolean' && visible === false));
+        const objectDrawLayers = snapshot.objectDrawLayers && typeof snapshot.objectDrawLayers === 'object' && !Array.isArray(snapshot.objectDrawLayers)
+            ? snapshot.objectDrawLayers : {};
+        const desiredDrawLayers = new Map(Object.entries(objectDrawLayers)
+            .filter(([objectId, layerId]) => {
+                const object = world?.getObjectById?.(objectId);
+                return object && object._mechanicsSpawned !== true && typeof layerId === 'string' && validLayerIds.has(layerId);
+            }));
+        for (const object of world?.objects || []) {
+            if (object._mechanicsOriginalLayer !== undefined && desiredDrawLayers.get(object.id) !== object._mechanicsDrawLayerId) {
+                world?.resetMechanicsObjectDrawLayer?.(object.id);
+            }
+        }
+        for (const [objectId, layerId] of desiredDrawLayers) {
+            const object = world?.getObjectById?.(objectId);
+            if (!object || object._mechanicsDrawLayerId === layerId) continue;
+            world?.setMechanicsObjectDrawLayer?.(objectId, layerId);
+        }
         const variables = snapshot.variables && typeof snapshot.variables === 'object' && !Array.isArray(snapshot.variables)
             ? snapshot.variables : {};
         for (const [variableId, value] of Object.entries(variables)) {
@@ -3112,6 +3134,27 @@
                 if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
                 break;
             }
+            case 'setObjectDrawLayer': {
+                const object = world?.getObjectById?.(action.objectId);
+                const layer = (world?.layerDefinitions || []).find(item => item.id === action.layerId);
+                if (!object || object._mechanicsSpawned === true || !layer) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Object Draw Layer needs an existing map object and draw layer.');
+                    break;
+                }
+                if (object.collision !== false && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Collidable objects cannot move to parallax layers.');
+                    break;
+                }
+                if (!world?.setMechanicsObjectDrawLayer?.(object.id, layer.id)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'The object could not be moved to that draw layer.');
+                    break;
+                }
+                if (!context.authoritativeStateApplication) worldState.sharedMechanicsDirty = true;
+                break;
+            }
             case 'setObjectSpriteFrame': {
                 const object = world?.getObjectById?.(action.objectId);
                 if (!object?.spriteSheet) {
@@ -4719,6 +4762,10 @@
             const movementControlChanged = Number.isFinite(world._mechanicsHorizontalAcceleration) ||
                 Number.isFinite(world._mechanicsAirControl) || Number.isFinite(world._mechanicsTerminalFallSpeed);
             const layerVisibilityChanged = world?._mechanicsLayerVisibility instanceof Map && world._mechanicsLayerVisibility.size > 0;
+            let objectDrawLayersChanged = false;
+            for (const object of world.objects || []) {
+                objectDrawLayersChanged = world.resetMechanicsObjectDrawLayer?.(object.id) === true || objectDrawLayersChanged;
+            }
             delete world._mechanicsCameraFollowMode;
             delete world._mechanicsCameraBounds;
             delete world._mechanicsGravity;
@@ -4743,7 +4790,7 @@
                 tilemapCellsRestored = restoreMechanicsTilemapCell(world, state, cellId, true) || tilemapCellsRestored;
             }
             const triggersChanged = hadTriggerOverrides && !preserveTriggerState;
-            if (spawned.length || tilemapCellsRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged || layerVisibilityChanged) {
+            if (spawned.length || tilemapCellsRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged || layerVisibilityChanged || objectDrawLayersChanged) {
                 state.sharedMechanicsDirty = true;
                 state.lastSharedMechanicsState = undefined;
                 publishSharedMechanicsState(world);

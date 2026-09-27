@@ -4040,6 +4040,40 @@ class World {
         return true;
     }
 
+    setMechanicsObjectDrawLayer(id, layerId) {
+        const object = this.getObjectById(id);
+        const layer = this.layerDefinitions.find(item => item.id === layerId);
+        if (!object || !layer) return false;
+        if (object.collision !== false && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) return false;
+        if (normalizeWorldLayerDepth(object.layer) === layer.depth &&
+            (object._mechanicsDrawLayerId === layer.id || object._mechanicsOriginalLayer === undefined)) return true;
+        if (object._mechanicsOriginalLayer === undefined) object._mechanicsOriginalLayer = object.layer;
+        object.layer = layer.depth;
+        const originalDepth = normalizeWorldLayerDepth(object._mechanicsOriginalLayer);
+        if (originalDepth === layer.depth) {
+            delete object._mechanicsOriginalLayer;
+            delete object._mechanicsDrawLayerId;
+        } else {
+            object._mechanicsDrawLayerId = layer.id;
+        }
+        this._mergedBlockCache = null;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
+    resetMechanicsObjectDrawLayer(id) {
+        const object = this.getObjectById(id);
+        if (!object || object._mechanicsOriginalLayer === undefined) return false;
+        object.layer = normalizeWorldLayerDepth(object._mechanicsOriginalLayer) ?? 1;
+        delete object._mechanicsOriginalLayer;
+        delete object._mechanicsDrawLayerId;
+        this._mergedBlockCache = null;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
     resetMechanicsObjectStates() {
         let changed = false;
         let positionChanged = false;
@@ -4076,6 +4110,12 @@ class World {
             }
             if (object._mechanicsOpacity !== undefined) {
                 delete object._mechanicsOpacity;
+                changed = true;
+            }
+            if (object._mechanicsOriginalLayer !== undefined) {
+                object.layer = normalizeWorldLayerDepth(object._mechanicsOriginalLayer) ?? 1;
+                delete object._mechanicsOriginalLayer;
+                delete object._mechanicsDrawLayerId;
                 changed = true;
             }
         }

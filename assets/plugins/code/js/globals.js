@@ -289,6 +289,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'spawnObject', label: 'Spawn Object' },
     { id: 'removeSpawnedObjects', label: 'Remove Spawned Objects' },
     { id: 'setObjectPosition', label: 'Set Object Position' },
+    { id: 'setObjectDrawLayer', label: 'Set Object Draw Layer' },
     { id: 'moveObject', label: 'Move Object (Animated)' },
     { id: 'setObjectSpriteFrame', label: 'Set Object Sprite Frame' },
     { id: 'setObjectOpacity', label: 'Set Object Opacity' },

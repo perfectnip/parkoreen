@@ -2166,6 +2166,16 @@
                     return 'Enter finite X and Y coordinates between -10,000,000 and 10,000,000';
                 }
             }
+            if (action.type === 'setObjectDrawLayer') {
+                const world = getWorld();
+                const object = (world?.objects || []).find(item => item.id === action.objectId && item._mechanicsSpawned !== true);
+                if (!object) return 'Select a map object';
+                const layer = (world?.layerDefinitions || []).find(item => item.id === action.layerId);
+                if (!layer) return 'Select a draw layer on this map';
+                if (object.collision !== false && (layer.parallaxX !== 1 || layer.parallaxY !== 1)) {
+                    return 'Collidable objects cannot move to a parallax layer';
+                }
+            }
             if (action.type === 'setTilemapCellBehavior') {
                 const tilemap = (getWorld()?.tilemaps || []).find(item => item.id === action.tilemapId);
                 if (!tilemap) return 'Select a tilemap on this map';
@@ -5109,6 +5119,7 @@
             case 'spawnObject': return { type, objectId: '', xOffset: 32, yOffset: 0, tag: 'spawned', maxInstances: 16, lifetime: 10 };
             case 'removeSpawnedObjects': return { type, tag: 'spawned' };
             case 'setObjectPosition': return { type, objectId: '', x: 0, y: 0 };
+            case 'setObjectDrawLayer': return { type, objectId: '', layerId: '' };
             case 'moveObject': return { type, objectId: '', x: 0, y: 0, duration: 1, easing: 'easeInOut' };
             case 'setObjectSpriteFrame': return { type, objectId: '', mode: 'custom', frame: 0 };
             case 'setObjectOpacity': return { type, objectId: '', mode: 'map', opacity: 1 };
@@ -5329,6 +5340,19 @@
             case 'setLayerVisibility': {
                 const layers = getWorld()?.layerDefinitions || [];
                 return `<label class="trigger-form-label">Draw layer</label><select class="trigger-form-select event-action-field" data-field="layerId"><option value="">Select a draw layer…</option>${layers.map(layer => `<option value="${escapeHtml(layer.id)}" ${layer.id === action.layerId ? 'selected' : ''}>${escapeHtml(layer.name || `Layer ${layer.depth}`)}</option>`).join('')}</select><label class="trigger-form-label">Visibility</label><select class="trigger-form-select event-action-field" data-field="visible"><option value="true" ${action.visible !== false ? 'selected' : ''}>Visible</option><option value="false" ${action.visible === false ? 'selected' : ''}>Hidden</option></select><p class="trigger-description">Shows or hides everything drawn on this layer for the current session. Collision and object behavior stay active. Reset restores the map's default visibility.</p>`;
+            }
+            case 'setObjectDrawLayer': {
+                const world = getWorld();
+                const objects = (world?.objects || []).filter(object => object._mechanicsSpawned !== true);
+                const layers = world?.layerDefinitions || [];
+                const selectedObject = objects.find(object => object.id === action.objectId);
+                const usableLayers = layers.filter(layer => !selectedObject || selectedObject.collision === false ||
+                    (layer.parallaxX === 1 && layer.parallaxY === 1));
+                const objectOptions = `<option value="">Select an object…</option>${objects.map(object => {
+                    const label = `${object.name || object.appearanceType || object.type || 'Object'} · ${object.appearanceType || object.type || 'object'} · (${Math.round(object.x)}, ${Math.round(object.y)})`;
+                    return `<option value="${escapeHtml(object.id)}" ${object.id === action.objectId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+                }).join('')}`;
+                return `<label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId">${objectOptions}</select><label class="trigger-form-label">Draw layer</label><select class="trigger-form-select event-action-field" data-field="layerId"><option value="">Select a draw layer…</option>${usableLayers.map(layer => `<option value="${escapeHtml(layer.id)}" ${layer.id === action.layerId ? 'selected' : ''}>${escapeHtml(layer.name || `Layer ${layer.depth}`)}</option>`).join('')}</select><p class="trigger-description">Moves the selected object between authored draw layers for this session. Its map position and gameplay state stay the same. Collidable objects cannot move to parallax layers. Reset restores the object's authored layer; hosted rooms sync the host's selection.</p>`;
             }
             case 'setGravity':
                 return `<label class="trigger-form-label">Gravity mode</label><select class="trigger-form-select event-action-field" data-field="mode"><option value="map" ${action.mode === 'map' ? 'selected' : ''}>Use Map Config gravity</option><option value="custom" ${action.mode === 'custom' ? 'selected' : ''}>Custom gravity</option></select><label class="trigger-form-label">Gravity (0–5)</label>${field('gravity', action.gravity ?? 0.8, 'number').replace('type="number"', 'type="number" min="0" max="5" step="any"')}<p class="trigger-description">Changes gravity for the current play session and syncs from the host in multiplayer. Use Map Config or reset to restore the saved value.</p>`;

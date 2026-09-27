@@ -122,6 +122,23 @@ test('room worker validates draw-layer visibility against saved map layers', () 
     assert.equal(room.sanitizeMechanicsState(legacyMap, { layerVisibility: { 'invented-layer': false } }), null);
 });
 
+test('room worker validates object draw-layer overrides against map objects and parallax collision rules', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        objects: [{ id: 'crate', collision: true }, { id: 'backdrop', collision: false }],
+        layerDefinitions: [
+            { id: 'foreground', parallaxX: 1, parallaxY: 1 },
+            { id: 'parallax', parallaxX: 0.5, parallaxY: 1 }
+        ],
+        codeData: {}
+    };
+    const valid = room.sanitizeMechanicsState(mapData, { objectDrawLayers: { crate: 'foreground' } });
+    assert.equal(valid?.objectDrawLayers.crate, 'foreground');
+    assert.equal(room.sanitizeMechanicsState(mapData, { objectDrawLayers: { missing: 'foreground' } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { objectDrawLayers: { crate: 'parallax' } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { objectDrawLayers: { backdrop: 'parallax' } })?.objectDrawLayers.backdrop, 'parallax');
+});
+
 test('room worker rejects zone entry requests without an outside-to-inside transition', async () => {
     const zone = { id: 'zone-1', appearanceType: 'zone', zoneName: 'Hideout', x: 100, y: 100, width: 100, height: 100 };
     const { room, guest, messages } = makeRoom({
