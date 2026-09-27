@@ -85,9 +85,13 @@
       const healthTriggerPythonCode = [
         'import parkoreen',
         'context = parkoreen.get_context()',
-        'assert context["health_before"] == 3',
-        'assert context["health_after"] == 5',
-        'assert context["health_delta"] == 2',
+        'if context["health_after"] == 5:',
+        '    assert context["health_before"] == 3',
+        '    assert context["health_delta"] == 2',
+        'assert context["player_soul"] == 49 and context["player_max_soul"] == 99',
+        'assert context["player_is_dashing"] is True and context["player_has_mantis_claw"] is True',
+        'if context["player_hp"] == 7 or context["player_hp"] == 8:',
+        '    assert context["player_soul"] is None and context["player_is_dashing"] is None',
         'print("mechanics-health-trigger-ok")'
       ].join('\n');
 
@@ -464,6 +468,10 @@
         const healthPlayer = new Player(0, 0, 'Health Trigger Tester', '#fff');
         healthPlayer.id = 'health-trigger-player';
         healthPlayer.hp = 3;
+        healthPlayer.soul = 49;
+        healthPlayer.maxSoul = 99;
+        healthPlayer.isDashing = true;
+        healthPlayer.hasMantisClaw = true;
         window.engine = { world: healthWorld, state: 'playing', localPlayer: healthPlayer, remotePlayers: new Map() };
         window.PluginManager.executeHook('player.init', { player: healthPlayer, world: healthWorld });
         window.PluginManager.executeHook('player.update', { player: healthPlayer, world: healthWorld, audioManager: null, skipPhysics: false });

@@ -3825,6 +3825,7 @@
             typeof value === 'string' ? value.slice(0, maxLength) : '';
         const safeNumber = value =>
             typeof value === 'number' && Number.isFinite(value) ? value : null;
+        const safeBoolean = value => typeof value === 'boolean' ? value : null;
         const playerId = safeText(player?.id || eventContext.targetPlayerId || eventContext.sourcePlayerId);
         const metadata = {
             api_version: 1,
@@ -3848,6 +3849,22 @@
             player_jumps_remaining: Number.isSafeInteger(player?.jumpsRemaining) ? player.jumpsRemaining : null,
             player_hp: safeNumber(player?.hp),
             player_max_hp: safeNumber(player?.maxHP),
+            player_soul: safeNumber(player?.soul),
+            player_max_soul: safeNumber(player?.maxSoul),
+            player_is_attacking: safeBoolean(player?.isAttacking),
+            player_attack_direction: ['up', 'down', 'forward'].includes(player?.attackDirection)
+                ? player.attackDirection : null,
+            player_is_dashing: safeBoolean(player?.isDashing),
+            player_is_super_dashing: safeBoolean(player?.isSuperDashing),
+            player_is_super_dash_charging: safeBoolean(player?.superDashCharging),
+            player_is_wall_clinging: safeBoolean(player?.isWallClinging),
+            player_is_healing: safeBoolean(player?.isHealing),
+            player_has_dash: safeBoolean(player?.hasDash),
+            player_has_super_dash: safeBoolean(player?.hasSuperDash),
+            player_has_mantis_claw: safeBoolean(player?.hasMantisClaw),
+            player_has_monarch_wing: safeBoolean(player?.hasMonarchWing),
+            player_monarch_wings_used: Number.isSafeInteger(player?.monarchWingsUsed) && player.monarchWingsUsed >= 0
+                ? player.monarchWingsUsed : null,
             health_before: safeNumber(eventContext.healthBefore),
             health_after: safeNumber(eventContext.healthAfter),
             health_delta: safeNumber(eventContext.healthDelta),
