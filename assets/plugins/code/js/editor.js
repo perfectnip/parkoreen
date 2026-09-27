@@ -2018,12 +2018,17 @@
                 }
             }
             if (action.type === 'branchPlayerHealth') {
+                const comparisonMode = action.comparisonMode === undefined ? 'absolute' : action.comparisonMode;
+                if (!['absolute', 'percent'].includes(comparisonMode)) return 'Choose absolute health or a percentage of maximum health';
                 if (!['equals', 'notEquals', 'lessThan', 'lessThanOrEqual', 'greaterThan', 'greaterThanOrEqual'].includes(action.operator)) {
                     return 'Choose a supported player-health comparison';
                 }
                 const value = Number(action.value);
-                if (!isFiniteActionNumber(action.value) || !Number.isFinite(value) || value < 0 || value > 99999) {
-                    return 'Player health must be a number from 0 to 99,999';
+                const maximum = comparisonMode === 'percent' ? 100 : 99999;
+                if (!isFiniteActionNumber(action.value) || !Number.isFinite(value) || value < 0 || value > maximum) {
+                    return comparisonMode === 'percent'
+                        ? 'Player health percentage must be a number from 0 to 100'
+                        : 'Player health must be a number from 0 to 99,999';
                 }
                 const branches = [action.trueEventId, action.falseEventId].filter(Boolean);
                 if (!branches.length) return 'Choose an Event for at least one player-health branch';
@@ -5130,7 +5135,7 @@
             case 'toggleVariable': return { type, variableId: '', playerTarget: 'triggering' };
             case 'branchVariable': return { type, variableId: '', operator: 'equals', value: '', trueEventId: '', falseEventId: '' };
             case 'branchPlayerCount': return { type, playerVariableId: '', filterOperator: 'equals', filterValue: '', operator: 'equals', count: 0, trueEventId: '', falseEventId: '' };
-            case 'branchPlayerHealth': return { type, operator: 'lessThanOrEqual', value: 1, trueEventId: '', falseEventId: '' };
+            case 'branchPlayerHealth': return { type, comparisonMode: 'absolute', operator: 'lessThanOrEqual', value: 1, trueEventId: '', falseEventId: '' };
             case 'branchObjectHealth': return { type, targetMode: 'fixed', objectId: '', operator: 'lessThanOrEqual', value: 1, trueEventId: '', falseEventId: '' };
             case 'appendListItem':
             case 'removeListItem':
@@ -5314,11 +5319,14 @@
                 return `<label class="trigger-form-label">Target</label><select class="trigger-form-select event-action-field" data-field="targetMode"><option value="touched" ${targetMode === 'touched' ? 'selected' : ''}>Object that triggered this Event</option><option value="fixed" ${targetMode === 'fixed' ? 'selected' : ''}>Selected map object</option></select><label class="trigger-form-label">Map object</label><select class="trigger-form-select event-action-field" data-field="objectId" ${targetMode === 'touched' ? 'disabled' : ''}>${renderObjectOptions(action.objectId)}</select><label class="trigger-form-label">Damage per hit</label>${field('amount', action.amount ?? 1, 'number').replace('type="number"', 'type="number" min="1" max="99999" step="1"')}<label class="trigger-form-label">Health when first hit</label>${field('maxHealth', action.maxHealth ?? 3, 'number').replace('type="number"', 'type="number" min="1" max="99999" step="1"')}<label class="trigger-form-label">Event when defeated (optional)</label><select class="trigger-form-select event-action-field" data-field="defeatedEventId">${renderEventOptions(action.defeatedEventId)}</select><p class="trigger-description">Health is initialized on the first hit, stored separately for each object, and resets when the game restarts. Defeated objects are disabled. This is client-local in hosted rooms; use it for solo combat or local effects.</p>`;
             }
             case 'branchPlayerHealth': {
+                const comparisonMode = action.comparisonMode === 'percent' ? 'percent' : 'absolute';
                 const comparisons = [
                     ['lessThanOrEqual', 'At or below'], ['lessThan', 'Below'], ['equals', 'Equals'],
                     ['notEquals', 'Does not equal'], ['greaterThan', 'Above'], ['greaterThanOrEqual', 'At or above']
                 ];
-                return `<label class="trigger-form-label">Health condition</label><select class="trigger-form-select event-action-field" data-field="operator">${comparisons.map(([id, label]) => `<option value="${id}" ${id === action.operator ? 'selected' : ''}>${label}</option>`).join('')}</select><label class="trigger-form-label">Health value</label>${field('value', action.value ?? 1, 'number').replace('type="number"', 'type="number" min="0" max="99999" step="any"')}<label class="trigger-form-label">When true</label><select class="trigger-form-select event-action-field" data-field="trueEventId">${renderEventOptions(action.trueEventId)}</select><label class="trigger-form-label">When false (optional)</label><select class="trigger-form-select event-action-field" data-field="falseEventId">${renderEventOptions(action.falseEventId)}</select><p class="trigger-description">Checks the current Event player's numeric <code>hp</code>. Requires a health plugin such as HK or HP. This health-based event chain runs locally in hosted rooms.</p>`;
+                const max = comparisonMode === 'percent' ? 100 : 99999;
+                const value = field('value', action.value ?? 1, 'number').replace('type="number"', `type="number" min="0" max="${max}" step="any"`);
+                return `<label class="trigger-form-label">Compare as</label><select class="trigger-form-select event-action-field" data-field="comparisonMode"><option value="absolute" ${comparisonMode === 'absolute' ? 'selected' : ''}>Absolute HP</option><option value="percent" ${comparisonMode === 'percent' ? 'selected' : ''}>Percent of maximum HP</option></select><label class="trigger-form-label">Health condition</label><select class="trigger-form-select event-action-field" data-field="operator">${comparisons.map(([id, label]) => `<option value="${id}" ${id === action.operator ? 'selected' : ''}>${label}</option>`).join('')}</select><label class="trigger-form-label">${comparisonMode === 'percent' ? 'Health percentage' : 'Health value'}</label>${value}<label class="trigger-form-label">When true</label><select class="trigger-form-select event-action-field" data-field="trueEventId">${renderEventOptions(action.trueEventId)}</select><label class="trigger-form-label">When false (optional)</label><select class="trigger-form-select event-action-field" data-field="falseEventId">${renderEventOptions(action.falseEventId)}</select><p class="trigger-description">Compares the current Event player's numeric <code>hp</code>${comparisonMode === 'percent' ? ' divided by numeric <code>maxHP</code> as a percentage' : ''}. Requires a health plugin such as HK or HP${comparisonMode === 'percent' ? ' with a positive <code>maxHP</code>' : ''}. This health-based event chain runs locally in hosted rooms.</p>`;
             }
             case 'branchObjectHealth': {
                 const targetMode = action.targetMode === 'touched' ? 'touched' : 'fixed';
@@ -5611,7 +5619,7 @@
             input.addEventListener('input', markUnsaved);
             input.addEventListener('change', () => {
                 markUnsaved();
-                if (['variableId', 'playerVariableId', 'operator', 'filterOperator', 'repeat', 'loop', 'pluginId', 'targetMode', 'property', 'objectId', 'mode', 'startFrame', 'animationName'].includes(input.dataset.field)) {
+                if (['variableId', 'playerVariableId', 'operator', 'filterOperator', 'repeat', 'loop', 'pluginId', 'targetMode', 'property', 'objectId', 'mode', 'comparisonMode', 'startFrame', 'animationName'].includes(input.dataset.field)) {
                     event.actions = Array.from(container.querySelectorAll('.event-action-row')).map(row => readEventActionRow(row, event.actions));
                     renderEventActions(event);
                 }

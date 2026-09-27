@@ -88,10 +88,12 @@
         'if context["health_after"] == 5:',
         '    assert context["health_before"] == 3',
         '    assert context["health_delta"] == 2',
+        '    assert abs(context["player_health_percent"] - (5 / 6 * 100)) < 0.001',
         'assert context["player_soul"] == 49 and context["player_max_soul"] == 99',
         'assert context["player_is_dashing"] is True and context["player_has_mantis_claw"] is True',
         'if context["player_hp"] == 7 or context["player_hp"] == 8:',
         '    assert context["player_soul"] is None and context["player_is_dashing"] is None',
+        '    assert context["player_health_percent"] == context["player_hp"] / 10 * 100',
         'print("mechanics-health-trigger-ok")'
       ].join('\n');
 
@@ -179,7 +181,7 @@
         const catalogRoundTripActions = CODE_EVENT_ACTION_TYPES.map(({ id }, index) => ({
           type: id,
           ...(id === 'branchPlayerHealth' ? {
-            operator: 'greaterThanOrEqual', value: 3.5,
+            comparisonMode: 'percent', operator: 'greaterThanOrEqual', value: 65.5,
             trueEventId: 'event-start', falseEventId: 'event-start'
           } : {}),
           roundTripFixture: { index, marker: `mechanics-action-${index}`, nested: ['preserve', index] }
@@ -299,7 +301,8 @@
             restoredTypes: restoredActionCatalogEvent?.actions?.map(action => action.type) });
         const restoredPlayerHealthBranch = restoredActionCatalogEvent?.actions?.find(action => action.type === 'branchPlayerHealth');
         check('Player Health branch condition and routes survive PKRN and World save/load',
-          restoredPlayerHealthBranch?.operator === 'greaterThanOrEqual' && restoredPlayerHealthBranch.value === 3.5 &&
+          restoredPlayerHealthBranch?.comparisonMode === 'percent' &&
+            restoredPlayerHealthBranch?.operator === 'greaterThanOrEqual' && restoredPlayerHealthBranch.value === 65.5 &&
             restoredPlayerHealthBranch.trueEventId === 'event-start' && restoredPlayerHealthBranch.falseEventId === 'event-start',
           restoredPlayerHealthBranch);
         check('World serialization retains its map and save options',
@@ -448,7 +451,9 @@
               actions: [{ type: 'setTriggerEnabled', triggerId: 'health-increase-trigger', enabled: false },
                 { type: 'addVariable', variableId: 'health-any-count', amount: 1 },
                 { type: 'branchPlayerHealth', operator: 'greaterThanOrEqual', value: 4,
-                  trueEventId: 'health-high-event', falseEventId: 'health-low-event' }], code: healthTriggerPythonCode },
+                  trueEventId: 'health-high-event', falseEventId: 'health-low-event' },
+                { type: 'branchPlayerHealth', comparisonMode: 'percent', operator: 'lessThanOrEqual', value: 50,
+                  trueEventId: 'health-percent-low-event', falseEventId: 'health-percent-high-event' }], code: healthTriggerPythonCode },
             { id: 'health-increase-event', type: 'event', name: 'Count health increases', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-increase-count', amount: 1 }], code: '' },
             { id: 'health-decrease-event', type: 'event', name: 'Count health decreases', enabled: true,
@@ -458,16 +463,22 @@
               actions: [{ type: 'addVariable', variableId: 'health-low-count', amount: 1 }], code: '' },
             { id: 'health-high-event', type: 'event', name: 'High health route', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-high-count', amount: 1 }], code: '' },
+            { id: 'health-percent-low-event', type: 'event', name: 'Low health percentage route', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-percent-low-count', amount: 1 }], code: '' },
+            { id: 'health-percent-high-event', type: 'event', name: 'High health percentage route', enabled: true,
+              actions: [{ type: 'addVariable', variableId: 'health-percent-high-count', amount: 1 }], code: '' },
             { id: 'health-respawn-event', type: 'event', name: 'Count respawns', enabled: true,
               actions: [{ type: 'addVariable', variableId: 'health-respawn-count', amount: 1 }], code: '' }
           ],
-          variables: ['health-any-count', 'health-increase-count', 'health-decrease-count', 'health-low-count', 'health-high-count', 'health-respawn-count']
+          variables: ['health-any-count', 'health-increase-count', 'health-decrease-count', 'health-low-count', 'health-high-count',
+            'health-percent-low-count', 'health-percent-high-count', 'health-respawn-count']
             .map(id => ({ id, type: 'variable', name: id, enabled: true,
               variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0 }))
         };
         const healthPlayer = new Player(0, 0, 'Health Trigger Tester', '#fff');
         healthPlayer.id = 'health-trigger-player';
         healthPlayer.hp = 3;
+        healthPlayer.maxHP = 6;
         healthPlayer.soul = 49;
         healthPlayer.maxSoul = 99;
         healthPlayer.isDashing = true;
@@ -497,6 +508,11 @@
         check('Branch on Player Health follows the current player into the matching Event',
           healthState?.variables?.get('health-high-count') === 1 && healthState?.variables?.get('health-low-count') === 0,
           { highHealth: healthState?.variables?.get('health-high-count'), lowHealth: healthState?.variables?.get('health-low-count') });
+        check('Branch on Player Health compares a percentage of maxHP',
+          healthState?.variables?.get('health-percent-low-count') === 0 &&
+            healthState?.variables?.get('health-percent-high-count') === 1,
+          { lowHealthPercent: healthState?.variables?.get('health-percent-low-count'),
+            highHealthPercent: healthState?.variables?.get('health-percent-high-count') });
         check('An Event trigger toggle does not reorder triggers within the current update pass',
           healthState?.triggerEnabled?.get('health-increase-trigger') === false &&
           healthState?.variables?.get('health-increase-count') === 1,
@@ -518,6 +534,11 @@
         check('Branch on Player Health routes a low-health event',
           healthState?.variables?.get('health-low-count') === 1 && healthState?.variables?.get('health-high-count') === 1,
           { lowHealth: healthState?.variables?.get('health-low-count'), highHealth: healthState?.variables?.get('health-high-count') });
+        check('Branch on Player Health routes a low-health percentage',
+          healthState?.variables?.get('health-percent-low-count') === 1 &&
+            healthState?.variables?.get('health-percent-high-count') === 1,
+          { lowHealthPercent: healthState?.variables?.get('health-percent-low-count'),
+            highHealthPercent: healthState?.variables?.get('health-percent-high-count') });
         window.PluginManager.executeHook('player.respawn', { player: healthPlayer, world: healthWorld });
         await Promise.resolve();
         check('Player Respawns runs its linked Event after the respawn hook',
@@ -542,6 +563,11 @@
             recentErrors: healthState?.runtimeErrors?.slice(-4) });
         playerWithoutHealth.hp = 7;
         window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
+        const missingMaximumHealthErrors = healthState?.runtimeErrors?.filter(error =>
+          error.message.includes('percentage comparison needs a positive numeric player.maxHP')).length;
+        check('Percentage health branches report a missing maximum instead of guessing',
+          missingMaximumHealthErrors === 1,
+          { missingMaximumHealthErrors, latestErrors: healthState?.runtimeErrors?.slice(-3) });
         check('A restored health source seeds a new baseline without firing a false change',
           healthState?.variables?.get('health-any-count') === 2 &&
           healthState?.variables?.get('health-increase-count') === 1 &&
@@ -549,6 +575,7 @@
           { any: healthState?.variables?.get('health-any-count'),
             increase: healthState?.variables?.get('health-increase-count'),
             decrease: healthState?.variables?.get('health-decrease-count') });
+        playerWithoutHealth.maxHP = 10;
         playerWithoutHealth.hp = 8;
         window.PluginManager.executeHook('player.update', { player: playerWithoutHealth, world: healthWorld, audioManager: null, skipPhysics: false });
         check('Recovered health triggers resume from the newly seeded baseline',

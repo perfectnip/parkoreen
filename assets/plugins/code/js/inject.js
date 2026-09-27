@@ -2809,7 +2809,9 @@
             }
             case 'branchPlayerHealth': {
                 const health = player?.hp;
-                const value = Number(action.value);
+                const maxHealth = player?.maxHP;
+                const comparisonMode = action.comparisonMode === undefined ? 'absolute' : action.comparisonMode;
+                const rawValue = Number(action.value);
                 const comparisons = {
                     equals: (current, expected) => current === expected,
                     notEquals: (current, expected) => current !== expected,
@@ -2824,14 +2826,25 @@
                     break;
                 }
                 const compare = comparisons[action.operator];
-                if (!compare || !isFiniteMechanicsNumber(action.value) || !Number.isFinite(value) || value < 0 || value > 99999) {
-                    reportMechanicsRuntimeError(world, event, actionSource,
-                        'Player health comparison needs a supported operator and a number from 0 to 99,999.');
+                const limit = comparisonMode === 'percent' ? 100 : 99999;
+                if (!['absolute', 'percent'].includes(comparisonMode) || !compare || !isFiniteMechanicsNumber(action.value) ||
+                    !Number.isFinite(rawValue) || rawValue < 0 || rawValue > limit) {
+                    reportMechanicsRuntimeError(world, event, actionSource, comparisonMode === 'percent'
+                        ? 'Player health percentage comparison needs a supported operator and a number from 0 to 100.'
+                        : 'Player health comparison needs a supported operator and a number from 0 to 99,999.');
                     break;
                 }
+                if (comparisonMode === 'percent' && (!Number.isFinite(maxHealth) || maxHealth <= 0 || health > maxHealth)) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Player health percentage comparison needs a positive numeric player.maxHP and hp no greater than maxHP.');
+                    break;
+                }
+                const comparedHealth = comparisonMode === 'percent' ? health / maxHealth * 100 : health;
                 context.playerHealth = health;
-                context.playerMaxHealth = Number.isFinite(player?.maxHP) && player.maxHP >= 0 ? player.maxHP : null;
-                const eventId = compare(health, value) ? action.trueEventId : action.falseEventId;
+                context.playerMaxHealth = Number.isFinite(maxHealth) && maxHealth >= 0 ? maxHealth : null;
+                context.playerHealthPercent = Number.isFinite(maxHealth) && maxHealth > 0 && health <= maxHealth
+                    ? health / maxHealth * 100 : null;
+                const eventId = compare(comparedHealth, rawValue) ? action.trueEventId : action.falseEventId;
                 if (eventId && typeof runEvent === 'function') return runEvent(eventId);
                 break;
             }
@@ -3849,6 +3862,9 @@
             player_jumps_remaining: Number.isSafeInteger(player?.jumpsRemaining) ? player.jumpsRemaining : null,
             player_hp: safeNumber(player?.hp),
             player_max_hp: safeNumber(player?.maxHP),
+            player_health_percent: safeNumber(eventContext.playerHealthPercent) ??
+                (Number.isFinite(player?.hp) && player.hp >= 0 && Number.isFinite(player?.maxHP) &&
+                    player.maxHP > 0 && player.hp <= player.maxHP ? player.hp / player.maxHP * 100 : null),
             player_soul: safeNumber(player?.soul),
             player_max_soul: safeNumber(player?.maxSoul),
             player_is_attacking: safeBoolean(player?.isAttacking),
