@@ -3264,12 +3264,20 @@
             case 'setCheckpoint': {
                 const engine = window.engine;
                 const checkpoint = world?.getObjectById?.(action.objectId);
+                const previousCheckpoint = engine?.lastCheckpoint;
                 if (engine?.world !== world || !engine.setPlayerCheckpoint?.(player, checkpoint, {
-                    playEffects: engine.lastCheckpoint !== checkpoint
+                    playEffects: previousCheckpoint !== checkpoint
                 })) {
                     reportMechanicsRuntimeError(world, event, actionSource,
                         'Set Checkpoint needs an existing checkpoint object during Play or Test.');
                     break;
+                }
+                if (previousCheckpoint !== checkpoint && engine.state === window.GameState?.PLAYING && world.persistCheckpoints === true) {
+                    const savedCheckpoint = window.ParkoreenLocalSave?.read?.(world, 'checkpoint');
+                    if (savedCheckpoint?.checkpointId !== checkpoint.id) {
+                        reportMechanicsRuntimeError(world, event, actionSource,
+                            'The checkpoint changed for this session, but its browser-local save could not be written.');
+                    }
                 }
                 break;
             }

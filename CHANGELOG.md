@@ -7,6 +7,7 @@ The full **Parkoreen** changelog is published in the Parkoreen Guide:
 For line-by-line history, use `git log` and `git show <commit>`.
 
 Latest highlights (see the Guide changelog for full details):
+- Mechanics Set Checkpoint now reports when a new checkpoint takes effect for the session but its opted-in browser-local save fails.
 - Opt-in Map, Player, Campaign, and List saves now add Mechanics diagnostics when a declarative action changes session state but the browser-local write fails.
 - Set Object Enabled now reports when an opted-in solo object-state save cannot be written, while leaving Test and hosted runs temporary.
 - Imported List and Player List branches now explain missing touched/triggering player context or unavailable List state instead of stopping without a Mechanics error.

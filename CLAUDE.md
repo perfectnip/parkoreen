@@ -8,7 +8,7 @@ Parkoreen is a multiplayer 2D platformer with a full map editor, real-time multi
 
 - **Frontend**: pure static HTML/JS/CSS — no build step. Plain `<canvas>` 2D rendering, ES6 classes, no framework.
 - **Backend**: Cloudflare Worker (Workers + KV + Durable Object) for auth, map storage, mail, admin tools, and WebSocket multiplayer.
-- **PWA**: service worker uses the `parkoreen-v216` cache. It bypasses cache handling for `/admin` and `/mails` routes.
+- **PWA**: service worker uses the `parkoreen-v219` cache. It bypasses cache handling for `/admin` and `/mails` routes.
 - **Note**: `agent.md` in the repo root is a duplicate of this file (kept for an external tool). Edit `CLAUDE.md` and re-sync `agent.md` if you change either.
 - **Cloudflare dashboard is blocked in the user's home network in China.** Deploy via `wrangler deploy` works (the API at `api.cloudflare.com` is reachable), but `wrangler login` (OAuth to `dash.cloudflare.com`) does not. Plan accordingly if iterating from a blocked network.
 
