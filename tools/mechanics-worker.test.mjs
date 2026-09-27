@@ -148,6 +148,26 @@ test('room worker validates object collision overrides against saved map objects
     assert.equal(room.sanitizeMechanicsState(mapData, { objectCollisions: { 'phase-platform': 'false' } }), null);
 });
 
+test('room worker validates tilemap atlas-frame overrides against saved cells and atlas bounds', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        objects: [],
+        tilemaps: [{ id: 'ground', layer: 1, atlas: { columns: 2, rows: 1 },
+            cells: [{ x: 0, y: 32, collisionType: 'solid' }] }],
+        codeData: {}
+    };
+    const cellId = 'tile-ground-0-32';
+    const valid = room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: 1 } });
+    assert.equal(valid?.tilemapCellFrames[cellId], 1);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: 2 } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: -1 } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { missing: 0 } }), null);
+    const atlaslessRoom = new GameRoom({ storage: {} }, {});
+    assert.equal(atlaslessRoom.sanitizeMechanicsState({ ...mapData, tilemaps: [{ ...mapData.tilemaps[0], atlas: undefined }] }, {
+        tilemapCellFrames: { [cellId]: 0 }
+    }), null);
+});
+
 test('room worker validates sprite frame and animation state for spawned objects through their template', () => {
     const room = new GameRoom({ storage: {} }, {});
     const mapData = {

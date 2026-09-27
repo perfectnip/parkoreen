@@ -99,6 +99,17 @@
 
       try {
         const source = new World();
+        const tilemapAtlasCanvas = document.createElement('canvas');
+        tilemapAtlasCanvas.width = 64;
+        tilemapAtlasCanvas.height = 32;
+        const tilemapAtlasContext = tilemapAtlasCanvas.getContext('2d');
+        tilemapAtlasContext.fillStyle = '#22c55e';
+        tilemapAtlasContext.fillRect(0, 0, 32, 32);
+        tilemapAtlasContext.fillStyle = '#3b82f6';
+        tilemapAtlasContext.fillRect(32, 0, 32, 32);
+        source.setTilemapAtlas({ data: tilemapAtlasCanvas.toDataURL('image/png'), frameWidth: 32, frameHeight: 32, columns: 2, rows: 1 }, 1);
+        source.setTilemapCell(0, 64, { collisionType: 'solid', atlasFrame: 0 }, 1);
+        const testTilemap = source.tilemaps.find(tilemap => tilemap.layer === 1);
         source.mapName = 'Mechanics Round Trip';
         source.persistCheckpoints = true;
         source.music = {
@@ -140,7 +151,8 @@
               { type: 'setObjectOpacity', objectId: 'phase-cube', mode: 'custom', opacity: 0.4 },
               { type: 'addVariable', variableId: 'variable-campaign-score', amount: 1 },
               { type: 'appendListItem', variableId: 'variable-campaign-items', valueType: 'string', value: 'memory-shard' },
-              { type: 'setObjectCollision', objectId: 'phase-platform', collisionEnabled: false }]
+              { type: 'setObjectCollision', objectId: 'phase-platform', collisionEnabled: false },
+              { type: 'setTilemapCellFrame', tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, atlasFrame: 1 }]
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
@@ -180,6 +192,9 @@
         };
         const catalogRoundTripActions = CODE_EVENT_ACTION_TYPES.map(({ id }, index) => ({
           type: id,
+          ...(id === 'setTilemapCellFrame' ? {
+            tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, atlasFrame: 1
+          } : {}),
           ...(id === 'branchPlayerHealth' ? {
             comparisonMode: 'percent', operator: 'greaterThanOrEqual', value: 65.5,
             trueEventId: 'event-start', falseEventId: 'event-start'
@@ -299,6 +314,11 @@
           { expectedActions: catalogRoundTripActions.length,
             restoredActions: restoredActionCatalogEvent?.actions?.length,
             restoredTypes: restoredActionCatalogEvent?.actions?.map(action => action.type) });
+        const restoredTilemapFrameAction = restoredActionCatalogEvent?.actions?.find(action => action.type === 'setTilemapCellFrame');
+        check('Tilemap frame action target and frame survive PKRN and World save/load',
+          restoredTilemapFrameAction?.tilemapId === testTilemap?.id && restoredTilemapFrameAction.targetMode === 'fixed' &&
+            restoredTilemapFrameAction.x === 0 && restoredTilemapFrameAction.y === 64 && restoredTilemapFrameAction.atlasFrame === 1,
+          restoredTilemapFrameAction);
         const restoredPlayerHealthBranch = restoredActionCatalogEvent?.actions?.find(action => action.type === 'branchPlayerHealth');
         check('Player Health branch condition and routes survive PKRN and World save/load',
           restoredPlayerHealthBranch?.comparisonMode === 'percent' &&
@@ -330,7 +350,9 @@
             event.actions[5]?.type === 'setObjectOpacity' && event.actions[5].objectId === 'phase-cube' &&
             event.actions[6]?.variableId === 'variable-campaign-score' &&
             event.actions[7]?.variableId === 'variable-campaign-items' &&
-            event.actions[8]?.type === 'setObjectCollision' && event.actions[8].collisionEnabled === false) &&
+            event.actions[8]?.type === 'setObjectCollision' && event.actions[8].collisionEnabled === false &&
+            event.actions[9]?.type === 'setTilemapCellFrame' && event.actions[9].tilemapId === testTilemap?.id &&
+            event.actions[9].atlasFrame === 1) &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-enemy-frame' && event.actions[0]?.targetMode === 'touched') &&
@@ -387,6 +409,10 @@
           { result: objectHealthApiResult, pythonType: typeof window.runPython,
             eventCode: eventCodeAtEachBoundary });
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
+        const runtimeTilemapCell = world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.find(cell => cell.x === 0 && cell.y === 64);
+        check('Game Starts changes only the selected atlas frame and preserves cell collision',
+          runtimeTilemapCell?.atlasFrame === 1 && runtimeTilemapCell?.collisionType === 'solid' && runtimeTilemapCell?.collision === true,
+          runtimeTilemapCell);
         check('Event hides its selected draw layer without changing other render layers',
           !world.getRenderLayerDepths().behindPlayer.includes(0) &&
           world.getRenderLayerDepths().behindPlayer.includes(-1) &&
@@ -639,6 +665,8 @@
           state?.variables?.get('variable-animation-completions') === (spawnedAnimation ? 1 : 0),
           { completions: state?.variables?.get('variable-animation-completions'), animationStarted: Boolean(spawnedAnimation) });
         window.CodePluginReset({ world });
+        const resetTilemapCell = world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.find(cell => cell.x === 0 && cell.y === 64);
+        check('Mechanics reset restores the authored atlas frame', resetTilemapCell?.atlasFrame === 0, resetTilemapCell);
         check('Mechanics reset removes its temporary spawned animation target',
           !world.objects.some(object => object?._mechanicsSpawned === true),
           world.objects.filter(object => object?._mechanicsSpawned === true).length);

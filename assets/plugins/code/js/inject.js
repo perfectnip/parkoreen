@@ -207,6 +207,52 @@
         return changed;
     };
 
+    const setMechanicsTilemapCellFrame = (world, worldState, target, atlasFrame, authoritative = false) => {
+        if (!target?.tilemap || !target?.cell || !Number.isSafeInteger(atlasFrame) || atlasFrame < 0 || target.cell.animation) return false;
+        const frameCount = Number(target.tilemap.atlas?.columns) * Number(target.tilemap.atlas?.rows);
+        if (!Number.isSafeInteger(frameCount) || frameCount < 1 || atlasFrame >= frameCount) return false;
+        const { tilemap, cell, id } = target;
+        if (!worldState.tilemapCellFrameOriginals.has(id) && cell.atlasFrame === atlasFrame) return false;
+        const hadOriginal = worldState.tilemapCellFrameOriginals.has(id);
+        const originalFrame = hadOriginal
+            ? worldState.tilemapCellFrameOriginals.get(id)
+            : Number.isSafeInteger(cell.atlasFrame) ? cell.atlasFrame : null;
+        const desired = { ...cell };
+        if (atlasFrame === originalFrame) {
+            if (originalFrame === null) delete desired.atlasFrame;
+            else desired.atlasFrame = originalFrame;
+        } else {
+            desired.atlasFrame = atlasFrame;
+        }
+        const changed = world?.setTilemapCell?.(cell.x, cell.y, desired, tilemap.layer) === true;
+        const actualFrame = Number.isSafeInteger(cell.atlasFrame) ? cell.atlasFrame : null;
+        if (atlasFrame === originalFrame && (changed || actualFrame === originalFrame)) {
+            worldState.tilemapCellFrameOriginals.delete(id);
+            worldState.tilemapCellFrameOverrides.delete(id);
+        } else if (atlasFrame !== originalFrame && (changed || actualFrame === atlasFrame)) {
+            if (!hadOriginal) worldState.tilemapCellFrameOriginals.set(id, originalFrame);
+            worldState.tilemapCellFrameOverrides.set(id, atlasFrame);
+        }
+        if (changed && !authoritative) worldState.sharedMechanicsDirty = true;
+        return changed;
+    };
+
+    const restoreMechanicsTilemapCellFrame = (world, worldState, id, authoritative = false) => {
+        const target = getTilemapCellById(world, id);
+        const originalFrame = worldState.tilemapCellFrameOriginals.get(id);
+        let changed = false;
+        if (target && worldState.tilemapCellFrameOriginals.has(id)) {
+            const desired = { ...target.cell };
+            if (originalFrame === null) delete desired.atlasFrame;
+            else desired.atlasFrame = originalFrame;
+            changed = world?.setTilemapCell?.(target.cell.x, target.cell.y, desired, target.tilemap.layer) === true;
+        }
+        worldState.tilemapCellFrameOriginals.delete(id);
+        worldState.tilemapCellFrameOverrides.delete(id);
+        if (changed && !authoritative) worldState.sharedMechanicsDirty = true;
+        return changed;
+    };
+
     // Track player state for triggers (per-player in multiplayer)
     const createPlayerState = () => ({
         previousZones: new Set(),
@@ -243,6 +289,8 @@
         objectMotions: new Map(),
         tilemapCellOriginals: new Map(),
         tilemapCellOverrides: new Map(),
+        tilemapCellFrameOriginals: new Map(),
+        tilemapCellFrameOverrides: new Map(),
         timers: new Map(),
         worldPauseTokens: new Set(),
         timerFires: 0,
@@ -445,6 +493,8 @@
         if (!(state.objectMotions instanceof Map)) state.objectMotions = new Map();
         if (!(state.tilemapCellOriginals instanceof Map)) state.tilemapCellOriginals = new Map();
         if (!(state.tilemapCellOverrides instanceof Map)) state.tilemapCellOverrides = new Map();
+        if (!(state.tilemapCellFrameOriginals instanceof Map)) state.tilemapCellFrameOriginals = new Map();
+        if (!(state.tilemapCellFrameOverrides instanceof Map)) state.tilemapCellFrameOverrides = new Map();
         if (!Array.isArray(state.runtimeErrors)) state.runtimeErrors = [];
         if (!(state.runtimeErrorTimes instanceof Map)) state.runtimeErrorTimes = new Map();
         if (!Number.isFinite(state.lastErrorToastAt)) state.lastErrorToastAt = 0;
@@ -698,7 +748,7 @@
     const SHARED_MECHANICS_ACTIONS = new Set([
         'setVariable', 'addVariable', 'calculateVariable', 'toggleVariable', 'appendListItem', 'removeListItem', 'clearList', 'setInventoryItemEquipped', 'branchInventoryItemEquipped', 'consumeInventoryItem', 'branchListContains', 'branchPlayerCount', 'branchObjectHealth',
         'setTriggerEnabled', 'setObjectEnabled', 'setObjectCollision', 'setObjectHealth', 'damageObject', 'spawnObject', 'removeSpawnedObjects',
-        'setObjectPosition', 'setObjectDrawLayer', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
+        'setObjectPosition', 'setObjectDrawLayer', 'moveObject', 'setObjectSpriteFrame', 'setObjectOpacity', 'playObjectSpriteAnimation', 'setTilemapCellBehavior', 'setTilemapCellFrame', 'setLayerVisibility', 'setGravity', 'setJumpForce', 'setPlayerSpeed', 'setMovementControl', 'startTimer', 'stopTimer'
     ]);
 
     const getMultiplayerManager = () => typeof window !== 'undefined' ? window.MultiplayerManager || null : null;
@@ -809,6 +859,7 @@
         const objectOpacities = Object.create(null);
         const objectDrawLayers = Object.create(null);
         const tilemapCells = Object.create(null);
+        const tilemapCellFrames = Object.create(null);
         const layerVisibility = Object.create(null);
         for (const object of world?.objects || []) {
             if (object._mechanicsSpawned === true) {
@@ -887,10 +938,13 @@
         for (const [cellId, collisionType] of worldState.tilemapCellOverrides) {
             if (MECHANICS_TILEMAP_CELL_BEHAVIORS.has(collisionType)) tilemapCells[cellId] = collisionType;
         }
+        for (const [cellId, atlasFrame] of worldState.tilemapCellFrameOverrides) {
+            if (Number.isSafeInteger(atlasFrame) && atlasFrame >= 0) tilemapCellFrames[cellId] = atlasFrame;
+        }
         for (const [layerId, visible] of world?._mechanicsLayerVisibility || []) {
             if (visible === false && (world.layerDefinitions || []).some(layer => layer.id === layerId)) layerVisibility[layerId] = false;
         }
-        return { variables, lists, objects, objectCollisions, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, objectDrawLayers, playerVariables, playerLists, spawnedObjects, tilemapCells, layerVisibility, triggers,
+        return { variables, lists, objects, objectCollisions, positions, motions, objectHealth, objectSpriteFrames, objectSpriteAnimations, objectOpacities, objectDrawLayers, playerVariables, playerLists, spawnedObjects, tilemapCells, tilemapCellFrames, layerVisibility, triggers,
             gravity: Number.isFinite(world?._mechanicsGravity) ? world._mechanicsGravity : null,
             jumpForce: Number.isFinite(world?._mechanicsJumpForce) ? world._mechanicsJumpForce : null,
             playerSpeed: Number.isFinite(world?._mechanicsPlayerSpeed) ? world._mechanicsPlayerSpeed : null,
@@ -950,6 +1004,18 @@
             if (!MECHANICS_TILEMAP_CELL_BEHAVIORS.has(collisionType)) continue;
             const target = getTilemapCellById(world, cellId);
             if (target) setMechanicsTilemapCellBehavior(world, worldState, target, collisionType, true);
+        }
+        const tilemapCellFrames = snapshot.tilemapCellFrames && typeof snapshot.tilemapCellFrames === 'object' && !Array.isArray(snapshot.tilemapCellFrames)
+            ? snapshot.tilemapCellFrames : {};
+        for (const cellId of [...worldState.tilemapCellFrameOverrides.keys()]) {
+            if (!Object.prototype.hasOwnProperty.call(tilemapCellFrames, cellId)) {
+                restoreMechanicsTilemapCellFrame(world, worldState, cellId, true);
+            }
+        }
+        for (const [cellId, atlasFrame] of Object.entries(tilemapCellFrames)) {
+            if (!Number.isSafeInteger(atlasFrame) || atlasFrame < 0) continue;
+            const target = getTilemapCellById(world, cellId);
+            if (target) setMechanicsTilemapCellFrame(world, worldState, target, atlasFrame, true);
         }
         const layerVisibility = snapshot.layerVisibility && typeof snapshot.layerVisibility === 'object' && !Array.isArray(snapshot.layerVisibility)
             ? snapshot.layerVisibility : {};
@@ -3052,6 +3118,32 @@
                 setMechanicsTilemapCellBehavior(world, worldState, target, action.collisionType, context.authoritativeStateApplication === true);
                 break;
             }
+            case 'setTilemapCellFrame': {
+                if (typeof action.tilemapId !== 'string' || !action.tilemapId || !isFiniteMechanicsNumber(action.atlasFrame) ||
+                    !Number.isSafeInteger(Number(action.atlasFrame)) || Number(action.atlasFrame) < 0) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Tilemap Cell Frame needs an existing tilemap and a non-negative whole atlas frame.');
+                    break;
+                }
+                const gridSize = window.GRID_SIZE || 32;
+                const target = action.targetMode === 'touched'
+                    ? getTilemapCellById(world, context.touchedObjectId)
+                    : action.targetMode === 'fixed' && isFiniteMechanicsNumber(action.x) && isFiniteMechanicsNumber(action.y) &&
+                        Number.isSafeInteger(Number(action.x)) && Number.isSafeInteger(Number(action.y)) &&
+                        Number(action.x) % gridSize === 0 && Number(action.y) % gridSize === 0 &&
+                        Math.abs(Number(action.x)) <= 10000000 && Math.abs(Number(action.y)) <= 10000000
+                        ? getTilemapCellAt(world, action.tilemapId, Number(action.x), Number(action.y))
+                        : null;
+                const frameCount = Number(target?.tilemap?.atlas?.columns) * Number(target?.tilemap?.atlas?.rows);
+                if (!target || target.tilemap.id !== action.tilemapId || target.cell.animation ||
+                    !Number.isSafeInteger(frameCount) || frameCount < 1 || Number(action.atlasFrame) >= frameCount) {
+                    reportMechanicsRuntimeError(world, event, actionSource,
+                        'Set Tilemap Cell Frame needs an existing non-animated atlas cell and a frame inside the selected atlas.');
+                    break;
+                }
+                setMechanicsTilemapCellFrame(world, worldState, target, Number(action.atlasFrame), context.authoritativeStateApplication === true);
+                break;
+            }
             case 'setLayerVisibility': {
                 const layerExists = (world?.layerDefinitions || []).some(layer => layer.id === action.layerId);
                 if (!layerExists || typeof action.visible !== 'boolean') {
@@ -4991,8 +5083,12 @@
             for (const cellId of [...state.tilemapCellOriginals.keys()]) {
                 tilemapCellsRestored = restoreMechanicsTilemapCell(world, state, cellId, true) || tilemapCellsRestored;
             }
+            let tilemapCellFramesRestored = false;
+            for (const cellId of [...state.tilemapCellFrameOriginals.keys()]) {
+                tilemapCellFramesRestored = restoreMechanicsTilemapCellFrame(world, state, cellId, true) || tilemapCellFramesRestored;
+            }
             const triggersChanged = hadTriggerOverrides && !preserveTriggerState;
-            if (spawned.length || tilemapCellsRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged || layerVisibilityChanged || objectDrawLayersChanged) {
+            if (spawned.length || tilemapCellsRestored || tilemapCellFramesRestored || triggersChanged || gravityChanged || jumpForceChanged || playerSpeedChanged || movementControlChanged || layerVisibilityChanged || objectDrawLayersChanged) {
                 state.sharedMechanicsDirty = true;
                 state.lastSharedMechanicsState = undefined;
                 publishSharedMechanicsState(world);

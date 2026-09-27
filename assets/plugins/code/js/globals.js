@@ -304,6 +304,7 @@ const CODE_EVENT_ACTION_TYPES = [
     { id: 'setPlayerSpeed', label: 'Set Player Speed' },
     { id: 'setMovementControl', label: 'Set Movement Control' },
     { id: 'setTilemapCellBehavior', label: 'Set Tilemap Cell Behavior' },
+    { id: 'setTilemapCellFrame', label: 'Set Tilemap Cell Frame' },
     { id: 'startTimer', label: 'Start Timer' },
     { id: 'stopTimer', label: 'Stop Timer' },
     { id: 'teleportPlayer', label: 'Teleport Player' },
