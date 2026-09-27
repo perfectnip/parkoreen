@@ -70,7 +70,7 @@ CHANGELOG.md            # Pointer to wiki/changelog (canonical Guide changelog)
 - `WorldObject` is universal — every block, spike, teleport, coin, etc. is one. Carries `type`, `appearanceType`, `actingType`, color/opacity/layer/rotation/flip, plus per-type fields. Most SVG-based types cache pre-rendered offscreen canvases (tinted via `globalCompositeOperation: 'source-in'`) for performance.
 - `Camera` smooth-follow with separate X/Y lerp, configurable. Zoom 0.5x–4x in editor/test, locked in play. `Ctrl+Scroll` zooms around player.
 - **Collision uses two touchboxes**: `groundTouchbox` (lower portion for grounding) and `hurtTouchbox` (inset for damage). See spike modes below.
-- **Tile cache**: editor merges identical ground blocks via greedy meshing (by color+texture+opacity+layer) into 512px tiles for fast play-mode rendering. Dynamic objects (zones, buttons, coins, checkpoints, spinners, text) skip the cache.
+- **Tile cache**: Play/Test indexes static render objects by 512px chunk, rasterizes a chunk when the camera needs it, and bounds cached bitmaps with an LRU. The editor greedily meshes only the camera's 512px chunk region and reuses it until the view crosses a chunk or the map changes. Dynamic objects (zones, buttons, coins, checkpoints, spinners, text) stay out of merged ground meshes. Map data and collision indexes still load eagerly.
 
 ### Spike touchbox modes
 

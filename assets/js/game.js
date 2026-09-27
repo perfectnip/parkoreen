@@ -3140,6 +3140,7 @@ class World {
         // Editor merged block cache
         this._editorMergedDirty = true;
         this._editorMergedCache = null;
+        this._editorMergedRegion = null;
         // Teleportal list cache
         this._teleportalListDirty = true;
         this._teleportalList = [];
@@ -3611,33 +3612,35 @@ class World {
         }
     }
 
+    _createTilemapRenderCell(tilemap, cell) {
+        const renderCell = {
+            x: cell.x, y: cell.y, width: GRID_SIZE, height: GRID_SIZE,
+            type: 'block', appearanceType: 'ground', collisionShape: 'box',
+            rotation: 0, flipHorizontal: false,
+            color: cell.color, texture: cell.texture, opacity: cell.opacity,
+            layer: tilemap.layer
+        };
+        if (Number.isInteger(cell.atlasFrame) && tilemap.atlas) {
+            renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
+        }
+        if (cell.animation) {
+            renderCell._tilemapAnimated = true;
+            renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
+        } else if (!renderCell.render && ['oneWay', 'rampUpRight', 'rampUpLeft', 'hazard'].includes(cell.collisionType)) {
+            renderCell.oneWayPlatform = true;
+            renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell);
+        }
+        // Atlas cells render individually so greedy meshing cannot merge across source frames.
+        return renderCell;
+    }
+
     _getTilemapRenderCells() {
         if (!this._tilemapRenderDirty && this._tilemapRenderCells) return this._tilemapRenderCells;
         this._tilemapRenderDirty = false;
         this._tilemapRenderCells = [];
         for (const tilemap of this.tilemaps) {
             for (const cell of tilemap.cells) {
-                const renderCell = {
-                    x: cell.x, y: cell.y, width: GRID_SIZE, height: GRID_SIZE,
-                    type: 'block', appearanceType: 'ground', collisionShape: 'box',
-                    rotation: 0, flipHorizontal: false,
-                    color: cell.color, texture: cell.texture, opacity: cell.opacity,
-                    layer: tilemap.layer
-                };
-                if (Number.isInteger(cell.atlasFrame) && tilemap.atlas) {
-                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
-                }
-                if (cell.animation) {
-                    renderCell._tilemapAnimated = true;
-                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell, tilemap.atlas);
-                } else if (renderCell.render) {
-                    // Atlas cells render into the static tile cache; the draw function
-                    // is kept on the cell to avoid greedy-merging across atlas frames.
-                } else if (['oneWay', 'rampUpRight', 'rampUpLeft', 'hazard'].includes(cell.collisionType)) {
-                    renderCell.oneWayPlatform = true;
-                    renderCell.render = (ctx, camera) => this._renderTilemapCell(ctx, camera, cell);
-                }
-                this._tilemapRenderCells.push(renderCell);
+                this._tilemapRenderCells.push(this._createTilemapRenderCell(tilemap, cell));
             }
         }
         return this._tilemapRenderCells;
@@ -4536,9 +4539,16 @@ class World {
 
     // ---- Standard rendering (editor mode) ----
 
-    _rebuildEditorMergedCache() {
-        if (!this._editorMergedDirty && this._editorMergedCache) return;
+    _rebuildEditorMergedCache(bounds) {
+        const tileSize = this._tileSize;
+        const tx0 = Math.floor(bounds.left / tileSize);
+        const ty0 = Math.floor(bounds.top / tileSize);
+        const tx1 = Math.floor(bounds.right / tileSize);
+        const ty1 = Math.floor(bounds.bottom / tileSize);
+        const region = `${tx0}:${ty0}:${tx1}:${ty1}`;
+        if (!this._editorMergedDirty && this._editorMergedCache && this._editorMergedRegion === region) return;
         this._editorMergedDirty = false;
+        this._editorMergedRegion = region;
 
         const objectsByLayer = new Map();
         const addRenderable = obj => {
@@ -4552,8 +4562,30 @@ class World {
             }
             layerObjects.push(obj);
         };
-        for (let i = 0; i < this.objects.length; i++) addRenderable(this.objects[i]);
-        for (const cell of this._getTilemapRenderCells()) addRenderable(cell);
+        this.rebuildSpatialHash();
+        const left = tx0 * tileSize;
+        const top = ty0 * tileSize;
+        const right = (tx1 + 1) * tileSize;
+        const bottom = (ty1 + 1) * tileSize;
+        const objects = this.spatialHash.query(left, top, right - left, bottom - top).slice();
+        for (const object of objects) {
+            if (object.x + object.width <= left || object.x >= right ||
+                object.y + object.height <= top || object.y >= bottom) continue;
+            addRenderable(object);
+        }
+
+        const firstCellX = Math.floor(left / GRID_SIZE) * GRID_SIZE;
+        const firstCellY = Math.floor(top / GRID_SIZE) * GRID_SIZE;
+        const lastCellX = Math.floor((right - 1) / GRID_SIZE) * GRID_SIZE;
+        const lastCellY = Math.floor((bottom - 1) / GRID_SIZE) * GRID_SIZE;
+        for (const tilemap of this.tilemaps) {
+            for (let y = firstCellY; y <= lastCellY; y += GRID_SIZE) {
+                for (let x = firstCellX; x <= lastCellX; x += GRID_SIZE) {
+                    const cell = tilemap._cellLookup.get(`${x},${y}`);
+                    if (cell) addRenderable(this._createTilemapRenderCell(tilemap, cell));
+                }
+            }
+        }
 
         this._editorMergedCache = Array.from(objectsByLayer, ([depth, objects]) => ({
             depth,
@@ -4573,14 +4605,15 @@ class World {
         const vRight = camera.x + camera.width / camera.zoom + margin;
         const vTop = camera.y - margin;
         const vBottom = camera.y + camera.height / camera.zoom + margin;
-        
-        this._rebuildEditorMergedCache();
+
+        this.rebuildSpatialHash();
+        const visibleObjects = this.spatialHash.query(vLeft, vTop, vRight - vLeft, vBottom - vTop).slice();
+        this._rebuildEditorMergedCache({ left: vLeft, top: vTop, right: vRight, bottom: vBottom });
         const cache = this._editorMergedCache;
 
         if (!this._zones) this._zones = [];
         this._zones.length = 0;
-        for (let i = 0; i < this.objects.length; i++) {
-            const obj = this.objects[i];
+        for (const obj of visibleObjects) {
             const at = obj.appearanceType;
             if (at !== 'zone' && at !== 'button') continue;
             if (obj.x + obj.width < vLeft || obj.x > vRight ||

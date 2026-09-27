@@ -48,6 +48,30 @@
       check('Least recently used bitmap is evicted', !world._tiles.has('1:0:0'), [...world._tiles.keys()].slice(0, 3));
       check('Most recently requested bitmap remains cached', world._tiles.has('1:131:0'), [...world._tiles.keys()].at(-1));
 
+      const editorWorld = new World();
+      for (let index = 0; index < 132; index++) {
+        editorWorld.addObject(new WorldObject({
+          id: `editor-ground-${index}`,
+          x: index * editorWorld._tileSize,
+          y: 0,
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          color: '#787878',
+          layer: 1
+        }));
+      }
+      const editorBounds = { left: -100, top: -100, right: 612, bottom: 612 };
+      editorWorld._rebuildEditorMergedCache(editorBounds);
+      const firstEditorCache = editorWorld._editorMergedCache;
+      const visibleCount = firstEditorCache.reduce((count, layer) => count + layer.merged.length + layer.nonMerged.length, 0);
+      check('Editor meshes only objects in its camera chunk region', visibleCount === 2, visibleCount);
+      editorWorld._rebuildEditorMergedCache({ left: -80, top: -80, right: 620, bottom: 620 });
+      check('Editor reuses the regional mesh while the camera stays in the same chunks', editorWorld._editorMergedCache === firstEditorCache);
+      editorWorld.addObject(new WorldObject({ id: 'editor-added-ground', x: 64, y: 0, layer: 1 }));
+      editorWorld._rebuildEditorMergedCache(editorBounds);
+      const updatedCount = editorWorld._editorMergedCache.reduce((count, layer) => count + layer.merged.length + layer.nonMerged.length, 0);
+      check('Editing an object invalidates and rebuilds the regional mesh', updatedCount === 3, updatedCount);
+
       const passed = checks.every(item => item.passed);
       const output = document.getElementById('results');
       output.className = passed ? 'pass' : 'fail';
