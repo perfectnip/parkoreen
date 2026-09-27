@@ -267,13 +267,19 @@
         check('Game Starts event runs once per world session', afterSecondUpdate === 1, { afterSecondUpdate });
         const spawnedEnemy = world.objects.find(object => object?._mechanicsSpawnTemplateId === 'enemy-template');
         check('Loaded Game Starts action spawns the sprite-sheet template',
-          spawnedEnemy?._mechanicsSpawned === true && spawnedEnemy.spriteSheet?.frameCount === 4,
-          spawnedEnemy && { id: spawnedEnemy.id, templateId: spawnedEnemy._mechanicsSpawnTemplateId, frameCount: spawnedEnemy.spriteSheet?.frameCount });
+          spawnedEnemy?._mechanicsSpawned === true && spawnedEnemy.spriteSheet?.frameCount === 4 &&
+            spawnedEnemy.spriteSheet.animations.some(animation => animation.name === 'Hurt'),
+          spawnedEnemy && { id: spawnedEnemy.id, templateId: spawnedEnemy._mechanicsSpawnTemplateId,
+            frameCount: spawnedEnemy.spriteSheet?.frameCount,
+            animationNames: spawnedEnemy.spriteSheet?.animations?.map(animation => animation.name) });
         check('Spawned sprite target keeps its template link and remains addressable by id',
           Boolean(spawnedEnemy && spawnedEnemy._mechanicsSpawnTemplateId === 'enemy-template' &&
-            world.getObjectById(spawnedEnemy.id) === spawnedEnemy && spawnedEnemy.spriteSheet?.frameCount === 4),
+            world.getObjectById(spawnedEnemy.id) === spawnedEnemy && spawnedEnemy.spriteSheet?.frameCount === 4 &&
+            spawnedEnemy.spriteSheet.animations.some(animation => animation.name === 'Hurt')),
           spawnedEnemy && { id: spawnedEnemy.id, templateId: spawnedEnemy._mechanicsSpawnTemplateId,
-            addressable: world.getObjectById(spawnedEnemy.id) === spawnedEnemy, frameCount: spawnedEnemy.spriteSheet?.frameCount });
+            addressable: world.getObjectById(spawnedEnemy.id) === spawnedEnemy,
+            frameCount: spawnedEnemy.spriteSheet?.frameCount,
+            animationNames: spawnedEnemy.spriteSheet?.animations?.map(animation => animation.name) });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
 
