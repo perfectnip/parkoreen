@@ -3366,6 +3366,28 @@ class World {
         return true;
     }
 
+    removeTilemapCell(x, y, layer = 1) {
+        const cellX = Math.round(x / GRID_SIZE) * GRID_SIZE;
+        const cellY = Math.round(y / GRID_SIZE) * GRID_SIZE;
+        if (!Number.isSafeInteger(cellX) || !Number.isSafeInteger(cellY) ||
+            Math.abs(cellX) > WORLD_TILEMAP_MAX_POSITION || Math.abs(cellY) > WORLD_TILEMAP_MAX_POSITION) return false;
+        const tilemap = this.tilemaps.find(item => item.layer === normalizeWorldLayerDepth(layer));
+        if (!tilemap) return false;
+        const key = `${cellX},${cellY}`;
+        const cell = tilemap._cellLookup?.get(key) || tilemap.cells?.find(item => item.x === cellX && item.y === cellY);
+        if (!cell) return false;
+        tilemap.cells = tilemap.cells.filter(item => item !== cell);
+        tilemap._cellLookup?.delete(key);
+        tilemap._colliderCache?.delete(key);
+        this._tilemapCellCount = Math.max(0, this._tilemapCellCount - 1);
+        if (cell.collision) this._tilemapCollisionCellCount = Math.max(0, this._tilemapCollisionCellCount - 1);
+        if (cell.animation) this._tilemapAnimatedCellCount = Math.max(0, this._tilemapAnimatedCellCount - 1);
+        this._tilemapRenderDirty = true;
+        this._editorMergedDirty = true;
+        this.invalidateTileCache();
+        return true;
+    }
+
     setTilemapAtlas(atlasData, layer = 1) {
         const normalizedAtlas = normalizeWorldTilemapAtlas(atlasData);
         if (!normalizedAtlas) return false;

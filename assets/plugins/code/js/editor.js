@@ -2248,6 +2248,24 @@
                     if (!(tilemap.cells || []).some(cell => cell.x === x && cell.y === y)) return 'Select an existing cell on this tilemap';
                 }
             }
+            if (action.type === 'setTilemapCellEnabled') {
+                const tilemap = (getWorld()?.tilemaps || []).find(item => item.id === action.tilemapId);
+                if (!tilemap) return 'Select a tilemap on this map';
+                if (!['fixed', 'touched'].includes(action.targetMode)) return 'Choose a fixed cell or the touched cell';
+                if (typeof action.enabled !== 'boolean') return 'Choose whether the tilemap cell is enabled';
+                if (action.targetMode === 'fixed') {
+                    const x = Number(action.x);
+                    const y = Number(action.y);
+                    const gridSize = window.GRID_SIZE || 32;
+                    if (!isFiniteActionNumber(action.x) || !isFiniteActionNumber(action.y) ||
+                        !Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+                        x % gridSize !== 0 || y % gridSize !== 0 ||
+                        Math.abs(x) > 10000000 || Math.abs(y) > 10000000) {
+                        return `Enter cell coordinates on the ${gridSize} px grid`;
+                    }
+                    if (!(tilemap.cells || []).some(cell => cell.x === x && cell.y === y)) return 'Select an existing cell on this tilemap';
+                }
+            }
             if (action.type === 'setLayerVisibility') {
                 if (!(getWorld()?.layerDefinitions || []).some(layer => layer.id === action.layerId)) return 'Select a draw layer on this map';
                 if (typeof action.visible !== 'boolean') return 'Choose whether the draw layer is visible or hidden';
@@ -5191,6 +5209,7 @@
             case 'setMovementControl': return { type, property: 'horizontalAcceleration', mode: 'map', value: 0 };
             case 'setTilemapCellBehavior': return { type, tilemapId: '', targetMode: 'fixed', x: 0, y: 0, collisionType: 'decorative' };
             case 'setTilemapCellFrame': return { type, tilemapId: '', targetMode: 'fixed', x: 0, y: 0, atlasFrame: 0 };
+            case 'setTilemapCellEnabled': return { type, tilemapId: '', targetMode: 'fixed', x: 0, y: 0, enabled: false };
             case 'startTimer': return { type, timerName: 'timer', seconds: 1, eventId: '', repeat: false, repeatCount: 1 };
             case 'stopTimer': return { type, timerName: '' };
             case 'teleportPlayer': return { type, x: 0, y: 0 };
@@ -5457,6 +5476,12 @@
                 const maxFrame = Number.isSafeInteger(frameCount) && frameCount > 0 ? frameCount - 1 : 0;
                 const frameInput = field('atlasFrame', action.atlasFrame ?? 0, 'number').replace('type="number"', `type="number" min="0" max="${maxFrame}" step="1"`);
                 return `<label class="trigger-form-label">Tilemap</label><select class="trigger-form-select event-action-field" data-field="tilemapId"><option value="">Select a tilemap…</option>${tilemaps.map(tilemap => `<option value="${escapeHtml(tilemap.id)}" ${tilemap.id === action.tilemapId ? 'selected' : ''}>${escapeHtml(tilemap.name || `Layer ${tilemap.layer}`)}</option>`).join('')}</select><label class="trigger-form-label">Cell to change</label><select class="trigger-form-select event-action-field" data-field="targetMode"><option value="fixed" ${selectedMode === 'fixed' ? 'selected' : ''}>Fixed coordinates</option><option value="touched" ${selectedMode === 'touched' ? 'selected' : ''}>Cell touched by this event</option></select><label class="trigger-form-label">Cell X</label>${field('x', action.x ?? 0, 'number').replace('type="number"', `type="number" min="-10000000" max="10000000" step="${gridSize}"`)}<label class="trigger-form-label">Cell Y</label>${field('y', action.y ?? 0, 'number').replace('type="number"', `type="number" min="-10000000" max="10000000" step="${gridSize}"`)}<label class="trigger-form-label">Atlas frame (0–${maxFrame})</label>${frameInput}<p class="trigger-description">Changes the image on an existing atlas-backed cell for this session. Collision and animation settings stay independent. Animated cells cannot be changed by this action. Reset restores the saved frame, and the host synchronizes the selected frame in hosted rooms. Fixed coordinates must match the ${gridSize} px grid; touched-cell mode requires a Player Touches Tilemap trigger.</p>`;
+            }
+            case 'setTilemapCellEnabled': {
+                const tilemaps = getWorld()?.tilemaps || [];
+                const selectedMode = action.targetMode === 'touched' ? 'touched' : 'fixed';
+                const gridSize = window.GRID_SIZE || 32;
+                return `<label class="trigger-form-label">Tilemap</label><select class="trigger-form-select event-action-field" data-field="tilemapId"><option value="">Select a tilemap…</option>${tilemaps.map(tilemap => `<option value="${escapeHtml(tilemap.id)}" ${tilemap.id === action.tilemapId ? 'selected' : ''}>${escapeHtml(tilemap.name || `Layer ${tilemap.layer}`)}</option>`).join('')}</select><label class="trigger-form-label">Cell to change</label><select class="trigger-form-select event-action-field" data-field="targetMode"><option value="fixed" ${selectedMode === 'fixed' ? 'selected' : ''}>Fixed coordinates</option><option value="touched" ${selectedMode === 'touched' ? 'selected' : ''}>Cell touched by this event</option></select><label class="trigger-form-label">Cell X</label>${field('x', action.x ?? 0, 'number').replace('type="number"', `type="number" min="-10000000" max="10000000" step="${gridSize}"`)}<label class="trigger-form-label">Cell Y</label>${field('y', action.y ?? 0, 'number').replace('type="number"', `type="number" min="-10000000" max="10000000" step="${gridSize}"`)}<label class="trigger-form-label">Cell state</label><select class="trigger-form-select event-action-field" data-field="enabled"><option value="true" ${action.enabled === true ? 'selected' : ''}>Enabled</option><option value="false" ${action.enabled !== true ? 'selected' : ''}>Disabled (remove from play)</option></select><p class="trigger-description">Temporarily removes or restores one authored tilemap cell, including its artwork and collision. Reset restores the map. Fixed coordinates use the ${gridSize} px grid; touched-cell mode requires a Player Touches Tilemap trigger. The host synchronizes cell changes in hosted rooms.</p>`;
             }
             case 'setCheckpoint':
                 return `<label class="trigger-form-label">Checkpoint object</label><select class="trigger-form-select event-action-field" data-field="objectId">${renderCheckpointOptions(action.objectId)}</select><p class="trigger-description">Sets the triggering player's respawn checkpoint and runs the checkpoint hook.</p>`;

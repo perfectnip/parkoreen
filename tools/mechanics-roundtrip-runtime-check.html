@@ -112,8 +112,10 @@
           'assert parkoreen.set_object_health("phase-cube", 6, 5) is False',
           `tilemap_id = "${testTilemap.id}"`,
           'cells = parkoreen.get_tilemap_cells(tilemap_id)',
-          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 1 for cell in cells)',
-          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["collision_type"] == "solid" for cell in cells)',
+          'assert not any(cell["x"] == 0 and cell["y"] == 64 for cell in cells)',
+          'assert parkoreen.set_tilemap_cell_enabled(tilemap_id, 0, 64, True) is True',
+          'cells = parkoreen.get_tilemap_cells(tilemap_id)',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 1 and cell["collision_type"] == "solid" for cell in cells)',
           'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 0, 64, 0) is True',
           'cells = parkoreen.get_tilemap_cells(tilemap_id)',
           'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 0 for cell in cells)',
@@ -123,6 +125,12 @@
           'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 0, 64, 2) is False',
           'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 1, 64, 0) is False',
           'assert parkoreen.set_tilemap_cell_frame(tilemap_id, 32, 64, 0) is False',
+          'assert parkoreen.set_tilemap_cell_enabled(tilemap_id, 1, 64, False) is False',
+          'assert parkoreen.set_tilemap_cell_enabled(tilemap_id, 0, 64, False) is True',
+          'assert not any(cell["x"] == 0 and cell["y"] == 64 for cell in parkoreen.get_tilemap_cells(tilemap_id))',
+          'assert parkoreen.set_tilemap_cell_enabled(tilemap_id, 0, 64, True) is True',
+          'assert any(cell["x"] == 0 and cell["y"] == 64 and cell["atlas_frame"] == 1 for cell in parkoreen.get_tilemap_cells(tilemap_id))',
+          'assert parkoreen.set_tilemap_cell_enabled(tilemap_id, 0, 64, False) is True',
           'print("object-health-api-ok")'
         ].join('\n');
         source.mapName = 'Mechanics Round Trip';
@@ -167,7 +175,8 @@
               { type: 'addVariable', variableId: 'variable-campaign-score', amount: 1 },
               { type: 'appendListItem', variableId: 'variable-campaign-items', valueType: 'string', value: 'memory-shard' },
               { type: 'setObjectCollision', objectId: 'phase-platform', collisionEnabled: false },
-              { type: 'setTilemapCellFrame', tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, atlasFrame: 1 }]
+              { type: 'setTilemapCellFrame', tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, atlasFrame: 1 },
+              { type: 'setTilemapCellEnabled', tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, enabled: false }]
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
@@ -209,6 +218,9 @@
           type: id,
           ...(id === 'setTilemapCellFrame' ? {
             tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, atlasFrame: 1
+          } : {}),
+          ...(id === 'setTilemapCellEnabled' ? {
+            tilemapId: testTilemap?.id, targetMode: 'fixed', x: 0, y: 64, enabled: false
           } : {}),
           ...(id === 'branchPlayerHealth' ? {
             comparisonMode: 'percent', operator: 'greaterThanOrEqual', value: 65.5,
@@ -334,6 +346,11 @@
           restoredTilemapFrameAction?.tilemapId === testTilemap?.id && restoredTilemapFrameAction.targetMode === 'fixed' &&
             restoredTilemapFrameAction.x === 0 && restoredTilemapFrameAction.y === 64 && restoredTilemapFrameAction.atlasFrame === 1,
           restoredTilemapFrameAction);
+        const restoredTilemapEnabledAction = restoredActionCatalogEvent?.actions?.find(action => action.type === 'setTilemapCellEnabled');
+        check('Tilemap enabled action target and state survive PKRN and World save/load',
+          restoredTilemapEnabledAction?.tilemapId === testTilemap?.id && restoredTilemapEnabledAction.targetMode === 'fixed' &&
+            restoredTilemapEnabledAction.x === 0 && restoredTilemapEnabledAction.y === 64 && restoredTilemapEnabledAction.enabled === false,
+          restoredTilemapEnabledAction);
         const restoredPlayerHealthBranch = restoredActionCatalogEvent?.actions?.find(action => action.type === 'branchPlayerHealth');
         check('Player Health branch condition and routes survive PKRN and World save/load',
           restoredPlayerHealthBranch?.comparisonMode === 'percent' &&
@@ -424,10 +441,11 @@
           { result: objectHealthApiResult, pythonType: typeof window.runPython,
             eventCode: eventCodeAtEachBoundary });
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
-        const runtimeTilemapCell = world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.find(cell => cell.x === 0 && cell.y === 64);
-        check('Game Starts changes only the selected atlas frame and preserves cell collision',
-          runtimeTilemapCell?.atlasFrame === 1 && runtimeTilemapCell?.collisionType === 'solid' && runtimeTilemapCell?.collision === true,
-          runtimeTilemapCell);
+        const runtimeTilemap = world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id);
+        const runtimeTilemapCell = runtimeTilemap?.cells.find(cell => cell.x === 0 && cell.y === 64);
+        check('Game Starts removes the selected tilemap cell from rendering and collision',
+          !runtimeTilemapCell && runtimeTilemap?._cellLookup?.has('0,64') === false,
+          { cell: runtimeTilemapCell, lookupHasCell: runtimeTilemap?._cellLookup?.has('0,64') });
         check('Event hides its selected draw layer without changing other render layers',
           !world.getRenderLayerDepths().behindPlayer.includes(0) &&
           world.getRenderLayerDepths().behindPlayer.includes(-1) &&
@@ -681,7 +699,9 @@
           { completions: state?.variables?.get('variable-animation-completions'), animationStarted: Boolean(spawnedAnimation) });
         window.CodePluginReset({ world });
         const resetTilemapCell = world.tilemaps.find(tilemap => tilemap.id === testTilemap?.id)?.cells.find(cell => cell.x === 0 && cell.y === 64);
-        check('Mechanics reset restores the authored atlas frame', resetTilemapCell?.atlasFrame === 0, resetTilemapCell);
+        check('Mechanics reset restores the removed cell and its authored atlas frame',
+          resetTilemapCell?.atlasFrame === 0 && resetTilemapCell?.collisionType === 'solid' && resetTilemapCell?.collision === true,
+          resetTilemapCell);
         check('Mechanics reset removes its temporary spawned animation target',
           !world.objects.some(object => object?._mechanicsSpawned === true),
           world.objects.filter(object => object?._mechanicsSpawned === true).length);

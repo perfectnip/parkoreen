@@ -181,6 +181,24 @@ test('room worker validates tilemap atlas-frame overrides against saved cells an
     }), null);
 });
 
+test('room worker accepts only bounded disabled-cell overrides for authored tilemap cells', () => {
+    const room = new GameRoom({ storage: {} }, {});
+    const mapData = {
+        objects: [],
+        tilemaps: [{ id: 'ground', layer: 1, cells: [
+            { x: 0, y: 32, collisionType: 'solid' },
+            { x: 32, y: 32, collisionType: 'decorative' }
+        ] }],
+        codeData: {}
+    };
+    const cellId = 'tile-ground-0-32';
+    const valid = room.sanitizeMechanicsState(mapData, { tilemapCellEnabled: { [cellId]: false } });
+    assert.equal(valid?.tilemapCellEnabled[cellId], false);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellEnabled: { [cellId]: true } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellEnabled: { missing: false } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellEnabled: { [cellId]: 'false' } }), null);
+});
+
 test('room worker validates sprite frame and animation state for spawned objects through their template', () => {
     const room = new GameRoom({ storage: {} }, {});
     const mapData = {
