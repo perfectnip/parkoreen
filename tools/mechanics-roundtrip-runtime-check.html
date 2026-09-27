@@ -198,8 +198,33 @@
         const archiveBuffer = await archiveBlob.arrayBuffer();
         const archiveHeader = Array.from(new Uint8Array(archiveBuffer.slice(0, 4)));
         const importedWorldData = await importer.importFromZip(archiveBuffer);
+        const exportedEnemyData = pkrnPayload.objects.find(object => object.id === 'enemy-template');
+        const importedEnemyData = importedWorldData.objects.find(object => object.id === 'enemy-template');
+        check('PKRN serializer preserves object sprite-sheet metadata',
+          exportedEnemyData?.spriteSheet?.frameCount === 4 &&
+            exportedEnemyData.spriteSheet.animations?.some(animation => animation.name === 'Hurt'),
+          { hasSpriteSheet: Boolean(exportedEnemyData?.spriteSheet),
+            frameCount: exportedEnemyData?.spriteSheet?.frameCount,
+            animationNames: exportedEnemyData?.spriteSheet?.animations?.map(animation => animation.name),
+            dataPrefix: exportedEnemyData?.spriteSheet?.data?.slice(0, 32) });
+        check('PKRN ZIP import restores object sprite-sheet media and metadata',
+          importedEnemyData?.spriteSheet?.data?.startsWith('data:image/') === true &&
+            importedEnemyData.spriteSheet.frameCount === 4 &&
+            importedEnemyData.spriteSheet.animations?.some(animation => animation.name === 'Hurt'),
+          { hasSpriteSheet: Boolean(importedEnemyData?.spriteSheet),
+            frameCount: importedEnemyData?.spriteSheet?.frameCount,
+            animationNames: importedEnemyData?.spriteSheet?.animations?.map(animation => animation.name),
+            dataPrefix: importedEnemyData?.spriteSheet?.data?.slice(0, 32),
+            dataLength: importedEnemyData?.spriteSheet?.data?.length });
         const world = new World();
         world.fromJSON(importedWorldData);
+        const loadedEnemyTemplate = world.getObjectById('enemy-template');
+        check('World load retains the imported sprite-sheet template',
+          loadedEnemyTemplate?.spriteSheet?.frameCount === 4 &&
+            loadedEnemyTemplate.spriteSheet.animations.some(animation => animation.name === 'Hurt'),
+          { hasSpriteSheet: Boolean(loadedEnemyTemplate?.spriteSheet),
+            frameCount: loadedEnemyTemplate?.spriteSheet?.frameCount,
+            animationNames: loadedEnemyTemplate?.spriteSheet?.animations?.map(animation => animation.name) });
         const restored = world.codeData;
         check('World serialization retains its map and save options',
           jsonRestoredWorld.mapName === 'Mechanics Round Trip' && jsonRestoredWorld.persistCheckpoints === true);
@@ -207,7 +232,7 @@
         check('PKRN ZIP archive imports through the production ZIP reader',
           archiveHeader[0] === 0x50 && archiveHeader[1] === 0x4b && world.mapName === 'Mechanics Round Trip',
           { archiveHeader, mapName: world.mapName });
-        check('Trigger and Event link survive World save/load',
+        check('Trigger and Event links, sprite-sheet metadata, and zone name survive World save/load',
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-object-leave' && trigger.config?.eventId === 'event-object-leave') &&
@@ -223,8 +248,13 @@
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-enemy-frame' && event.actions[0]?.targetMode === 'touched') &&
           restored.events.some(event => event.id === 'event-enemy-animation' && event.actions[0]?.animationName === 'Hurt' && event.actions[0]?.completionEventId === 'event-animation-complete') &&
-          world.getObjectById('enemy-template')?.spriteSheet?.animations[0]?.name === 'Hurt' &&
-          world.getObjectById('zone-start')?.zoneName === 'start-area', restored);
+          loadedEnemyTemplate?.spriteSheet?.animations[0]?.name === 'Hurt' &&
+          world.getObjectById('zone-start')?.zoneName === 'start-area',
+          { triggerCount: restored.triggers.length, eventCount: restored.events.length,
+            enemySpriteSheet: loadedEnemyTemplate?.spriteSheet && {
+              frameCount: loadedEnemyTemplate.spriteSheet.frameCount,
+              animationNames: loadedEnemyTemplate.spriteSheet.animations.map(animation => animation.name)
+            }, zoneName: world.getObjectById('zone-start')?.zoneName });
         check('Variable definition and extension fields survive World save/load',
           restored.variables[0]?.id === 'variable-score' &&
           restored.variables[0]?.defaultValue === 0 &&
