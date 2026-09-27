@@ -165,6 +165,57 @@
           nestedQuery.nestedQueryTriggered && nestedQuery.hit && nestedQuery.skipPhysics && nestedQuery.velocityY < 0,
           nestedQuery);
 
+        const effectCanvas = document.createElement('canvas');
+        effectCanvas.width = 320;
+        effectCanvas.height = 240;
+        const effectContext = effectCanvas.getContext('2d');
+        const effectCamera = { x: 0, y: 0 };
+        const effectPlayer = {
+          x: 144, y: 92, width: 32, height: 32, facingDirection: 1,
+          isAttacking: false, attackDirection: 'down', attackStartTime: Date.now(),
+          dashTrail: [], superDashTrail: [], isHealing: false, superDashCharging: false,
+          _nailImpact: null, _pogoBounceImpact: null, _landingImpact: null,
+          _soulGainEffects: []
+        };
+        const renderEffectPixels = (state, config = {}) => {
+          effectContext.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+          ctx.world.plugins.hk = config;
+          const player = { ...effectPlayer, ...state };
+          window.PluginManager.executeHook('render.player', { ctx: effectContext, player, camera: effectCamera });
+          const pixels = effectContext.getImageData(0, 0, effectCanvas.width, effectCanvas.height).data;
+          let visiblePixels = 0;
+          for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) visiblePixels++;
+          return visiblePixels;
+        };
+        const now = Date.now();
+        const slashPixels = renderEffectPixels({ isAttacking: true, attackDirection: 'down', attackStartTime: now - 40 });
+        check('down-slash effect renders pixels', slashPixels > 0, slashPixels);
+        check('down-slash effect respects its setting',
+          renderEffectPixels({ isAttacking: true, attackDirection: 'down', attackStartTime: now - 40 }, { slashEffects: false }) === 0);
+        const pogoImpactPixels = renderEffectPixels({ _nailImpact: { time: now - 30, x: 160, y: 160, direction: 'down' } });
+        check('down-slash nail impact sparks render', pogoImpactPixels > 0, pogoImpactPixels);
+        const bouncePixels = renderEffectPixels({ _pogoBounceImpact: { time: now - 30, x: 160, y: 160 } });
+        check('pogo rebound flare renders', bouncePixels > 0, bouncePixels);
+        const trailPixels = renderEffectPixels({ dashTrail: [{ time: now, x: 130, y: 130 }] });
+        check('dash afterimage renders', trailPixels > 0, trailPixels);
+        check('dash afterimage respects its setting',
+          renderEffectPixels({ dashTrail: [{ time: now, x: 130, y: 130 }] }, { dashTrailEffects: false }) === 0);
+        const auraPixels = renderEffectPixels({ isHealing: true, healStartTime: now - 450 });
+        check('Focus aura renders while healing', auraPixels > 0, auraPixels);
+        const cameraShake = window.PluginManager.executeHook('render.camera', {
+          player: { _hkCameraShake: { startedAt: now - 15, duration: 170, intensity: 6 } }, offsetX: 0, offsetY: 0
+        });
+        check('camera impact effect adds a short camera offset', cameraShake.offsetX !== 0 || cameraShake.offsetY !== 0, cameraShake);
+        const quietCamera = window.PluginManager.executeHook('render.camera', {
+          player: { _hkCameraShake: { startedAt: now - 15, duration: 170, intensity: 6 } }, offsetX: 0, offsetY: 0
+        });
+        ctx.world.plugins.hk.cameraShakeEffects = false;
+        const disabledCamera = window.PluginManager.executeHook('render.camera', {
+          player: { _hkCameraShake: { startedAt: now - 15, duration: 170, intensity: 6 } }, offsetX: 0, offsetY: 0
+        });
+        check('camera impact effect respects its setting', disabledCamera.offsetX === 0 && disabledCamera.offsetY === 0,
+          { enabled: quietCamera, disabled: disabledCamera });
+
         const report = { total: results.length, passed: results.filter(item => item.passed).length, results };
         const output = document.getElementById('results');
         output.className = report.passed === report.total ? 'pass' : 'fail';
