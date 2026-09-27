@@ -3889,6 +3889,7 @@
 
         const toObjectSnapshot = object => {
             if (!object) return undefined;
+            const health = typeof object.id === 'string' ? getWorldState(world)?.objectHealth.get(object.id) : null;
             return {
                 id: safeText(object.id),
                 name: safeText(object.name || object.displayName || object.zoneName || object.appearanceType || object.type),
@@ -3906,7 +3907,10 @@
                     ? object.collisionPoints.map(point => [point[0], point[1]]) : null,
                 polygon_one_way: object.collisionShape === 'polygon' ? object.polygonOneWay !== false : null,
                 one_way_platform: object.oneWayPlatform === true,
-                spawned: object._mechanicsSpawned === true
+                spawned: object._mechanicsSpawned === true,
+                object_health: health?.current ?? null,
+                object_max_health: health?.maximum ?? null,
+                object_defeated: health ? health.current === 0 : null
             };
         };
 
@@ -4049,6 +4053,30 @@
             return object.x === x && object.y === y;
         };
 
+        const getObjectHealth = objectId => {
+            if (typeof objectId !== 'string' || !objectId || objectId.length > 128) return undefined;
+            const object = world?.getObjectById?.(objectId);
+            if (!object) return undefined;
+            const health = getWorldState(world)?.objectHealth.get(object.id);
+            return health && Number.isSafeInteger(health.current) && Number.isSafeInteger(health.maximum)
+                ? { current: health.current, maximum: health.maximum, defeated: health.current === 0 }
+                : null;
+        };
+
+        const setObjectHealth = (objectId, current, maximum) => {
+            if (typeof objectId !== 'string' || !objectId || objectId.length > 128 ||
+                !Number.isSafeInteger(current) || !Number.isSafeInteger(maximum) ||
+                maximum < 1 || maximum > 99999 || current < 0 || current > maximum) return false;
+            const object = world?.getObjectById?.(objectId);
+            if (!object || object._collected === true) return false;
+            const multiplayer = getMultiplayerManager();
+            if (multiplayer?.getRoomCode?.() && !multiplayer.isHost) return false;
+            executeAction({ type: 'setObjectHealth', targetMode: 'fixed', objectId, health: current, maxHealth: maximum },
+                world, player, eventContext);
+            const health = getWorldState(world)?.objectHealth.get(objectId);
+            return health?.current === current && health.maximum === maximum;
+        };
+
         const setPlayerVelocity = (vx, vy) => {
             const maxVelocity = Number(window.CODE_MAX_PLAYER_VELOCITY) || 10000;
             if (!player || !Number.isFinite(player.vx) || !Number.isFinite(player.vy) ||
@@ -4163,6 +4191,8 @@
             setTilemapCellBehavior,
             setObjectEnabled,
             setObjectPosition,
+            getObjectHealth,
+            setObjectHealth,
             setPlayerVelocity,
             getVariable: (key, requestedScope = null) => {
                 const variable = resolveVariable(key, requestedScope);

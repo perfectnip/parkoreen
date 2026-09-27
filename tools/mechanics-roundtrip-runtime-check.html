@@ -101,7 +101,7 @@
             config: { eventId: 'event-enemy-animation', objectId: 'enemy-template' }
           }],
           events: [{
-            id: 'event-start', type: 'event', name: 'Initialize score', enabled: true,
+            id: 'event-start', type: 'event', name: 'Initialize score', enabled: true, code: 'health-api-fixture',
             actions: [{ type: 'addVariable', variableId: 'variable-score', amount: 1 },
               { type: 'setLayerVisibility', layerId: 'behind-player', visible: false },
               { type: 'setObjectDrawLayer', objectId: 'phase-platform', layerId: 'above-player' },
@@ -303,6 +303,18 @@
         const player = new Player(0, 0, 'Round Trip Tester', '#fff');
         player.id = 'local-player';
         window.engine = { world, state: 'playing', localPlayer: player, remotePlayers: new Map() };
+        let objectHealthApiResult = null;
+        window.runPython = (code, options) => {
+          if (code !== 'health-api-fixture') return Promise.resolve();
+          const api = options?.parkoreenContext;
+          const before = api?.getObjectHealth('phase-cube');
+          const changed = api?.setObjectHealth('phase-cube', 3, 5);
+          const after = api?.getObjectHealth('phase-cube');
+          const snapshot = api?.getObject('phase-cube');
+          const rejected = api?.setObjectHealth('phase-cube', 6, 5);
+          objectHealthApiResult = { before, changed, after, snapshot, rejected };
+          return Promise.resolve();
+        };
         window.PluginManager.executeHook('player.init', { player, world });
         window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
         const state = window.__parkoreenCodeRuntimeState?.worldStates?.get(world);
@@ -311,6 +323,12 @@
         window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
         const afterSecondUpdate = state?.variables?.get('variable-score');
         const afterSecondZoneUpdate = state?.variables?.get('variable-zone-entries');
+        check('Python API reads and sets bounded object health through Mechanics state',
+          objectHealthApiResult?.before === null && objectHealthApiResult?.changed === true &&
+            objectHealthApiResult?.after?.current === 3 && objectHealthApiResult?.after?.maximum === 5 &&
+            objectHealthApiResult?.after?.defeated === false && objectHealthApiResult?.snapshot?.object_health === 3 &&
+            objectHealthApiResult?.snapshot?.object_max_health === 5 && objectHealthApiResult?.rejected === false,
+          objectHealthApiResult);
         check('Loaded Game Starts trigger runs its linked action', afterFirstUpdate === 1, { afterFirstUpdate });
         check('Event hides its selected draw layer without changing other render layers',
           !world.getRenderLayerDepths().behindPlayer.includes(0) &&
