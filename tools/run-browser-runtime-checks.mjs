@@ -12,6 +12,11 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const runtimeChecks = [
     { route: '/tools/hk-pogo-runtime-check.html', description: 'Hollow Knight pogo' },
     { route: '/tools/mechanics-roundtrip-runtime-check.html', description: 'Mechanics save/load' },
+    {
+        route: '/tools/device-ui-runtime-check.html',
+        description: 'Device-specific UI and hybrid input',
+        pageOptions: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
+    },
     { route: '/tools/tile-cache-runtime-check.html', description: 'Tile cache and regional editor mesh' }
 ];
 
@@ -73,7 +78,7 @@ try {
 
     let failures = 0;
     for (const check of runtimeChecks) {
-        const page = await browser.newPage();
+        const page = await browser.newPage(check.pageOptions || {});
         try {
             await page.goto(`http://127.0.0.1:${address.port}${check.route}`, { waitUntil: 'load' });
             await page.waitForFunction(() => {

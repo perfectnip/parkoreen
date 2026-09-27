@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device UI runtime check</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    body { min-height: 100vh; margin: 0; background: #111827; }
+    #results { position: fixed; left: 0; top: 0; z-index: 999999; white-space: pre-wrap; }
+    .device-check-toolbar { position: fixed; }
+    .device-check-settings { position: fixed; top: 120px; left: 16px; }
+    .device-check-touch { width: 10px; height: 10px; }
+  </style>
+</head>
+<body>
+  <pre id="results">Loading device runtime…</pre>
+  <div class="toolbar device-check-toolbar" id="toolbar">
+    <button class="toolbar-btn" id="toolbar-button">Tool</button>
+  </div>
+  <div class="touch-controls active" id="touch-controls">
+    <div class="touch-joystick-container device-check-touch"></div>
+    <div class="touch-buttons-right device-check-touch"></div>
+  </div>
+  <div class="settings-container device-check-settings" id="settings">
+    <button id="settings-button">Settings</button>
+  </div>
+  <script src="../runtime.js"></script>
+  <script>
+    (async () => {
+      const checks = [];
+      const check = (label, passed, details = null) => checks.push({ label, passed: Boolean(passed), details });
+      const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const isMobile = () => document.body.classList.contains('device-mobile');
+      const isDesktop = () => document.body.classList.contains('device-desktop');
+      const touchControls = document.getElementById('touch-controls');
+      const toolbar = document.getElementById('toolbar');
+      const toolbarButton = document.getElementById('toolbar-button');
+      const settingsButton = document.getElementById('settings-button');
+      try {
+        await frame();
+        check('Touch-capable mobile startup selects the mobile layout',
+          window.ParkoreenDevice?.isMobile() === true && isMobile() && !isDesktop(),
+          { mobile: window.ParkoreenDevice?.isMobile(), bodyClass: document.body.className,
+            maxTouchPoints: navigator.maxTouchPoints });
+        check('Mobile layout shows virtual controls and touch-safe editor controls',
+          getComputedStyle(touchControls).display === 'block' &&
+            getComputedStyle(toolbar).overflowX === 'auto' &&
+            Number.parseFloat(getComputedStyle(toolbarButton).minWidth) >= 48 &&
+            Number.parseFloat(getComputedStyle(settingsButton).minHeight) >= 44,
+          { touchControls: getComputedStyle(touchControls).display,
+            toolbarOverflowX: getComputedStyle(toolbar).overflowX,
+            toolbarButtonMinWidth: getComputedStyle(toolbarButton).minWidth,
+            settingsButtonMinHeight: getComputedStyle(settingsButton).minHeight });
+
+        window.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse' }));
+        await frame();
+        check('A hybrid device switches to computer UI after pointer input',
+          window.ParkoreenDevice?.isMobile() === false && isDesktop() && !isMobile() &&
+            getComputedStyle(touchControls).display === 'none',
+          { mobile: window.ParkoreenDevice?.isMobile(), bodyClass: document.body.className,
+            touchControls: getComputedStyle(touchControls).display });
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+        await frame();
+        check('Physical keyboard input keeps the computer UI selected',
+          isDesktop() && !isMobile(),
+          { bodyClass: document.body.className });
+        window.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch' }));
+        await frame();
+        check('Touch input switches the hybrid device back to mobile UI',
+          window.ParkoreenDevice?.isMobile() === true && isMobile() && !isDesktop() &&
+            getComputedStyle(touchControls).display === 'block',
+          { mobile: window.ParkoreenDevice?.isMobile(), bodyClass: document.body.className,
+            touchControls: getComputedStyle(touchControls).display });
+      } catch (error) {
+        checks.push({ label: 'Device UI runtime check completes', passed: false, details: String(error.stack || error) });
+      }
+      const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
+      const output = document.getElementById('results');
+      output.className = report.passed === report.total ? 'pass' : 'fail';
+      output.textContent = JSON.stringify(report, null, 2);
+    })();
+  </script>
+</body>
+</html>
