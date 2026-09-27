@@ -1,0 +1,52 @@
+name: Parkoreen quality checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mechanics-and-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check runtime and editor JavaScript syntax
+        shell: bash
+        run: |
+          for source in \
+            runtime.js \
+            assets/js/game.js \
+            assets/js/editor.js \
+            assets/js/exportImport.js \
+            assets/js/mechanicsData.js \
+            assets/js/plugins.js \
+            assets/plugins/code/js/editor.js \
+            assets/plugins/code/js/inject.js \
+            assets/plugins/hk/js/inject.js
+          do
+            node --check "$source"
+          done
+
+      - name: Check Mechanics action catalog
+        run: node tools/mechanics-action-catalog.test.mjs
+
+      - name: Check Mechanics save normalization
+        run: node tools/mechanics-data.test.js
+
+      - name: Check hosted Mechanics validation
+        run: node tools/mechanics-worker.test.mjs
+
+      - name: Preflight every bundled plugin
+        shell: bash
+        run: |
+          for manifest in assets/plugins/*/plugin.json
+          do
+            node tools/validate-plugin.mjs "${manifest%/plugin.json}"
+          done
