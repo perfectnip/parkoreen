@@ -2,7 +2,7 @@
 
 The full **Parkoreen** changelog is published in the Parkoreen Guide:
 
-**[wiki/changelog/index.html](wiki/changelog/index.html)** — open in a browser from the repo, or from the deployed site at `wiki/changelog/`.
+**[Parkoreen Guide Changelog](wiki/changelog/index.html)** — open in a browser from the repo, or from the deployed site at `wiki/changelog/`.
 
 For line-by-line history, use `git log` and `git show <commit>`.
 
