@@ -25,12 +25,15 @@ const makeRoom = (codeData, objects = []) => {
 
 test('room worker forwards a legacy event when other canonical events exist', async () => {
     const { room, guest, host, messages } = makeRoom({
-        triggers: [{ id: 'trigger-1', enabled: true, config: { eventId: 'legacy-event' } }],
+        triggers: [{ id: 'trigger-1', triggerType: 'playerKeyInput', enabled: true,
+            config: { eventId: 'legacy-event', keys: ['KeyA'] } }],
         events: [{ id: 'current-event', enabled: true }],
         actions: [{ id: 'legacy-event', enabled: true }]
     });
 
-    await room.handleMechanicsEventRequest(guest, { triggerId: 'trigger-1', eventId: 'legacy-event' });
+    await room.handleMechanicsEventRequest(guest, {
+        triggerId: 'trigger-1', eventId: 'legacy-event', inputKeys: ['KeyA']
+    });
 
     assert.equal(messages.length, 1);
     assert.equal(messages[0].session, host);
@@ -66,6 +69,45 @@ test('room worker checks zone entry against recent previous and current position
 
     assert.equal(messages.length, 1);
     assert.equal(messages[0].session, host);
+});
+
+test('room worker validates and rearms Player Leaves Object contact edges', async () => {
+    const object = { id: 'leave-door', x: 80, y: 80, width: 32, height: 32 };
+    const { room, guest, host, messages } = makeRoom({
+        triggers: [{ id: 'leave-trigger', triggerType: 'playerLeaveObject', enabled: true,
+            config: { objectId: object.id, eventId: 'leave-event' } }],
+        events: [{ id: 'leave-event', enabled: true }]
+    }, [object]);
+
+    guest.previousPosition = { x: 85, y: 85 };
+    guest.previousPositionAt = Date.now() - 40;
+    guest.x = 200;
+    guest.y = 200;
+    guest.lastPositionAt = Date.now();
+    const eventRequests = () => messages.filter(item => item.message.type === 'mechanics_event_request');
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+
+    assert.equal(eventRequests().length, 1);
+    assert.equal(eventRequests()[0].session, host);
+    assert.equal(eventRequests()[0].message.touchedObjectId, object.id);
+
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    assert.equal(eventRequests().length, 1, 'staying outside cannot repeat the edge');
+
+    room.handlePosition(guest, { x: 85, y: 85 });
+    room.handlePosition(guest, { x: 200, y: 200 });
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    assert.equal(eventRequests().length, 2, 're-entering and leaving rearms the trigger');
+
+    const originalGet = room.state.storage.get.bind(room.state.storage);
+    room.state.storage.get = async key => key === 'mechanics:ROOM1'
+        ? JSON.stringify({ state: { positions: { [object.id]: { x: 500, y: 500 } }, spawnedObjects: {} } })
+        : originalGet(key);
+    room.mechanicsObjectPositions = { [object.id]: { x: 500, y: 500 } };
+    room.handlePosition(guest, { x: 510, y: 510 });
+    room.handlePosition(guest, { x: 600, y: 600 });
+    await room.handleMechanicsEventRequest(guest, { triggerId: 'leave-trigger', eventId: 'leave-event' });
+    assert.equal(eventRequests().length, 3, 'object movement updates the contact latch bounds');
 });
 
 test('room worker rejects zone entry requests without an outside-to-inside transition', async () => {

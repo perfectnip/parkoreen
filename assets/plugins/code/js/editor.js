@@ -1632,7 +1632,8 @@
                     return `Zone "${config.zoneName}" not found`;
                 }
                 break;
-            case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT: {
+            case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
+            case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
                 if (!config.objectId) return 'No map object selected';
                 if (config.shape !== undefined && !['box', 'circle', 'capsule'].includes(config.shape)) {
                     return 'Choose a box, circle, or capsule contact shape';
@@ -2684,11 +2685,12 @@
                 case CODE_TRIGGER_TYPES.PLAYER_LEAVE_ZONE:
                     typeDescription = error ? `⚠ ${error}` : `When player leaves "${block.config?.zoneName}"`;
                     break;
-                case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT: {
+                case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
+                case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
                     const object = (getWorld()?.objects || []).find(item => item?.id === block.config?.objectId);
                     typeDescription = error
                         ? `⚠ ${error}`
-                        : `When player touches "${object?.name || object?.appearanceType || 'Object'}"`;
+                        : `${block.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT ? 'When player leaves' : 'When player touches'} "${object?.name || object?.appearanceType || 'Object'}"`;
                     break;
                 }
                 case CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT: {
@@ -4559,7 +4561,8 @@
                 break;
             }
 
-            case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT: {
+            case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
+            case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
                 const hasObjects = objects.length > 0;
                 html = `
                     <div class="trigger-form-group">
@@ -4578,7 +4581,7 @@
                             <option value="capsule" ${config.shape === 'capsule' ? 'selected' : ''}>Capsule</option>
                         </select>
                         ${!hasObjects ? '<p class="trigger-description error">Add a map object in the editor first</p>' : ''}
-                        <p class="trigger-description">Fires once when the player begins touching the object. Circle and capsule use a radius equal to half the object’s shorter side; capsule rounds the ends along the longer axis. It can fire again after the player leaves. This setting affects trigger contact only, not solid platform collision.</p>
+                        <p class="trigger-description">${triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT ? 'Fires once when the player stops touching the object.' : 'Fires once when the player begins touching the object.'} Circle and capsule use a radius equal to half the object’s shorter side; capsule rounds the ends along the longer axis. ${triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT ? 'It can fire again after the player leaves. ' : ''}This setting affects trigger contact only, not solid platform collision.</p>
                     </div>
                 `;
                 break;
@@ -5004,6 +5007,7 @@
                 break;
 
             case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
+            case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT:
                 config.objectId = document.getElementById('trigger-config-object')?.value || '';
                 config.shape = ['circle', 'capsule'].includes(document.getElementById('trigger-config-shape')?.value)
                     ? document.getElementById('trigger-config-shape').value : 'box';

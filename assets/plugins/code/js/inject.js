@@ -4302,9 +4302,11 @@
         // Keep edge state current while disabled so re-enabling a trigger does
         // not mistake an existing condition, held key, or contact for a new edge.
         if (!isMechanicsTriggerEnabled(world, trigger)) {
-            if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT) {
+            if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType)) {
                 const state = getTriggerState(getPlayerState(player, world), trigger);
-                state.wasTouchingObject = Boolean(findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape));
+                const touchedObject = findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape);
+                state.wasTouchingObject = Boolean(touchedObject);
+                if (touchedObject) state.lastTouchedObjectId = touchedObject.id;
             } else if (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP) {
                 const state = getTriggerState(getPlayerState(player, world), trigger);
                 state.wasTouchingTilemap = Boolean(findTouchingTilemapCell(
@@ -4411,10 +4413,29 @@
                     }
                     clearTriggerTargetError(world, trigger);
                     const touchState = getTriggerState(playerState, trigger);
-                    const touching = Boolean(findTouchingMechanicsObject(world, config.objectId, player, config.shape));
+                    const touchedObject = findTouchingMechanicsObject(world, config.objectId, player, config.shape);
+                    const touching = Boolean(touchedObject);
                     const justTouched = touching && !touchState.wasTouchingObject;
                     touchState.wasTouchingObject = touching;
+                    if (touchedObject) touchState.lastTouchedObjectId = touchedObject.id;
                     return justTouched;
+                }
+
+                case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
+                    const object = typeof config.objectId === 'string' ? world?.getObjectById?.(config.objectId) : null;
+                    if (!object) {
+                        reportTriggerTargetError(world, trigger, 'Player Leaves Object needs an existing map object.');
+                        return false;
+                    }
+                    clearTriggerTargetError(world, trigger);
+                    const touchState = getTriggerState(playerState, trigger);
+                    const touchedObject = findTouchingMechanicsObject(world, config.objectId, player, config.shape);
+                    const wasTouching = touchState.wasTouchingObject === true;
+                    touchState.wasTouchingObject = Boolean(touchedObject);
+                    if (touchedObject) touchState.lastTouchedObjectId = touchedObject.id;
+                    if (!wasTouching || touchedObject) return false;
+                    touchState.leftObjectId = touchState.lastTouchedObjectId || config.objectId;
+                    return true;
                 }
 
                 case CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP: {
@@ -4865,6 +4886,8 @@
                         if (linkedEventId) {
                             const touchedObject = trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT
                                 ? findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape)
+                                : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT
+                                    ? world?.getObjectById?.(getTriggerState(getPlayerState(player, world), trigger).leftObjectId)
                                 : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP
                                     ? findTouchingTilemapCell(world, trigger.config?.tilemapId, trigger.config?.collisionType || 'any', player)
                                     : null;
@@ -5170,7 +5193,7 @@
                     ? request.choiceParentEventId : '';
                 const isRootEventRequest = linkedEventId === request.eventId && !choiceParentEventId;
                 const guestRequestableTypes = [CODE_TRIGGER_TYPES.PLAYER_ENTER_ZONE, CODE_TRIGGER_TYPES.PLAYER_LEAVE_ZONE,
-                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
+                    CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
                     CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_KEY_INPUT,
                     CODE_TRIGGER_TYPES.PLAYER_ACTION_INPUT, CODE_TRIGGER_TYPES.VARIABLE_CONDITION];
                 if (!trigger || !isMechanicsTriggerEnabled(world, trigger) || !guestRequestableTypes.includes(trigger.triggerType) ||
@@ -5179,7 +5202,7 @@
                     !eventUsesSharedMechanics(world, request.eventId)) return;
                 const requestedTouchObject = world.getObjectById?.(request.touchedObjectId);
                 const requestedTilemapCell = world.getTilemapColliderById?.(request.touchedObjectId);
-                const touchedObject = trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT &&
+                const touchedObject = [CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType) &&
                     requestedTouchObject && requestedTouchObject._mechanicsEnabled !== false &&
                     requestedTouchObject._collected !== true && (requestedTouchObject.id === trigger.config?.objectId ||
                         (requestedTouchObject._mechanicsSpawned === true &&
@@ -5196,7 +5219,7 @@
                         ((trigger.config?.collisionType || 'any') === 'any' ||
                             requestedTilemapCell._tilemapCollisionType === trigger.config?.collisionType)
                         ? requestedTilemapCell : null;
-                if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
+                if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT, CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON,
                     CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP].includes(trigger.triggerType) && !touchedObject) return;
                 if (!isRootEventRequest && !consumeSharedChoiceRoute(
                     world, request.triggerId, request.playerId, choiceParentEventId, request.eventId

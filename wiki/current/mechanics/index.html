@@ -52,6 +52,7 @@
         <tr><td>Player Respawns</td><td>After the player respawns.</td></tr>
         <tr><td>Player Enters Zone / Player Leaves Zone</td><td>On a matching named-zone boundary crossing.</td></tr>
         <tr><td>Player Touches Object</td><td>When contact with the selected object begins.</td></tr>
+        <tr><td>Player Leaves Object</td><td>When contact with the selected object ends.</td></tr>
         <tr><td>Player Touches Tilemap</td><td>When contact with a matching collidable cell begins.</td></tr>
         <tr><td>Player Presses Button</td><td>When the configured map button is activated.</td></tr>
         <tr><td>Player Key Input</td><td>When the selected key or key group is pressed.</td></tr>
@@ -62,7 +63,7 @@
         <tr><td>Repeat</td><td>At the configured interval, optionally limited by a repeat count.</td></tr>
       </tbody>
     </table>
-    <p>Edge triggers such as zone entry and object contact rearm after the player leaves. Disabling an edge trigger keeps its condition state current, so enabling it while a key, contact, or matching condition is already active does not create a false new edge. Game Starts, Game Ends, death, and room lifecycle events have defined one-time behavior for their lifecycle. A solo menu that pauses the simulation also freezes Repeat, Timer, timed-fall, and timed-jump clocks. Trigger help text explains whether a hosted-room event is local or handled by the host. Guest position samples are client-reported; overlap checks improve consistency but are not server-simulated physics.</p>
+    <p>Object contact triggers include begin and end edges. Disabling an edge trigger keeps its condition state current, so enabling it while a key, contact, or matching condition is already active does not create a false new edge. Game Starts, Game Ends, death, and room lifecycle events have defined one-time behavior for their lifecycle. A solo menu that pauses the simulation also freezes Repeat, Timer, timed-fall, and timed-jump clocks. Trigger help text explains whether a hosted-room event is local or handled by the host. Guest position samples are client-reported; overlap checks improve consistency but are not server-simulated physics.</p>
 
     <h2>Events and actions</h2>
     <p>An Event runs its enabled actions in order. Branch actions route to linked Events; <strong>Run Event</strong> reuses a linked flow. Timers can schedule an Event later, and menus, choices, and dialogue can pause the local player while the player responds. The action catalog is grouped here by what each action changes:</p>

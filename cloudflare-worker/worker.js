@@ -837,6 +837,8 @@ class GameRoom {
         this.mechanicsTilemapCellIndexes = new Map();
         this.mechanicsTilemapCellIndexesBuilt = false;
         this.mechanicsTilemapCellOverrides = Object.create(null);
+        this.mechanicsObjectPositions = Object.create(null);
+        this.mechanicsSpawnedObjects = Object.create(null);
     }
 
     async fetch(request) {
@@ -1044,6 +1046,8 @@ class GameRoom {
         this.mechanicsTilemapCellIndexes.clear();
         this.mechanicsTilemapCellIndexesBuilt = false;
         this.mechanicsTilemapCellOverrides = Object.create(null);
+        this.mechanicsObjectPositions = Object.create(null);
+        this.mechanicsSpawnedObjects = Object.create(null);
 
         // Store room data
         const room = {
@@ -1467,6 +1471,13 @@ class GameRoom {
                     stillActive = !latch.bounds.some(bounds => this.playerOverlapsMechanicsBounds(session, bounds));
                 } else if (latch.kind === 'zone-inside' || latch.kind === 'object-inside') {
                     stillActive = this.playerOverlapsMechanicsBounds(session, latch.bounds);
+                } else if (latch.kind === 'object-outside') {
+                    const currentPosition = this.mechanicsObjectPositions?.[latch.objectId] ||
+                        this.mechanicsSpawnedObjects?.[latch.objectId];
+                    const currentBounds = currentPosition && Number.isFinite(currentPosition.x) && Number.isFinite(currentPosition.y)
+                        ? { ...latch.bounds, x: currentPosition.x, y: currentPosition.y }
+                        : latch.bounds;
+                    stillActive = !this.playerOverlapsMechanicsBounds(session, currentBounds);
                 } else if (latch.kind === 'zone-outside') {
                     stillActive = !this.playerOverlapsMechanicsBounds(session, latch.bounds);
                 } else if (latch.kind === 'tilemap-cell-contact') {
@@ -1880,6 +1891,8 @@ class GameRoom {
             const revision = previousRevision < Number.MAX_SAFE_INTEGER ? previousRevision + 1 : 1;
             await this.state.storage.put(`mechanics:${roomCode}`, JSON.stringify({ revision, updatedAt: serverTimestamp, state }));
             this.mechanicsTilemapCellOverrides = state.tilemapCells;
+            this.mechanicsObjectPositions = state.positions;
+            this.mechanicsSpawnedObjects = state.spawnedObjects;
             this.refreshMechanicsContactLatches(roomCode);
             this.broadcastToRoom(roomCode, {
                 type: 'mechanics_state',
@@ -1974,6 +1987,10 @@ class GameRoom {
         if (triggerOverride === false || (triggerOverride !== true && trigger.enabled === false)) return;
         this.mechanicsTilemapCellOverrides = mechanicsState.tilemapCells && typeof mechanicsState.tilemapCells === 'object'
             ? mechanicsState.tilemapCells : Object.create(null);
+        this.mechanicsObjectPositions = mechanicsState.positions && typeof mechanicsState.positions === 'object'
+            ? mechanicsState.positions : Object.create(null);
+        this.mechanicsSpawnedObjects = mechanicsState.spawnedObjects && typeof mechanicsState.spawnedObjects === 'object'
+            ? mechanicsState.spawnedObjects : Object.create(null);
         const mapObjects = Array.isArray(room.mapData?.objects) ? room.mapData.objects : [];
         const objectById = new Map(mapObjects.map(object => [object?.id, object]).filter(([id, object]) => id && object));
         const getBounds = object => {
@@ -1988,7 +2005,7 @@ class GameRoom {
         };
         const triggerConfig = trigger.config && typeof trigger.config === 'object' ? trigger.config : {};
         const triggerType = trigger.triggerType;
-        if (!['playerEnterZone', 'playerLeaveZone', 'playerTouchObject', 'playerPressButton',
+        if (!['playerEnterZone', 'playerLeaveZone', 'playerTouchObject', 'playerLeaveObject', 'playerPressButton',
             'playerTouchTilemap', 'playerKeyInput', 'playerActionInput', 'variableCondition'].includes(triggerType)) return;
         if (triggerType === 'playerActionInput' && triggerConfig.action !== 'touchOtherPlayer') return;
 
@@ -2090,6 +2107,33 @@ class GameRoom {
             const touched = candidates.find(candidate => overlaps(currentPosition, candidate.bounds));
             if (!touched) return;
             contactLatch = { kind: 'object-inside', bounds: touched.bounds, objectId: touched.id };
+        } else if (triggerType === 'playerLeaveObject') {
+            const object = objectById.get(triggerConfig.objectId);
+            const previousPosition = session.previousPosition;
+            const previousIsRecent = previousPosition && Number.isSafeInteger(session.previousPositionAt) &&
+                now >= session.previousPositionAt && now - session.previousPositionAt <= 3000;
+            if (!positionIsRecent || !previousIsRecent || !object) return;
+            const candidates = [];
+            const contactShape = ['circle', 'capsule'].includes(triggerConfig.shape) ? triggerConfig.shape : 'box';
+            const staticBounds = getBounds(object);
+            if (staticBounds) candidates.push({ id: object.id, bounds: { ...staticBounds, shape: contactShape } });
+            for (const [spawnId, instance] of Object.entries(mechanicsState.spawnedObjects || {})) {
+                if (instance?.templateId !== object.id || !Number.isFinite(instance.x) || !Number.isFinite(instance.y)) continue;
+                candidates.push({
+                    id: spawnId,
+                    bounds: {
+                        x: instance.x,
+                        y: instance.y,
+                        width: object.width ?? object.w,
+                        height: object.height ?? object.h,
+                        shape: contactShape
+                    }
+                });
+            }
+            const left = candidates.find(candidate =>
+                overlaps(previousPosition, candidate.bounds) && !overlaps(currentPosition, candidate.bounds));
+            if (!left) return;
+            contactLatch = { kind: 'object-outside', bounds: left.bounds, objectId: left.id };
         } else if (triggerType === 'playerPressButton') {
             if (!positionIsRecent || typeof triggerConfig.buttonName !== 'string' || !triggerConfig.buttonName) return;
             const button = mapObjects.find(object => object?.appearanceType === 'button' &&

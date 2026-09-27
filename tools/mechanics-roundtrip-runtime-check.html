@@ -67,6 +67,10 @@
             id: 'trigger-zone', type: 'trigger', name: 'Zone entry', enabled: true,
             triggerType: CODE_TRIGGER_TYPES.PLAYER_ENTER_ZONE,
             config: { eventId: 'event-zone', zoneName: 'start-area' }
+          }, {
+            id: 'trigger-object-leave', type: 'trigger', name: 'Object leave', enabled: true,
+            triggerType: CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT,
+            config: { eventId: 'event-object-leave', objectId: 'zone-start', shape: 'box' }
           }],
           events: [{
             id: 'event-start', type: 'event', name: 'Initialize score', enabled: true,
@@ -74,12 +78,18 @@
           }, {
             id: 'event-zone', type: 'event', name: 'Count zone entry', enabled: true,
             actions: [{ type: 'addVariable', variableId: 'variable-zone-entries', amount: 1 }], code: ''
+          }, {
+            id: 'event-object-leave', type: 'event', name: 'Count object leave', enabled: true,
+            actions: [{ type: 'addVariable', variableId: 'variable-object-leaves', amount: 1 }], code: ''
           }],
           variables: [{
             id: 'variable-score', type: 'variable', name: 'Score', enabled: true,
             variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
           }, {
             id: 'variable-zone-entries', type: 'variable', name: 'Zone Entries', enabled: true,
+            variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
+          }, {
+            id: 'variable-object-leaves', type: 'variable', name: 'Object Leaves', enabled: true,
             variableType: 'variable', valueType: 'integer', scope: 'map', defaultValue: 0
           }],
           creatorExtension: { preserve: ['future-action-field', 3] }
@@ -133,8 +143,10 @@
         check('Trigger and Event link survive World save/load',
           restored.triggers.some(trigger => trigger.id === 'trigger-start' && trigger.config?.eventId === 'event-start') &&
           restored.triggers.some(trigger => trigger.id === 'trigger-zone' && trigger.config?.eventId === 'event-zone') &&
+          restored.triggers.some(trigger => trigger.id === 'trigger-object-leave' && trigger.config?.eventId === 'event-object-leave') &&
           restored.events.some(event => event.id === 'event-start' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
+          restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           world.getObjectById('zone-start')?.zoneName === 'start-area', restored);
         check('Variable definition and extension fields survive World save/load',
           restored.variables[0]?.id === 'variable-score' &&
@@ -156,6 +168,16 @@
         check('Game Starts event runs once per world session', afterSecondUpdate === 1, { afterSecondUpdate });
         check('Loaded zone trigger runs when the player enters its saved zone', afterFirstZoneEntry === 1, { afterFirstZoneEntry });
         check('Zone enter is edge-triggered while the player stays inside', afterSecondZoneUpdate === 1, { afterSecondZoneUpdate });
+
+        player.x = 128;
+        player.y = 128;
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        const afterObjectLeave = state?.variables?.get('variable-object-leaves');
+        window.PluginManager.executeHook('player.update', { player, world, audioManager: null, skipPhysics: false });
+        const afterSecondObjectLeaveUpdate = state?.variables?.get('variable-object-leaves');
+        check('Loaded Player Leaves Object trigger runs when contact ends', afterObjectLeave === 1, { afterObjectLeave });
+        check('Object leave is edge-triggered while the player stays outside',
+          afterSecondObjectLeaveUpdate === 1, { afterSecondObjectLeaveUpdate });
 
         const report = { total: checks.length, passed: checks.filter(item => item.passed).length, checks };
         const output = document.getElementById('results');

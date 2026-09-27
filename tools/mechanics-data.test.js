@@ -36,10 +36,21 @@ test('deduplicates identical id-less records without merging distinct records', 
         ]
     });
 
-    assert.deepEqual(result.events, [
+    assert.deepEqual(result.events.map(({ id, ...event }) => event), [
         { type: 'event', name: 'Legacy unnamed', actions: [] },
         { type: 'event', name: 'Another event', actions: [] }
     ]);
+    assert.equal(result.events.length, 2);
+    assert.ok(result.events.every(event => /^event_[a-z0-9]+_[a-z0-9]+$/.test(event.id)));
+    assert.notEqual(result.events[0].id, result.events[1].id);
+    const repeated = normalizeCodeData({
+        events: [{ type: 'action', name: 'Legacy unnamed', actions: [] }],
+        actions: [
+            { type: 'event', name: 'Legacy unnamed', actions: [] },
+            { type: 'action', name: 'Another event', actions: [] }
+        ]
+    });
+    assert.deepEqual(repeated.events, result.events, 'repaired event ids stay stable across loads');
 });
 
 test('returns safe empty mechanics data for invalid input', () => {
