@@ -22,6 +22,9 @@ const CORS_HEADERS = {
 const JWT_SECRET = 'parkoreen-secret-key-change-in-production';
 const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_MECHANICS_STATE_BYTES = 32 * 1024;
+const MAX_MECHANICS_TILEMAP_ATLAS_DATA_URL_LENGTH = 1500000;
+const MAX_MECHANICS_TILEMAP_ATLAS_PIXELS = 16000000;
+const MAX_MECHANICS_TILEMAP_ATLAS_TOTAL_PIXELS = 32000000;
 
 // ============================================
 // UTILITIES
@@ -1359,6 +1362,7 @@ class GameRoom {
         const usedLayers = new Set();
         const usedIds = new Set();
         let totalCells = 0;
+        let totalAtlasPixels = 0;
 
         for (const rawTilemap of rawTilemaps) {
             if (this.mechanicsTilemapCellIndexes.size >= 64 || totalCells >= 100000) break;
@@ -1375,11 +1379,26 @@ class GameRoom {
             while (usedIds.has(id)) id = `${rawId}-${idSuffix++}`;
             usedLayers.add(layer);
             usedIds.add(id);
-            const atlasColumns = Number.isSafeInteger(rawTilemap.atlas?.columns) && rawTilemap.atlas.columns > 0
+            const atlas = rawTilemap.atlas;
+            const atlasDataIsValid = typeof atlas?.data === 'string' &&
+                atlas.data.length <= MAX_MECHANICS_TILEMAP_ATLAS_DATA_URL_LENGTH &&
+                /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(atlas.data);
+            const atlasFrameWidth = Number.isSafeInteger(atlas?.frameWidth) && atlas.frameWidth >= 1 && atlas.frameWidth <= 512
+                ? atlas.frameWidth : 0;
+            const atlasFrameHeight = Number.isSafeInteger(atlas?.frameHeight) && atlas.frameHeight >= 1 && atlas.frameHeight <= 512
+                ? atlas.frameHeight : 0;
+            const atlasColumns = Number.isSafeInteger(atlas?.columns) && atlas.columns > 0 && atlas.columns <= 128
                 ? rawTilemap.atlas.columns : 0;
-            const atlasRows = Number.isSafeInteger(rawTilemap.atlas?.rows) && rawTilemap.atlas.rows > 0
+            const atlasRows = Number.isSafeInteger(atlas?.rows) && atlas.rows > 0 && atlas.rows <= 128
                 ? rawTilemap.atlas.rows : 0;
-            const atlasFrameCount = atlasColumns * atlasRows;
+            const atlasFrameCountCandidate = atlasColumns * atlasRows;
+            const atlasPixels = atlasFrameWidth * atlasColumns * atlasFrameHeight * atlasRows;
+            const atlasIsValid = atlasDataIsValid && atlasFrameWidth > 0 && atlasFrameHeight > 0 &&
+                Number.isSafeInteger(atlasFrameCountCandidate) && atlasFrameCountCandidate >= 1 && atlasFrameCountCandidate <= 4096 &&
+                Number.isSafeInteger(atlasPixels) && atlasPixels <= MAX_MECHANICS_TILEMAP_ATLAS_PIXELS &&
+                totalAtlasPixels + atlasPixels <= MAX_MECHANICS_TILEMAP_ATLAS_TOTAL_PIXELS;
+            const atlasFrameCount = atlasIsValid ? atlasFrameCountCandidate : 0;
+            if (atlasIsValid) totalAtlasPixels += atlasPixels;
 
             const cells = new Map();
             const seenCellKeys = new Set();
@@ -1409,7 +1428,8 @@ class GameRoom {
                         id: `tile-${id}-${x}-${y}`,
                         x,
                         y,
-                        atlasFrameCount: Number.isSafeInteger(atlasFrameCount) && atlasFrameCount <= 4096 ? atlasFrameCount : 0,
+                        atlasFrameCount,
+                        atlasFrameMutable: Boolean(atlasFrameCount && !rawCell.animation),
                         collisionType,
                         ...(collisionPoints ? {
                             collisionShape: 'polygon', collisionPoints,
@@ -1888,7 +1908,7 @@ class GameRoom {
         const cleanTilemapCellFrames = Object.create(null);
         for (const [id, atlasFrame] of Object.entries(tilemapCellFrames)) {
             const cell = tilemapCellIds.get(id);
-            if (!cell || cell.atlasFrameCount < 1 || !Number.isSafeInteger(atlasFrame) || atlasFrame < 0 || atlasFrame >= cell.atlasFrameCount) return null;
+            if (!cell || !cell.atlasFrameMutable || cell.atlasFrameCount < 1 || !Number.isSafeInteger(atlasFrame) || atlasFrame < 0 || atlasFrame >= cell.atlasFrameCount) return null;
             cleanTilemapCellFrames[id] = atlasFrame;
         }
         const cleanLayerVisibility = Object.create(null);

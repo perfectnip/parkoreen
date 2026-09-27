@@ -152,18 +152,31 @@ test('room worker validates tilemap atlas-frame overrides against saved cells an
     const room = new GameRoom({ storage: {} }, {});
     const mapData = {
         objects: [],
-        tilemaps: [{ id: 'ground', layer: 1, atlas: { columns: 2, rows: 1 },
-            cells: [{ x: 0, y: 32, collisionType: 'solid' }] }],
+        tilemaps: [{ id: 'ground', layer: 1, atlas: {
+            data: 'data:image/png;base64,AAAA', frameWidth: 32, frameHeight: 32, columns: 2, rows: 1
+        }, cells: [
+            { x: 0, y: 32, collisionType: 'solid' },
+            { x: 32, y: 32, collisionType: 'solid', animation: { atlasFrames: [0, 1], fps: 4 } }
+        ] }],
         codeData: {}
     };
     const cellId = 'tile-ground-0-32';
+    const animatedCellId = 'tile-ground-32-32';
     const valid = room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: 1 } });
     assert.equal(valid?.tilemapCellFrames[cellId], 1);
     assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: 2 } }), null);
     assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [cellId]: -1 } }), null);
     assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { missing: 0 } }), null);
+    assert.equal(room.sanitizeMechanicsState(mapData, { tilemapCellFrames: { [animatedCellId]: 0 } }), null);
     const atlaslessRoom = new GameRoom({ storage: {} }, {});
     assert.equal(atlaslessRoom.sanitizeMechanicsState({ ...mapData, tilemaps: [{ ...mapData.tilemaps[0], atlas: undefined }] }, {
+        tilemapCellFrames: { [cellId]: 0 }
+    }), null);
+    const invalidDimensionRoom = new GameRoom({ storage: {} }, {});
+    const invalidDimensionMap = { ...mapData, tilemaps: [{ ...mapData.tilemaps[0], atlas: {
+        ...mapData.tilemaps[0].atlas, columns: 129
+    } }] };
+    assert.equal(invalidDimensionRoom.sanitizeMechanicsState(invalidDimensionMap, {
         tilemapCellFrames: { [cellId]: 0 }
     }), null);
 });
