@@ -243,7 +243,7 @@
             event.actions[4]?.type === 'spawnObject' && event.actions[4].objectId === 'enemy-template' &&
             event.actions[5]?.type === 'setObjectOpacity' && event.actions[5].objectId === 'phase-cube' &&
             event.actions[6]?.variableId === 'variable-campaign-score' &&
-            event.actions[7]?.variableId === 'variable-campaign-items'),
+            event.actions[7]?.variableId === 'variable-campaign-items') &&
           restored.events.some(event => event.id === 'event-zone' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-object-leave' && event.actions[0]?.type === 'addVariable') &&
           restored.events.some(event => event.id === 'event-enemy-frame' && event.actions[0]?.targetMode === 'touched') &&

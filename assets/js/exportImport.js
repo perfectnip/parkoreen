@@ -350,6 +350,18 @@ class MediaExtractor {
         }
         return 'bin';
     }
+
+    /** Restore the MIME type that ZIP containers do not preserve for blobs. */
+    static getMimeTypeFromFilename(filename) {
+        const extension = filename.split('.').pop()?.toLowerCase();
+        if (filename.startsWith('uploaded_sound_')) {
+            return ({ mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', webm: 'audio/webm' })[extension] || null;
+        }
+        return ({
+            png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+            mp4: 'video/mp4', webm: 'video/webm'
+        })[extension] || null;
+    }
     
     /**
      * Convert base64 data URL to binary
@@ -368,10 +380,15 @@ class MediaExtractor {
     /**
      * Convert binary to base64 data URL
      */
-    static blobToDataUrl(blob) {
+    static blobToDataUrl(blob, mimeType = blob.type) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                resolve(typeof dataUrl === 'string' && mimeType
+                    ? dataUrl.replace(/^data:[^;]+;/, `data:${mimeType};`)
+                    : dataUrl);
+            };
             reader.onerror = reject;
             reader.readAsDataURL(blob);
         });
@@ -715,7 +732,8 @@ class ImportManager {
             for (const filename of Object.keys(zip.files)) {
                 if (filename.startsWith('uploaded_')) {
                     const blob = await zip.files[filename].async('blob');
-                    const dataUrl = await MediaExtractor.blobToDataUrl(blob);
+                    const dataUrl = await MediaExtractor.blobToDataUrl(
+                        blob, MediaExtractor.getMimeTypeFromFilename(filename) || blob.type);
                     files.set(filename, dataUrl);
                 }
             }

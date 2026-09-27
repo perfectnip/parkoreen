@@ -3109,18 +3109,6 @@
                 } while (world.getObjectById?.(id));
                 const config = template.toJSON?.() || { ...template };
                 const instance = new window.WorldObject({ ...config, id, x, y });
-                // The template has already passed WorldObject's sprite-sheet
-                // normalization. Preserve that validated asset on its runtime
-                // copies as well, even if a host-provided toJSON shape omits or
-                // transforms sprite metadata that the constructor rejects.
-                if (template.spriteSheet) {
-                    instance.spriteSheet = {
-                        ...template.spriteSheet,
-                        animations: Array.isArray(template.spriteSheet.animations)
-                            ? template.spriteSheet.animations.map(animation => ({ ...animation }))
-                            : []
-                    };
-                }
                 instance._mechanicsSpawned = true;
                 instance._mechanicsSpawnTemplateId = template.id;
                 instance._mechanicsSpawnTag = tag;
