@@ -33,6 +33,9 @@ const PLAYER_SIZE = 32;
 const WORLD_LAYER_MIN_DEPTH = -1000;
 const WORLD_LAYER_MAX_DEPTH = 1000;
 const WORLD_LAYER_MAX_COUNT = 64;
+// Rasterized world chunks are only a rendering cache. Keep the active camera's
+// chunks warm without retaining a bitmap for every chunk in a large map.
+const WORLD_TILE_RENDER_CACHE_MAX_CHUNKS = 128;
 const WORLD_COLLISION_POLYGON_MAX_POINTS = 12;
 const DEFAULT_WORLD_COLLISION_POLYGON = [
     [0, 0.25], [0.25, 0], [0.75, 0], [1, 0.25], [1, 1], [0, 1]
@@ -3132,6 +3135,7 @@ class World {
         // Tile cache for static object rendering (play/test mode)
         this._tileSize = 512;
         this._tiles = new Map();
+        this._tileCacheChunks = new Map();
         this._tileCacheReady = false;
         // Editor merged block cache
         this._editorMergedDirty = true;
@@ -4340,6 +4344,7 @@ class World {
 
     invalidateTileCache() {
         this._tiles.clear();
+        this._tileCacheChunks.clear();
         this._tileCacheReady = false;
         this._mergedBlockCache = null;
         this._editorMergedDirty = true;
@@ -4347,6 +4352,7 @@ class World {
 
     buildTileCache() {
         this._tiles.clear();
+        this._tileCacheChunks = new Map();
         const ts = this._tileSize;
         const cpColors = {
             default: this.checkpointDefaultColor,
@@ -4375,19 +4381,14 @@ class World {
         const { merged, nonMerged } = this._buildMergedBlocks(staticObjects);
         this._mergedBlockCache = merged;
 
-        const fakeCamera = { x: 0, y: 0, width: ts, height: ts, zoom: 1 };
-
-        const _getTile = (layer, tx, ty) => {
+        const addToChunk = (layer, tx, ty, object) => {
             const key = this._tileKey(layer, tx, ty);
-            let tile = this._tiles.get(key);
-            if (!tile) {
-                tile = document.createElement('canvas');
-                tile.width = ts;
-                tile.height = ts;
-                tile._ctx = tile.getContext('2d');
-                this._tiles.set(key, tile);
+            let chunkObjects = this._tileCacheChunks.get(key);
+            if (!chunkObjects) {
+                chunkObjects = [];
+                this._tileCacheChunks.set(key, chunkObjects);
             }
-            return tile;
+            chunkObjects.push(object);
         };
 
         for (let i = 0; i < merged.length; i++) {
@@ -4400,13 +4401,7 @@ class World {
 
             for (let tx = tx0; tx <= tx1; tx++) {
                 for (let ty = ty0; ty <= ty1; ty++) {
-                    const tile = _getTile(layer, tx, ty);
-                    this._renderMergedBlock(
-                        tile._ctx,
-                        m.x - tx * ts, m.y - ty * ts,
-                        m.width, m.height,
-                        m.color, m.texture, m.opacity
-                    );
+                    addToChunk(layer, tx, ty, { ...m, _mergedTileBlock: true });
                 }
             }
         }
@@ -4421,15 +4416,60 @@ class World {
 
             for (let tx = tx0; tx <= tx1; tx++) {
                 for (let ty = ty0; ty <= ty1; ty++) {
-                    const tile = _getTile(layer, tx, ty);
-                    fakeCamera.x = tx * ts;
-                    fakeCamera.y = ty * ts;
-                    obj.render(tile._ctx, fakeCamera, cpColors);
+                    addToChunk(layer, tx, ty, obj);
                 }
             }
         }
 
         this._tileCacheReady = true;
+    }
+
+    _getOrBuildRenderTile(layer, tx, ty) {
+        const key = this._tileKey(layer, tx, ty);
+        const cached = this._tiles.get(key);
+        if (cached) {
+            // Map insertion order is the LRU order; touching a chunk moves it
+            // to the newest position without copying its bitmap.
+            this._tiles.delete(key);
+            this._tiles.set(key, cached);
+            return cached;
+        }
+
+        const chunkObjects = this._tileCacheChunks.get(key);
+        if (!chunkObjects?.length) return null;
+        const tile = document.createElement('canvas');
+        tile.width = this._tileSize;
+        tile.height = this._tileSize;
+        tile._ctx = tile.getContext('2d');
+        const fakeCamera = { x: tx * this._tileSize, y: ty * this._tileSize, width: this._tileSize, height: this._tileSize, zoom: 1 };
+        const cpColors = {
+            default: this.checkpointDefaultColor,
+            active: this.checkpointActiveColor,
+            touched: this.checkpointTouchedColor
+        };
+
+        for (const object of chunkObjects) {
+            if (object._mergedTileBlock) {
+                this._renderMergedBlock(
+                    tile._ctx,
+                    object.x - fakeCamera.x,
+                    object.y - fakeCamera.y,
+                    object.width,
+                    object.height,
+                    object.color,
+                    object.texture || 'solid',
+                    object.opacity
+                );
+            } else {
+                object.render(tile._ctx, fakeCamera, cpColors);
+            }
+        }
+
+        this._tiles.set(key, tile);
+        while (this._tiles.size > WORLD_TILE_RENDER_CACHE_MAX_CHUNKS) {
+            this._tiles.delete(this._tiles.keys().next().value);
+        }
+        return tile;
     }
 
     _tileKey(layer, tx, ty) {
@@ -4451,7 +4491,7 @@ class World {
             const ty1 = Math.floor(vBottom / ts) + 1;
             for (let tx = tx0; tx <= tx1; tx++) {
                 for (let ty = ty0; ty <= ty1; ty++) {
-                    const tile = this._tiles.get(this._tileKey(layer, tx, ty));
+                    const tile = this._getOrBuildRenderTile(layer, tx, ty);
                     if (tile) {
                         ctx.drawImage(tile, tx * ts - layerCamera.x, ty * ts - layerCamera.y);
                     }
