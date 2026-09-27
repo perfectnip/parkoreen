@@ -1617,8 +1617,10 @@ class GameRoom {
         for (const cells of this.getMechanicsTilemapCellIndex(mapData).values()) {
             for (const cell of cells.values()) tilemapCellIds.add(cell.id);
         }
-        const layerIds = new Set((Array.isArray(mapData.layerDefinitions) ? mapData.layerDefinitions : [])
-            .map(layer => layer?.id).filter(id => typeof id === 'string' && id.length > 0));
+        const layerIds = new Set(['behind-player', 'player-depth', 'above-player']);
+        for (const layer of (Array.isArray(mapData.layerDefinitions) ? mapData.layerDefinitions.slice(0, 64) : [])) {
+            if (typeof layer?.id === 'string' && layer.id.length > 0) layerIds.add(layer.id);
+        }
         const objectIds = new Set(mapObjects
             .map(object => object?.id).filter(id => typeof id === 'string' && id.length > 0));
         const spawnableTemplates = new Set(mapObjects

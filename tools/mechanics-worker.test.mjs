@@ -117,6 +117,9 @@ test('room worker validates draw-layer visibility against saved map layers', () 
     assert.equal(valid?.layerVisibility['hidden-layer'], false);
     assert.equal(room.sanitizeMechanicsState(mapData, { layerVisibility: { 'not-on-map': false } }), null);
     assert.equal(room.sanitizeMechanicsState(mapData, { layerVisibility: { 'hidden-layer': 'false' } }), null);
+    const legacyMap = { codeData: {} };
+    assert.equal(room.sanitizeMechanicsState(legacyMap, { layerVisibility: { 'behind-player': false } })?.layerVisibility['behind-player'], false);
+    assert.equal(room.sanitizeMechanicsState(legacyMap, { layerVisibility: { 'invented-layer': false } }), null);
 });
 
 test('room worker rejects zone entry requests without an outside-to-inside transition', async () => {
