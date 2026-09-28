@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Map Config — Current — Parkoreen Guide</title>
+  <title>Map Config — V0.4-Indev — Parkoreen Guide</title>
   <link rel="stylesheet" href="../../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -13,18 +13,18 @@
     <span class="topbar-sep">/</span>
     <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-crumb" href="..">Current</a>
+    <a class="topbar-crumb" href="..">V0.4-Indev</a>
     <span class="topbar-sep">/</span>
     <span class="topbar-crumb">Map Config</span>
     <a class="topbar-home" href="../../..">← Parkoreen</a>
     <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
   </div>
   <div class="page-wrap">
-    <a class="back-link" href="..">← Current Overview</a>
+    <a class="back-link" href="..">← V0.4-Indev Overview</a>
     <div class="page-header">
-      <span class="version-badge">Current</span>
+      <span class="version-badge">V0.4-Indev</span>
       <h1>⚙️ Map Config</h1>
-      <p class="subtitle">All map-level settings in the current version of Parkoreen.</p>
+      <p class="subtitle">All map-level settings available in this build of Parkoreen.</p>
     </div>
 
     <h2>General</h2>
@@ -79,7 +79,7 @@
     <ul class="option-list">
       <li><span class="opt-name">Inactive Color</span><span class="opt-default">#808080</span><span class="opt-desc">Untouched checkpoint color.</span></li>
       <li><span class="opt-name">Touched Color</span><span class="opt-default">#2196F3</span><span class="opt-desc">Previously-passed checkpoint color.</span></li>
-      <li><span class="opt-name">Active Color</span><span class="opt-default">#4CAF50</span><span class="opt-desc">Current active respawn checkpoint color.</span></li>
+      <li><span class="opt-name">Active Color</span><span class="opt-default">#4CAF50</span><span class="opt-desc">Color used for the checkpoint currently selected as the respawn point.</span></li>
       <li><span class="opt-name">Remember Latest Checkpoint</span><span class="opt-default">Off</span><span class="opt-desc">When enabled, saves the player's latest checkpoint locally and starts future play sessions there. The save stays in this browser under the current account, or the browser device when signed out; it does not sync between devices. Test runs do not change saved progress.</span></li>
     </ul>
 

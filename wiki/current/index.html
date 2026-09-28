@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Current — Parkoreen Guide</title>
+  <title>V0.4-Indev — Parkoreen Guide</title>
   <link rel="stylesheet" href="../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -13,24 +13,25 @@
     <span class="topbar-sep">/</span>
     <a class="topbar-logo topbar-wiki" href="../">Guide</a>
     <span class="topbar-sep">/</span>
-    <span class="topbar-crumb">Current</span>
+    <span class="topbar-crumb">V0.4-Indev</span>
     <a class="topbar-home" href="../..">← Parkoreen</a>
     <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
   </div>
   <div class="page-wrap">
     <a class="back-link" href="..">← Guide Home</a>
     <div class="page-header">
-      <span class="version-badge">Current</span>
-      <h1>Parkoreen — Current Version</h1>
-      <p class="subtitle">A reference for the current Parkoreen build, including its game editor, Mechanics system, plugins, and device-adaptive controls.</p>
+      <span class="version-badge">V0.4-Indev</span>
+      <h1>Parkoreen — V0.4-Indev</h1>
+      <p class="subtitle">Complete player and creator documentation for the V0.4-Indev build: platforming, the 2D editor, Mechanics, tilemaps, plugins, controls, and file workflows.</p>
     </div>
     <div class="note"><strong>About this Guide:</strong> This is maintained reference documentation. Players can read these pages, but cannot edit them.</div>
 
-    <h2>Current engine features</h2>
+    <h2>V0.4-Indev engine features</h2>
     <ul>
       <li><strong>Mechanics editor:</strong> reusable Events, conditions, typed map, cross-map campaign, and per-player variables and Lists, timers, dialogue, menus, inventory flows, checkpoints, object health and movement, temporary object spawning, and room-specific gravity, jump force, speed, acceleration, air control, and terminal fall settings. Campaign state saves locally for solo play and does not sync across devices. Templates include Tag, Hide and Seek, Timed Round, and platformer/RPG building blocks.</li>
       <li><strong>Triggers:</strong> game and room lifecycle, zone and object contact, tilemap contact, buttons, player input, jumps, landings, health changes, attacks, variables, player stats, and timed repetition.</li>
       <li><strong>2D world:</strong> named parallax draw layers, sparse native tilemaps with custom atlases, one-way ramps, hazards and polygon collision, camera bounds and follow modes, saved-map transitions, and portable Object Stamps.</li>
+      <li><strong>Tilemaps:</strong> paint 32 px cells with built-in or uploaded artwork, choose solid, one-way, ramp, damage, or decorative behavior, configure polygon collision, and animate bounded texture or atlas frame cycles. Cells save in maps and <code>.pkrn</code> files.</li>
       <li><strong>Hollow Knight plugin:</strong> directional nail attacks, pogo from solid surfaces and tilemaps, Soul, Focus, Monarch Wings, Mantis Claw, dash abilities, and configurable slash, impact, damage, landing, healing, trail, and camera effects.</li>
       <li><strong>Mobile and desktop:</strong> editor tools, game controls, settings, and HUD adapt to device capabilities. Hybrid devices can switch between touch and keyboard/mouse input automatically.</li>
       <li><strong>Plugin development:</strong> the Guide includes the trusted API v1 workflow, starter, local preview, validator, and package tools. Community plugin installation remains unavailable until isolation and permissions are implemented.</li>
@@ -53,6 +54,11 @@
         <span class="nav-card-icon">🧩</span>
         <span class="nav-card-title">Mechanics</span>
         <span class="nav-card-desc">Triggers, Events, variables, game modes</span>
+      </a>
+      <a class="nav-card" href="tilemap/">
+        <span class="nav-card-icon">▦</span>
+        <span class="nav-card-title">Tilemaps</span>
+        <span class="nav-card-desc">Paint cells, collision, atlases, animation</span>
       </a>
       <a class="nav-card" href="editor/toolbar/">
         <span class="nav-card-icon">📦</span>
