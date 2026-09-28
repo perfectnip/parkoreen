@@ -496,10 +496,10 @@
             }
             const levelName = LEVEL_GROUPS[groupIndex].levels[levelIndex];
 
+            if (completedLevels.has(levelName)) return false; // already completed
+
             // Group 0 (0_1, 0_2, 0_3) is ALWAYS unlocked so brand-new users have something to play.
             if (LEVEL_GROUPS[groupIndex] && LEVEL_GROUPS[groupIndex].id === 0) return true;
-
-            if (completedLevels.has(levelName)) return false; // already completed
 
             // Check if this is a challenge level (contains 'challenge' case-insensitive)
             const isChallenge = levelName.toLowerCase().includes('challenge');

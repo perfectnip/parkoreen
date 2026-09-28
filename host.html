@@ -3027,13 +3027,14 @@
             // Back button - only add if element exists
             const backBtn = document.getElementById('end-game-back');
             if (backBtn) {
-                backBtn.addEventListener('click', () => {
+                backBtn.addEventListener('click', async () => {
                     hideEndGameScreen();
 
                     // Check if this was a level (not multiplayer)
                     if (window.isLevelMode && window.currentPlayingLevel) {
                         // Mark level as completed
                         const levelName = window.currentPlayingLevel;
+                        await persistLevelCompletion(levelName);
 
                         // Post message to parent (index.html) for progress tracking
                         if (window.parent !== window) {
@@ -3126,7 +3127,7 @@
                 });
 
                 // Add Next Level handler
-                document.getElementById('end-game-next-level').addEventListener('click', () => {
+                document.getElementById('end-game-next-level').addEventListener('click', async () => {
                     const ln = window.currentPlayingLevel;
                     hideEndGameScreen();
 
@@ -3148,16 +3149,22 @@
                     // Get next level info
                     const nextLevel = getNextLevelInfo(ln);
                     if (nextLevel) {
+                        await persistLevelCompletion(ln);
                         playLevelByName(nextLevel);
                     } else {
+                        await persistLevelCompletion(ln);
                         window.location.href = 'index.html';
                     }
                 });
 
                 // Add Exit handler for group 0 levels
                 if (showExit) {
-                    document.getElementById('end-game-exit').addEventListener('click', () => {
+                    document.getElementById('end-game-exit').addEventListener('click', async () => {
                         const ln = window.currentPlayingLevel;
+                        // 0_3 is recorded by the existing return-to-levels flow;
+                        // earlier tutorial exits need to be saved here because
+                        // host.html is a top-level page, not an iframe of index.html.
+                        if (ln !== '0_3') await persistLevelCompletion(ln);
                         if (ln === '0_3') {
                             // Special case: after 0_3, scroll to group 2 on levels page
                             sessionStorage.setItem('parkoreen_level_complete_special', 'true');
@@ -3210,6 +3217,75 @@
 
             // Show the overlay
             overlay.classList.remove('hidden');
+        }
+        
+        // Persist completed levels from the game page itself. The level list
+        // usually navigates to host.html as a top-level page, so postMessage
+        // cannot reliably save progression there.
+        async function persistLevelCompletion(levelName) {
+            if (typeof levelName !== 'string' || !levelName) return;
+
+            const progressKey = 'parkoreen_level_progress';
+            let cached = { completed: [], group1Completed: false };
+            try {
+                const parsed = JSON.parse(localStorage.getItem(progressKey) || '{}');
+                cached = {
+                    completed: Array.isArray(parsed.completed) ? parsed.completed : [],
+                    group1Completed: parsed.group1Completed === true
+                };
+            } catch (error) {
+                console.warn('[LevelProgress] Could not read local progress:', error);
+            }
+
+            const token = window.Auth?.getToken?.();
+            const isLoggedIn = !!token && !!window.Auth?.isLoggedIn?.();
+            const completed = new Set(cached.completed);
+
+            if (isLoggedIn) {
+                try {
+                    const response = await fetch(`${window.API_URL}/level-progress`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const serverProgress = await response.json();
+                        for (const completedLevel of serverProgress.completed || []) {
+                            if (typeof completedLevel === 'string') completed.add(completedLevel);
+                        }
+                        cached.group1Completed ||= serverProgress.group1Completed === true;
+                    }
+                } catch (error) {
+                    console.warn('[LevelProgress] Could not merge server progress:', error);
+                }
+            }
+
+            completed.add(levelName);
+            const group0Complete = ['0_1', '0_2', '0_3'].every(level => completed.has(level));
+            const progress = {
+                completed: Array.from(completed),
+                group1Completed: cached.group1Completed || group0Complete
+            };
+
+            try {
+                localStorage.setItem(progressKey, JSON.stringify(progress));
+            } catch (error) {
+                console.warn('[LevelProgress] Could not save local progress:', error);
+            }
+
+            if (isLoggedIn) {
+                try {
+                    const response = await fetch(`${window.API_URL}/level-progress`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify(progress)
+                    });
+                    if (!response.ok) console.warn('[LevelProgress] Server save failed:', response.status);
+                } catch (error) {
+                    console.warn('[LevelProgress] Could not save server progress:', error);
+                }
+            }
         }
 
         // Helper to get next level info

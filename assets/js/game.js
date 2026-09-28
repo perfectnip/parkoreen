@@ -7011,10 +7011,16 @@ class GameEngine {
             this._hudData.yOffset = 20;
             window.PluginManager.executeHook('render.hud', this._hudData);
         }
-        this.updateCoinCounterUI();
+        // Refresh the DOM counter less often than the canvas; coin pickups
+        // still force an immediate update in their collection handlers.
+        this.updateCoinCounterUI(false);
     }
 
-    updateCoinCounterUI() {
+    updateCoinCounterUI(force = true) {
+        const now = performance.now();
+        if (!force && this._coinCounterUiLastUpdate != null && now - this._coinCounterUiLastUpdate < 250) return;
+        this._coinCounterUiLastUpdate = now;
+
         if (!this.world.showCoinCounter) {
             const existing = document.getElementById('coin-counter-ui');
             if (existing) existing.remove();
