@@ -390,6 +390,7 @@
 
         // State
         let currentGroup = 0;
+        const SELECTED_GROUP_KEY = 'parkoreen_selected_level_group';
         let completedLevels = new Set();
         let group1Completed = false;
 
@@ -551,6 +552,7 @@
             showLoading('Loading...');
 
             const { group, level, levelId } = getHighestUnlockedLevel();
+            sessionStorage.setItem(SELECTED_GROUP_KEY, String(group));
 
             try {
                 const response = await fetch(LEVEL_BASE_PATH + levelId + '.pkrn');
@@ -699,6 +701,7 @@
         function goToGroup(groupIndex) {
             if (groupIndex < 0 || groupIndex >= LEVEL_GROUPS.length) return;
             currentGroup = groupIndex;
+            sessionStorage.setItem(SELECTED_GROUP_KEY, String(groupIndex));
             const offset = -groupIndex * groupStride;
             container.style.transform = `translateX(${offset}px)`;
             updateGroupVisibility();
@@ -723,6 +726,9 @@
             showLoading('Loading ' + levelName + '...');
 
             try {
+                const levelGroup = LEVEL_GROUPS.findIndex(group => group.levels.includes(levelName));
+                if (levelGroup >= 0) sessionStorage.setItem(SELECTED_GROUP_KEY, String(levelGroup));
+
                 // Load the level file
                 const response = await fetch(LEVEL_BASE_PATH + levelName + '.pkrn');
                 if (!response.ok) {
@@ -814,6 +820,12 @@
             await loadProgress();
             renderLevelGroups();
             updateGroupVisibility();
+            requestAnimationFrame(() => {
+                const savedGroup = Number.parseInt(sessionStorage.getItem(SELECTED_GROUP_KEY), 10);
+                if (Number.isInteger(savedGroup) && savedGroup >= 0 && savedGroup < LEVEL_GROUPS.length) {
+                    goToGroup(savedGroup);
+                }
+            });
             checkGroup1Completed();
 
             // Event listeners
@@ -885,7 +897,6 @@
                     await wait(200);
                 }
             }
-
         }
 
         function wait(ms) {

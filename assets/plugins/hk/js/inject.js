@@ -1430,6 +1430,9 @@
             player.superDashFreezeUntil = Date.now() + 1000;
             pluginManager.playSound(pluginId, 'superdashHitwallstop');
         } else if (reason === 'manual') {
+            // If Crystal Dash was stopped with its own key, require a release
+            // before that held key can begin another charge.
+            if (player.input?.superDash) player._superDashKeyReady = false;
             pluginManager.playSound(pluginId, 'superdashTriggerstop');
         }
     }

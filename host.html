@@ -1731,11 +1731,19 @@
                         if (window.MultiplayerManager?.leaveRoom) {
                             window.MultiplayerManager.leaveRoom();
                         }
+                        if (window.isLevelMode) {
+                            window.location.href = 'index.html';
+                            return;
+                        }
                         Navigation.toDashboard();
                     }
                 } else {
                     if (window.MultiplayerManager?.leaveRoom) {
                         window.MultiplayerManager.leaveRoom();
+                    }
+                    if (window.isLevelMode) {
+                        window.location.href = 'index.html';
+                        return;
                     }
                     Navigation.toDashboard();
                 }
@@ -3125,8 +3133,7 @@
 
                     // Bug 8: If this was the last non-challenge level in its
                     // group, defer to index.html to record completion and run
-                    // the challenge-unlock animation (or, for group 0, scroll
-                    // to the next group with the locked-to-unlocked transition).
+                    // the challenge unlock animation without changing groups.
                     if (isLastNonChallengeLevel(ln)) {
                         sessionStorage.setItem('parkoreen_pending_complete', ln);
                         // Clean up level state
