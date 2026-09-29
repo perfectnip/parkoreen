@@ -44,6 +44,15 @@
                 </button>
             </form>
         </div>
+        <div class="join-card" style="margin-top:18px;">
+            <h2 class="join-title">Public Lobbies</h2>
+            <button type="button" class="btn btn-primary" id="btn-quick-join" style="width:100%;margin-bottom:12px;">
+                <span class="material-symbols-outlined">bolt</span> Quick Join
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-refresh-lobbies" style="width:100%;">Refresh Lobbies</button>
+            <div id="lobby-list" style="display:grid;gap:10px;margin-top:14px;"></div>
+            <p id="lobby-empty" style="color:var(--text-secondary);text-align:center;margin:14px 0 0;">Loading public rooms…</p>
+        </div>
     </div>
 
     <!-- Footer -->
@@ -95,7 +104,7 @@
         }
     </script>
 
-    <script src="/parkoreen/runtime.js?v=28"></script>
+    <script src="/parkoreen/runtime.js?v=29"></script>
     <script src="/parkoreen/assets/js/style.js?v=12"></script>
     <script>
         var needsPassword = false;
@@ -114,6 +123,49 @@
             document.getElementById('btn-back').addEventListener('click', function() {
                 Navigation.toDashboard();
             });
+
+            var lobbyList = document.getElementById('lobby-list');
+            var lobbyEmpty = document.getElementById('lobby-empty');
+            var lobbyCache = [];
+            async function refreshLobbies() {
+                lobbyEmpty.textContent = 'Loading public rooms…';
+                lobbyList.replaceChildren();
+                try {
+                    var response = await fetch(API_URL + '/lobbies');
+                    var data = await response.json();
+                    if (!response.ok) throw new Error(data.message || 'Could not load rooms');
+                    lobbyCache = Array.isArray(data.rooms) ? data.rooms : [];
+                    lobbyEmpty.textContent = lobbyCache.length ? '' : 'No public rooms are open right now.';
+                    lobbyCache.forEach(function(room) {
+                        var row = document.createElement('div');
+                        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border-radius:10px;background:var(--bg-light,rgba(255,255,255,.06));';
+                        var details = document.createElement('div');
+                        var title = document.createElement('strong');
+                        title.textContent = room.mapName || 'Untitled Map';
+                        var meta = document.createElement('div');
+                        meta.style.cssText = 'font-size:12px;color:var(--text-secondary);margin-top:4px;';
+                        meta.textContent = (room.hostName || 'Player') + ' · ' + room.playerCount + '/' + room.maxPlayers;
+                        details.append(title, meta);
+                        var join = document.createElement('button');
+                        join.type = 'button'; join.className = 'btn btn-secondary'; join.textContent = 'Join';
+                        join.addEventListener('click', function() { gameCodeInput.value = room.code; form.requestSubmit(); });
+                        row.append(details, join); lobbyList.appendChild(row);
+                    });
+                } catch (error) {
+                    lobbyEmpty.textContent = error.message || 'Could not load public rooms.';
+                }
+            }
+            document.getElementById('btn-refresh-lobbies').addEventListener('click', refreshLobbies);
+            document.getElementById('btn-quick-join').addEventListener('click', function() {
+                if (!lobbyCache.length) { refreshLobbies().then(function() {
+                    if (lobbyCache.length) document.getElementById('btn-quick-join').click();
+                    else toastWarning('No public rooms are available right now.');
+                }); return; }
+                lobbyCache.sort(function(a, b) { return b.playerCount - a.playerCount; });
+                gameCodeInput.value = lobbyCache[0].code;
+                form.requestSubmit();
+            });
+            refreshLobbies();
 
             // Format game code input
             gameCodeInput.addEventListener('input', function(e) {

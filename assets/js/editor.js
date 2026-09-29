@@ -1297,7 +1297,14 @@ class Editor {
                     <div class="config-section-content">
                     <div class="form-group">
                             <label class="form-label">Max Players</label>
-                        <input type="number" class="form-input" id="config-max-players" min="1" max="999999" value="10">
+                        <input type="number" class="form-input" id="config-max-players" min="1" max="10" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="config-room-visibility">Room Visibility</label>
+                        <select class="form-select" id="config-room-visibility">
+                            <option value="private" selected>Private · join by code</option>
+                            <option value="public">Public · show in Lobbies</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Use Password</label>
@@ -5615,10 +5622,15 @@ class Editor {
 
         // Password
         document.getElementById('config-use-password').addEventListener('change', (e) => {
-            document.getElementById('config-password-group').classList.toggle('hidden', !e.target.checked);
+            const isPrivate = document.getElementById('config-room-visibility')?.value !== 'public';
+            document.getElementById('config-password-group').classList.toggle('hidden', !e.target.checked || !isPrivate);
             if (e.target.checked && !document.getElementById('config-password').value) {
                 this.generatePassword();
             }
+        });
+        document.getElementById('config-room-visibility')?.addEventListener('change', (e) => {
+            const wantsPassword = document.getElementById('config-use-password').checked;
+            document.getElementById('config-password-group').classList.toggle('hidden', !wantsPassword || e.target.value === 'public');
         });
 
         document.getElementById('btn-regenerate-password').addEventListener('click', () => this.generatePassword());
@@ -10664,7 +10676,8 @@ class Editor {
                 mapData: this.world.toJSON(),
                 mapId: editorMapId,
                 mapName: this.world.mapName || null,
-                maxPlayers: parseInt(document.getElementById('config-max-players').value) || 10,
+                maxPlayers: Math.min(10, Math.max(1, parseInt(document.getElementById('config-max-players').value) || 10)),
+                visibility: document.getElementById('config-room-visibility')?.value || 'private',
                 usePassword: usePassword,
                 password: password
             });

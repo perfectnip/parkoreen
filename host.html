@@ -333,7 +333,7 @@
     
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="runtime.js?v=28"></script>
+    <script src="runtime.js?v=29"></script>
     <script src="assets/js/style.js?v=12"></script>
     <script src="assets/js/plugins.js?v=16"></script>
     <script src="assets/js/mechanicsData.js?v=6"></script>
@@ -347,6 +347,7 @@
         let editor;
         let sceneTransitionPromise = null;
         let currentMapId = null;
+        let communityMapId = null;
         let currentMode = 'edit'; // 'edit', 'host', 'play'
         let isHost = false;
         let mapLoadedSuccessfully = false; // Track if map loaded properly to prevent saving corrupted/blank data
@@ -1078,7 +1079,7 @@
             }
             await new Promise((resolve, reject) => {
                 const s = document.createElement('script');
-                s.src = 'assets/js/editor.js?v=55';
+                s.src = 'assets/js/editor.js?v=56';
                 s.onload = () => resolve();
                 s.onerror = () => reject(new Error('Failed to load editor.js'));
                 document.head.appendChild(s);
@@ -1087,6 +1088,7 @@
             // Parse URL params
             const params = new URLSearchParams(window.location.search);
             currentMapId = params.get('map');
+            communityMapId = params.get('community');
             adminEditMapSession = resolveAdminEditMapSession(params);
             window.parkoreenEditorMapId = currentMapId || null;
             currentMode = params.get('mode') || 'edit';
@@ -1106,6 +1108,20 @@
                     }
                 } catch (e) {
                     console.warn('[Preload] Could not fetch map data:', e);
+                }
+            } else if (communityMapId) {
+                resourceLoader.updateProgress('Fetching community map...');
+                try {
+                    const response = await fetch(`${API_URL}/community/maps/${encodeURIComponent(communityMapId)}/host`, {
+                        headers: { Authorization: `Bearer ${Auth.getToken()}` }
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.message || 'Community map unavailable');
+                    mapData = { id: result.id, name: result.name, data: result.data };
+                    enabledPlugins = mapData.data?.plugins?.enabled || [];
+                } catch (error) {
+                    console.error('[CommunityHost] Could not fetch map:', error);
+                    toastError(error.message || 'Could not load this community map.');
                 }
             } else if (currentMode === 'play' && roomCode) {
                 // Check session storage for play mode
@@ -1236,9 +1252,10 @@
                     return;
                 }
 
-                const usePassword = document.getElementById('config-use-password').checked;
+                const visibility = document.getElementById('config-room-visibility')?.value || 'private';
+                const usePassword = visibility === 'private' && document.getElementById('config-use-password').checked;
                 const password = document.getElementById('config-password').value;
-                const maxPlayers = parseInt(document.getElementById('config-max-players')?.value) || 10;
+                const maxPlayers = Math.min(10, Math.max(1, parseInt(document.getElementById('config-max-players')?.value) || 10));
 
                 if (usePassword && !password) {
                     this.showToast('Please enter a password or disable password protection.', 'error');
@@ -1249,7 +1266,7 @@
                     loadingShow('Creating room...');
 
                     // Save map first
-                    if (currentMapId) {
+                    if (currentMapId && !communityMapId) {
                         await saveMap();
                     }
 
@@ -1284,7 +1301,7 @@
                     const editorMapId =
                         (typeof window.parkoreenEditorMapId === 'string' && window.parkoreenEditorMapId)
                             ? window.parkoreenEditorMapId
-                            : (currentMapId || null);
+                            : (currentMapId || communityMapId || null);
 
                     // Create room on server
                     await mp.hostGame({
@@ -1292,6 +1309,7 @@
                         mapId: editorMapId,
                         mapName: this.world.mapName || null,
                         maxPlayers: maxPlayers,
+                        visibility: visibility,
                         usePassword: usePassword,
                         password: usePassword ? password : null
                     });
@@ -1336,6 +1354,10 @@
                         }
                     }, 500);
                 }
+            } else if (communityMapId && mapData) {
+                resourceLoader.updateProgress('Applying community map...');
+                await loadMapWithData(communityMapId, mapData);
+                if (currentMode === 'host') setTimeout(() => editor?.hostGame?.(), 500);
             } else if (params.get('level') === 'true') {
                 // Direct level play mode (from index.html levels page)
                 resourceLoader.updateProgress('Loading level...');

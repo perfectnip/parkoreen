@@ -534,6 +534,182 @@ async function handleChangePassword(request, env, userId) {
 // ============================================
 // MAP HANDLERS
 // ============================================
+const COMMUNITY_DEFAULT_TAGS = ['Race', 'Impossible', 'Easy', 'Weird', 'High Quality'];
+
+function normalizeCommunityTags(value) {
+    if (!Array.isArray(value)) return null;
+    const tags = [];
+    for (const item of value) {
+        const tag = String(item || '').trim().replace(/\s+/g, ' ');
+        if (!tag || tag.length > 24 || !/^[\p{L}\p{N} _-]+$/u.test(tag)) return null;
+        if (!tags.some(existing => existing.toLowerCase() === tag.toLowerCase())) tags.push(tag);
+    }
+    return tags.length >= 1 && tags.length <= 8 ? tags : null;
+}
+
+async function communityCatalog(env) {
+    const value = await env.MAPS.get('community:catalog');
+    return value ? JSON.parse(value) : [];
+}
+
+async function handleCommunityTags(env) {
+    const stored = await env.MAPS.get('community:tags');
+    const custom = stored ? JSON.parse(stored) : [];
+    const tags = [...COMMUNITY_DEFAULT_TAGS];
+    for (const tag of custom) {
+        if (!tags.some(existing => existing.toLowerCase() === String(tag).toLowerCase())) tags.push(tag);
+    }
+    return jsonResponse({ tags });
+}
+
+async function handleCommunityList(url, env, userId) {
+    const catalog = await communityCatalog(env);
+    const tagFilter = (url.searchParams.get('tag') || '').trim().toLowerCase();
+    const sort = url.searchParams.get('sort') || 'suggested';
+    const preferenceData = userId ? await env.USERS.get(`community:preferences:${userId}`) : null;
+    const preferences = preferenceData ? JSON.parse(preferenceData) : { plays: {}, ratings: {} };
+    const maps = [];
+    for (const id of catalog.slice(0, 500)) {
+        const raw = await env.MAPS.get(`community:map:${id}`);
+        if (!raw) continue;
+        const map = JSON.parse(raw);
+        if (tagFilter && !map.tags.some(tag => tag.toLowerCase() === tagFilter)) continue;
+        const playAffinity = map.tags.reduce((sum, tag) => sum + (preferences.plays?.[tag.toLowerCase()] || 0), 0);
+        const ratingAffinity = map.tags.reduce((sum, tag) => sum + (preferences.ratings?.[tag.toLowerCase()] || 0), 0);
+        const ageHours = Math.max(0, (Date.now() - Date.parse(map.publishedAt)) / 3600000);
+        const score = playAffinity * 3 + ratingAffinity * 2 + (map.ratingAverage || 0) * Math.log2((map.ratingCount || 0) + 1) + 12 / (1 + ageHours / 24);
+        maps.push({
+            id: map.id, name: map.name, ownerName: map.ownerName, tags: map.tags,
+            publishedAt: map.publishedAt, ratingAverage: map.ratingAverage || 0,
+            ratingCount: map.ratingCount || 0, commentCount: map.commentCount || 0,
+            allowDownload: map.allowDownload === true, score
+        });
+    }
+    if (sort === 'top') maps.sort((a, b) => b.ratingAverage - a.ratingAverage || b.ratingCount - a.ratingCount);
+    else if (sort === 'new') maps.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+    else maps.sort((a, b) => b.score - a.score || Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+    return jsonResponse({ maps: maps.slice(0, 100) });
+}
+
+async function handleCommunityPublish(request, env, userId) {
+    const body = await request.json();
+    const mapId = String(body.mapId || '');
+    const tags = normalizeCommunityTags(body.tags);
+    if (!/^[a-zA-Z0-9]+$/.test(mapId)) return errorResponse('Invalid map id');
+    if (!tags) return errorResponse('Choose between 1 and 8 valid tags');
+    const rawMap = await env.MAPS.get(`map:${mapId}`);
+    if (!rawMap) return errorResponse('Map not found', 404);
+    const source = JSON.parse(rawMap);
+    if (source.userId !== userId) return errorResponse('Access denied', 403);
+    if (!source.data) return errorResponse('Save the map before publishing it');
+    const userData = await env.USERS.get(`user:${userId}`);
+    const user = userData ? JSON.parse(userData) : {};
+    const previousRaw = await env.MAPS.get(`community:map:${mapId}`);
+    const previous = previousRaw ? JSON.parse(previousRaw) : null;
+    const record = {
+        id: mapId, ownerId: userId, ownerName: user.name || user.username || 'Player',
+        name: source.name || source.data?.mapName || 'Untitled Map', tags,
+        allowDownload: body.allowDownload === true,
+        publishedAt: previous?.publishedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(), ratingAverage: previous?.ratingAverage || 0,
+        ratingCount: previous?.ratingCount || 0, commentCount: previous?.commentCount || 0
+    };
+    await env.MAPS.put(`community:map:${mapId}`, JSON.stringify(record));
+    const catalog = await communityCatalog(env);
+    if (!catalog.includes(mapId)) catalog.unshift(mapId);
+    await env.MAPS.put('community:catalog', JSON.stringify(catalog.slice(0, 20000)));
+    const tagData = await env.MAPS.get('community:tags');
+    const allTags = tagData ? JSON.parse(tagData) : [];
+    for (const tag of tags) if (![...COMMUNITY_DEFAULT_TAGS, ...allTags].some(existing => existing.toLowerCase() === tag.toLowerCase())) allTags.push(tag);
+    await env.MAPS.put('community:tags', JSON.stringify(allTags.slice(0, 1000)));
+    return jsonResponse({ success: true, map: record });
+}
+
+async function handleCommunityUnpublish(mapId, env, userId) {
+    const raw = await env.MAPS.get(`community:map:${mapId}`);
+    if (!raw) return errorResponse('Map not found', 404);
+    const record = JSON.parse(raw);
+    if (record.ownerId !== userId) return errorResponse('Access denied', 403);
+    await env.MAPS.delete(`community:map:${mapId}`);
+    await env.MAPS.put('community:catalog', JSON.stringify((await communityCatalog(env)).filter(id => id !== mapId)));
+    return jsonResponse({ success: true });
+}
+
+async function handleCommunityMap(mapId, env, userId, mode = 'detail') {
+    const raw = await env.MAPS.get(`community:map:${mapId}`);
+    if (!raw) return errorResponse('Community map not found', 404);
+    const record = JSON.parse(raw);
+    if (mode === 'detail') {
+        const userRatingRaw = userId ? await env.MAPS.get(`community:rating:${mapId}:${userId}`) : null;
+        return jsonResponse({ map: {
+            id: record.id, name: record.name, ownerName: record.ownerName, tags: record.tags,
+            allowDownload: record.allowDownload === true, publishedAt: record.publishedAt,
+            ratingAverage: record.ratingAverage || 0, ratingCount: record.ratingCount || 0,
+            commentCount: record.commentCount || 0, myRating: userRatingRaw ? Number(userRatingRaw) : 0
+        } });
+    }
+    if (mode === 'download' && !record.allowDownload) return errorResponse('The creator has disabled downloads', 403);
+    const sourceRaw = await env.MAPS.get(`map:${mapId}`);
+    const source = sourceRaw ? JSON.parse(sourceRaw) : null;
+    if (!source?.data) return errorResponse('Map data is unavailable', 404);
+    return jsonResponse({ id: mapId, name: record.name, data: source.data });
+}
+
+async function handleCommunityRating(mapId, request, env, userId) {
+    const raw = await env.MAPS.get(`community:map:${mapId}`);
+    if (!raw) return errorResponse('Community map not found', 404);
+    if (JSON.parse(raw).ownerId === userId) return errorResponse('You cannot rate your own map');
+    const { rating } = await request.json();
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return errorResponse('Rating must be from 1 to 5');
+    const previous = Number(await env.MAPS.get(`community:rating:${mapId}:${userId}`)) || 0;
+    await env.MAPS.put(`community:rating:${mapId}:${userId}`, String(rating));
+    const record = JSON.parse(raw);
+    const count = Math.max(0, record.ratingCount || 0) + (previous ? 0 : 1);
+    record.ratingAverage = Math.round((((record.ratingAverage || 0) * (record.ratingCount || 0) - previous + rating) / Math.max(1, count)) * 100) / 100;
+    record.ratingCount = count;
+    await env.MAPS.put(`community:map:${mapId}`, JSON.stringify(record));
+    const prefsRaw = await env.USERS.get(`community:preferences:${userId}`);
+    const prefs = prefsRaw ? JSON.parse(prefsRaw) : { plays: {}, ratings: {}, ratingTotals: {}, ratingCounts: {} };
+    const delta = rating - previous;
+    for (const tag of record.tags) {
+        const key = tag.toLowerCase();
+        prefs.ratingTotals[key] = Math.max(0, (prefs.ratingTotals[key] || 0) + delta);
+        prefs.ratingCounts[key] = Math.max(1, (prefs.ratingCounts[key] || 0) + (previous ? 0 : 1));
+        prefs.ratings[key] = prefs.ratingTotals[key] / prefs.ratingCounts[key] / 5;
+    }
+    await env.USERS.put(`community:preferences:${userId}`, JSON.stringify(prefs));
+    return jsonResponse({ ratingAverage: record.ratingAverage, ratingCount: count });
+}
+
+async function handleCommunityComments(mapId, request, env, userId) {
+    const mapRaw = await env.MAPS.get(`community:map:${mapId}`);
+    if (!mapRaw) return errorResponse('Community map not found', 404);
+    const key = `community:comments:${mapId}`;
+    const comments = JSON.parse((await env.MAPS.get(key)) || '[]');
+    if (request.method === 'GET') return jsonResponse({ comments: comments.slice(-100) });
+    const body = await request.json();
+    const text = String(body.text || '').trim();
+    if (!text || text.length > 1000) return errorResponse('Comment must contain 1 to 1000 characters');
+    const userData = await env.USERS.get(`user:${userId}`);
+    const user = userData ? JSON.parse(userData) : {};
+    comments.push({ id: generateId(), userId, userName: user.name || user.username || 'Player', text, createdAt: new Date().toISOString() });
+    const kept = comments.slice(-200);
+    const map = JSON.parse(mapRaw); map.commentCount = kept.length;
+    await Promise.all([env.MAPS.put(key, JSON.stringify(kept)), env.MAPS.put(`community:map:${mapId}`, JSON.stringify(map))]);
+    return jsonResponse({ comment: kept[kept.length - 1] });
+}
+
+async function handleCommunityPlay(mapId, env, userId) {
+    const raw = await env.MAPS.get(`community:map:${mapId}`);
+    if (!raw) return errorResponse('Community map not found', 404);
+    const map = JSON.parse(raw);
+    const prefsRaw = await env.USERS.get(`community:preferences:${userId}`);
+    const prefs = prefsRaw ? JSON.parse(prefsRaw) : { plays: {}, ratings: {} };
+    for (const tag of map.tags) prefs.plays[tag.toLowerCase()] = Math.min(500, (prefs.plays[tag.toLowerCase()] || 0) + 1);
+    await env.USERS.put(`community:preferences:${userId}`, JSON.stringify(prefs));
+    return jsonResponse({ success: true });
+}
+
 async function handleListMaps(env, userId) {
     // Get user's map list
     const mapListData = await env.MAPS.get(`user:${userId}:maps`);
@@ -660,6 +836,13 @@ async function handleDeleteMap(mapId, env, userId) {
     if (index !== -1) {
         mapList.splice(index, 1);
         await env.MAPS.put(`user:${userId}:maps`, JSON.stringify(mapList));
+    }
+
+    const communityRecord = await env.MAPS.get(`community:map:${mapId}`);
+    if (communityRecord && JSON.parse(communityRecord).ownerId === userId) {
+        await env.MAPS.delete(`community:map:${mapId}`);
+        await env.MAPS.delete(`community:comments:${mapId}`);
+        await env.MAPS.put('community:catalog', JSON.stringify((await communityCatalog(env)).filter(id => id !== mapId)));
     }
 
     return jsonResponse({ success: true });
@@ -855,6 +1038,10 @@ class GameRoom {
             return this.handleAdminListRooms();
         }
 
+        if (pathname === '/lobbies' && request.method === 'GET') {
+            return this.handleListPublicLobbies();
+        }
+
         if (pathname === '/ws') {
             if (request.headers.get('Upgrade') !== 'websocket') {
                 return new Response('Expected websocket', { status: 400 });
@@ -906,6 +1093,30 @@ class GameRoom {
         return new Response(JSON.stringify(rooms), {
             headers: { 'Content-Type': 'application/json' }
         });
+    }
+
+    async handleListPublicLobbies() {
+        const rooms = [];
+        const seen = new Set();
+        for (const session of this.sessions.values()) {
+            const code = session.roomCode;
+            if (!code || seen.has(code)) continue;
+            seen.add(code);
+            const stored = await this.state.storage.get(`room:${code}`);
+            if (!stored) continue;
+            const room = JSON.parse(stored);
+            if (room.isPublic !== true) continue;
+            const players = this.getPlayersInRoom(code);
+            const maxPlayers = Math.min(10, Math.max(1, Number(room.maxPlayers) || 10));
+            if (!players.length || players.length >= maxPlayers) continue;
+            rooms.push({
+                code, mapName: room.mapName || room.mapData?.mapName || 'Untitled Map',
+                hostName: players.find(player => player.isHost)?.user?.name || 'Player',
+                playerCount: players.length, maxPlayers, createdAt: room.createdAt
+            });
+        }
+        rooms.sort((a, b) => b.playerCount - a.playerCount || a.createdAt - b.createdAt);
+        return jsonResponse({ rooms });
     }
 
     async handleSession(webSocket, request) {
@@ -1064,9 +1275,10 @@ class GameRoom {
             mapData: data.mapData,
             mapId: data.mapId || null,
             mapName: mapNameHint,
-            maxPlayers: data.maxPlayers || 10,
-            usePassword: data.usePassword || false,
-            password: data.password || null,
+            maxPlayers: Math.min(10, Math.max(1, Math.floor(Number(data.maxPlayers) || 1))),
+            isPublic: data.visibility === 'public',
+            usePassword: data.visibility === 'public' ? false : Boolean(data.usePassword),
+            password: data.visibility === 'public' ? null : (data.password || null),
             players: new Map(),
             createdAt: Date.now()
         };
@@ -2931,6 +3143,19 @@ export default {
                 const room = env.GAME_ROOMS.get(id);
                 return room.fetch(request);
             }
+            if (path === '/lobbies' && method === 'GET') {
+                if (!env.GAME_ROOMS) return errorResponse('Multiplayer not configured', 503);
+                const id = env.GAME_ROOMS.idFromName('main');
+                return env.GAME_ROOMS.get(id).fetch(request);
+            }
+
+            if (path === '/community/tags' && method === 'GET') return handleCommunityTags(env);
+            const optionalCommunityPayload = verifyToken((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, ''));
+            if (path === '/community/maps' && method === 'GET') return handleCommunityList(url, env, optionalCommunityPayload?.userId || null);
+            const publicCommunityMap = path.match(/^\/community\/maps\/([a-zA-Z0-9]+)$/);
+            if (publicCommunityMap && method === 'GET') return handleCommunityMap(publicCommunityMap[1], env, optionalCommunityPayload?.userId || null);
+            const publicCommunityComments = path.match(/^\/community\/maps\/([a-zA-Z0-9]+)\/comments$/);
+            if (publicCommunityComments && method === 'GET') return handleCommunityComments(publicCommunityComments[1], request, env, null);
 
             // Auth middleware
             let userId = null;
@@ -2955,6 +3180,20 @@ export default {
             // Protected routes
             if (!userId) {
                 return errorResponse('Unauthorized', 401);
+            }
+
+            if (path === '/community/maps' && method === 'GET') return handleCommunityList(url, env, userId);
+            if (path === '/community/publish' && method === 'POST') return handleCommunityPublish(request, env, userId);
+            const communityMap = path.match(/^\/community\/maps\/([a-zA-Z0-9]+)$/);
+            if (communityMap && method === 'DELETE') return handleCommunityUnpublish(communityMap[1], env, userId);
+            const communityMapAction = path.match(/^\/community\/maps\/([a-zA-Z0-9]+)\/(rating|comments|play|download|host)$/);
+            if (communityMapAction) {
+                const [, mapId, action] = communityMapAction;
+                if (action === 'rating' && method === 'PUT') return handleCommunityRating(mapId, request, env, userId);
+                if (action === 'comments' && method === 'POST') return handleCommunityComments(mapId, request, env, userId);
+                if (action === 'play' && method === 'POST') return handleCommunityPlay(mapId, env, userId);
+                if (action === 'download' && method === 'GET') return handleCommunityMap(mapId, env, userId, 'download');
+                if (action === 'host' && method === 'GET') return handleCommunityMap(mapId, env, userId, 'host');
             }
 
             // Profile routes

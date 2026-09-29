@@ -964,7 +964,8 @@ class MultiplayerManager {
             mapData: options.mapData,
             mapId: options.mapId != null ? options.mapId : null,
             mapName: options.mapName != null ? options.mapName : null,
-            maxPlayers: options.maxPlayers,
+            maxPlayers: Math.min(10, Math.max(1, Number(options.maxPlayers) || 10)),
+            visibility: options.visibility === 'public' ? 'public' : 'private',
             usePassword: options.usePassword,
             password: options.password
         });

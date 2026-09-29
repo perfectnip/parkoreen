@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Discover, rate, and share Parkoreen maps.">
+    <title>Community — Parkoreen</title>
+    <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+    <style>
+        body { overflow:auto; }
+        .community-wrap { width:min(1100px,94vw); margin:28px auto 64px; }
+        .community-head,.community-toolbar,.map-actions,.tag-list,.publish-grid { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .community-head { justify-content:space-between; margin-bottom:20px; }
+        .community-head h1 { margin:0; }
+        .community-toolbar { margin:16px 0; }
+        .community-toolbar select { min-width:180px; }
+        .publish-card { margin:18px 0; }
+        .publish-grid > * { flex:1 1 220px; }
+        .community-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:16px; }
+        .community-card { padding:18px; display:flex; flex-direction:column; gap:12px; }
+        .community-card h3 { margin:0; }
+        .tag-pill { padding:4px 9px; border-radius:999px; background:rgba(103,171,255,.16); color:var(--text-primary); font-size:12px; }
+        .community-rating { color:#ffc857; font-size:14px; }
+        .community-meta { color:var(--text-secondary); font-size:13px; }
+        .community-card .map-actions { margin-top:auto; }
+        .community-card .map-actions .btn { flex:1; }
+        .tag-picker { display:flex; gap:8px; flex-wrap:wrap; max-height:140px; overflow:auto; padding:8px; border-radius:8px; background:rgba(0,0,0,.12); }
+        .tag-choice { display:flex; align-items:center; gap:5px; font-size:13px; }
+        .comment-list { display:grid; gap:8px; max-height:260px; overflow:auto; margin:12px 0; }
+        .comment-item { padding:10px; border-radius:8px; background:rgba(0,0,0,.12); }
+        .star-button { border:0; background:transparent; color:#ffc857; cursor:pointer; font-size:25px; padding:2px; }
+        #map-dialog { width:min(600px,94vw); max-height:86vh; overflow:auto; border:1px solid rgba(255,255,255,.15); border-radius:16px; background:var(--bg-medium,#1a1a2e); color:var(--text-primary,#fff); }
+        #map-dialog::backdrop { background:rgba(0,0,0,.7); }
+    </style>
+</head>
+<body>
+<main class="community-wrap">
+    <header class="community-head">
+        <div><h1>Parkoreen Community</h1><div class="community-meta">Find a map, share your creations, and play together.</div></div>
+        <div class="community-head"><a class="btn btn-secondary" href="../dashboard/"><span class="material-symbols-outlined">home</span>Home</a><a class="btn btn-secondary" href="../join.html"><span class="material-symbols-outlined">groups</span>Lobbies</a></div>
+    </header>
+    <section class="card publish-card" id="publish-card">
+        <h2>Publish a map</h2>
+        <p class="community-meta">Choose tags that describe the map. New tags are added to the shared tag list when published.</p>
+        <form id="publish-form">
+            <div class="publish-grid">
+                <label class="form-group">Your map<select class="form-select" id="publish-map" required></select></label>
+                <label class="form-group">Create tags <input class="form-input" id="new-tags" placeholder="e.g. Puzzle, Speedrun"></label>
+            </div>
+            <div class="form-group"><label class="form-label">Select existing tags</label><div class="tag-picker" id="tag-picker"></div></div>
+            <label class="tag-choice"><input type="checkbox" id="allow-download"> Allow players to download the .pkrn map file</label>
+            <div style="margin-top:12px;"><button class="btn btn-primary" type="submit">Publish map</button></div>
+        </form>
+    </section>
+    <div class="community-toolbar">
+        <label class="form-label">Tag <select class="form-select" id="tag-filter"><option value="">All tags</option></select></label>
+        <label class="form-label">Order <select class="form-select" id="sort-order"><option value="suggested">Suggested for you</option><option value="top">Highest rated</option><option value="new">Recently published</option></select></label>
+        <button class="btn btn-secondary" id="refresh-maps" type="button">Refresh</button>
+    </div>
+    <div class="community-grid" id="community-grid"></div>
+    <p id="community-status" class="community-meta">Loading maps…</p>
+</main>
+
+<dialog id="map-dialog">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;"><h2 id="dialog-title"></h2><button type="button" class="btn btn-secondary" id="dialog-close">Close</button></div>
+    <div id="dialog-tags" class="tag-list"></div>
+    <div id="dialog-actions" class="map-actions" style="margin:12px 0;"></div>
+    <p id="dialog-rating" class="community-rating"></p>
+    <div id="dialog-stars" aria-label="Rate this map"></div>
+    <h3>Comments</h3><div id="comment-list" class="comment-list"></div>
+    <form id="comment-form"><label class="form-group">Add a comment<textarea class="form-input" id="comment-text" maxlength="1000" required rows="3"></textarea></label><button class="btn btn-primary" type="submit">Comment</button></form>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="../runtime.js?v=29"></script>
+<script src="../assets/js/style.js?v=12"></script>
+<script src="../assets/js/exportImport.js?v=17"></script>
+<script>
+(() => {
+    const token = () => window.Auth?.getToken?.() || '';
+    const authHeaders = () => token() ? { Authorization: 'Bearer ' + token() } : {};
+    const status = document.getElementById('community-status');
+    const grid = document.getElementById('community-grid');
+    let selectedMapId = null;
+    let loadedTags = [];
+    async function api(path, options = {}) {
+        const headers = { ...authHeaders(), ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) };
+        const response = await fetch(API_URL + path, { ...options, headers });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || 'Request failed');
+        return data;
+    }
+    async function loadTags() {
+        const data = await api('/community/tags');
+        loadedTags = data.tags || [];
+        const picker = document.getElementById('tag-picker');
+        const filter = document.getElementById('tag-filter');
+        picker.replaceChildren(); filter.replaceChildren(new Option('All tags', ''));
+        loadedTags.forEach(tag => {
+            const label = document.createElement('label'); label.className = 'tag-choice';
+            const input = document.createElement('input'); input.type = 'checkbox'; input.value = tag;
+            label.append(input, document.createTextNode(tag)); picker.appendChild(label);
+            filter.appendChild(new Option(tag, tag));
+        });
+    }
+    function mapCard(map) {
+        const card = document.createElement('article'); card.className = 'card community-card';
+        const title = document.createElement('h3'); title.textContent = map.name || 'Untitled Map';
+        const owner = document.createElement('div'); owner.className = 'community-meta'; owner.textContent = 'By ' + (map.ownerName || 'Player');
+        const rating = document.createElement('div'); rating.className = 'community-rating'; rating.textContent = '★ ' + (Number(map.ratingAverage || 0).toFixed(1)) + ' · ' + (map.ratingCount || 0) + ' ratings';
+        const tags = document.createElement('div'); tags.className = 'tag-list'; (map.tags || []).forEach(value => { const pill = document.createElement('span'); pill.className = 'tag-pill'; pill.textContent = value; tags.appendChild(pill); });
+        const actions = document.createElement('div'); actions.className = 'map-actions';
+        const view = document.createElement('button'); view.className = 'btn btn-secondary'; view.textContent = 'Details'; view.onclick = () => openMap(map.id);
+        const host = document.createElement('button'); host.className = 'btn btn-primary'; host.textContent = 'Host'; host.onclick = () => hostMap(map.id);
+        actions.append(view, host); card.append(title, owner, rating, tags, actions);
+        return card;
+    }
+    async function loadMaps() {
+        status.textContent = 'Loading maps…'; grid.replaceChildren();
+        try {
+            const params = new URLSearchParams();
+            const tag = document.getElementById('tag-filter').value;
+            if (tag) params.set('tag', tag);
+            params.set('sort', document.getElementById('sort-order').value);
+            const data = await api('/community/maps?' + params.toString());
+            (data.maps || []).forEach(map => grid.appendChild(mapCard(map)));
+            status.textContent = data.maps?.length ? '' : 'No community maps yet. Publish the first one!';
+        } catch (error) { status.textContent = error.message; }
+    }
+    async function loadOwnedMaps() {
+        const select = document.getElementById('publish-map');
+        select.replaceChildren();
+        if (!window.Auth?.isLoggedIn()) {
+            document.getElementById('publish-card').innerHTML = '<h2>Publish a map</h2><p>Sign in to publish your maps, rate maps, and comment.</p><a class="btn btn-primary" href="../login/?redirect=%2Fparkoreen%2Fcommunity%2F">Sign in</a>';
+            return;
+        }
+        try {
+            const maps = await MapManager.listMaps();
+            maps.forEach(map => select.appendChild(new Option(map.name, map.id)));
+            if (!maps.length) select.appendChild(new Option('Create a map in your dashboard first', ''));
+        } catch (error) { select.appendChild(new Option('Could not load your maps', '')); }
+    }
+    async function openMap(id) {
+        selectedMapId = id;
+        const [detail, comments] = await Promise.all([api('/community/maps/' + id), api('/community/maps/' + id + '/comments')]);
+        const map = detail.map;
+        document.getElementById('dialog-title').textContent = map.name;
+        const tags = document.getElementById('dialog-tags'); tags.replaceChildren();
+        (map.tags || []).forEach(text => { const pill = document.createElement('span'); pill.className = 'tag-pill'; pill.textContent = text; tags.appendChild(pill); });
+        const actions = document.getElementById('dialog-actions'); actions.replaceChildren();
+        const host = document.createElement('button'); host.type = 'button'; host.className = 'btn btn-primary'; host.textContent = 'Host this map'; host.onclick = () => hostMap(id); actions.appendChild(host);
+        if (map.allowDownload) { const download = document.createElement('button'); download.type = 'button'; download.className = 'btn btn-secondary'; download.textContent = 'Download .pkrn'; download.onclick = () => downloadMap(id, map.name); actions.appendChild(download); }
+        document.getElementById('dialog-rating').textContent = '★ ' + Number(map.ratingAverage || 0).toFixed(1) + ' · ' + (map.ratingCount || 0) + ' ratings';
+        const stars = document.getElementById('dialog-stars'); stars.replaceChildren();
+        for (let n = 1; n <= 5; n++) { const button = document.createElement('button'); button.className = 'star-button'; button.type = 'button'; button.textContent = n <= (map.myRating || 0) ? '★' : '☆'; button.setAttribute('aria-label', 'Rate ' + n + ' stars'); button.onclick = () => rateMap(n); stars.appendChild(button); }
+        renderComments(comments.comments || []);
+        document.getElementById('map-dialog').showModal();
+    }
+    function renderComments(comments) {
+        const list = document.getElementById('comment-list'); list.replaceChildren();
+        if (!comments.length) { const empty = document.createElement('p'); empty.className = 'community-meta'; empty.textContent = 'No comments yet.'; list.appendChild(empty); }
+        comments.forEach(comment => { const item = document.createElement('div'); item.className = 'comment-item'; const who = document.createElement('strong'); who.textContent = comment.userName + ' · '; const text = document.createElement('span'); text.textContent = comment.text; item.append(who, text); list.appendChild(item); });
+    }
+    async function rateMap(rating) {
+        if (!window.Auth?.isLoggedIn()) { location.href = '../login/?redirect=%2Fparkoreen%2Fcommunity%2F'; return; }
+        try { await api('/community/maps/' + selectedMapId + '/rating', { method: 'PUT', body: JSON.stringify({ rating }) }); await openMap(selectedMapId); await loadMaps(); }
+        catch (error) { status.textContent = error.message; }
+    }
+    async function hostMap(id) {
+        if (!window.Auth?.isLoggedIn()) { location.href = '../login/?redirect=%2Fparkoreen%2Fcommunity%2F'; return; }
+        try { await api('/community/maps/' + id + '/play', { method: 'POST' }); location.href = '../host.html?community=' + encodeURIComponent(id) + '&mode=host'; }
+        catch (error) { alert(error.message); }
+    }
+    async function downloadMap(id, name) {
+        try {
+            const result = await api('/community/maps/' + id + '/download');
+            let data = result.data;
+            if (typeof data === 'string') data = JSON.parse(data);
+            const world = { ...data, mapName: name || data.mapName || 'Parkoreen Map', objects: Array.isArray(data.objects) ? data.objects : [] };
+            await new ExportManager().exportToFile(world, world.mapName, 'json');
+        } catch (error) { status.textContent = error.message; }
+    }
+    document.getElementById('publish-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!window.Auth?.isLoggedIn()) { location.href = '../login/?redirect=%2Fparkoreen%2Fcommunity%2F'; return; }
+        const tags = [...document.querySelectorAll('#tag-picker input:checked')].map(input => input.value);
+        const custom = document.getElementById('new-tags').value.split(',').map(value => value.trim()).filter(Boolean);
+        const combined = [...new Map([...tags, ...custom].map(value => [value.toLowerCase(), value])).values()];
+        if (!document.getElementById('publish-map').value) { status.textContent = 'Select a saved map first.'; return; }
+        if (!combined.length || combined.length > 8) { status.textContent = 'Choose or create between 1 and 8 tags.'; return; }
+        try {
+            await api('/community/publish', { method: 'POST', body: JSON.stringify({ mapId: document.getElementById('publish-map').value, tags: combined, allowDownload: document.getElementById('allow-download').checked }) });
+            status.textContent = 'Map published to the Community.'; document.getElementById('new-tags').value = '';
+            document.querySelectorAll('#tag-picker input').forEach(input => input.checked = false);
+            await loadTags(); await loadMaps();
+        } catch (error) { status.textContent = error.message; }
+    });
+    document.getElementById('comment-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!window.Auth?.isLoggedIn()) { location.href = '../login/?redirect=%2Fparkoreen%2Fcommunity%2F'; return; }
+        try { await api('/community/maps/' + selectedMapId + '/comments', { method: 'POST', body: JSON.stringify({ text: document.getElementById('comment-text').value }) }); document.getElementById('comment-text').value = ''; await openMap(selectedMapId); }
+        catch (error) { status.textContent = error.message; }
+    });
+    document.getElementById('dialog-close').onclick = () => document.getElementById('map-dialog').close();
+    document.getElementById('refresh-maps').onclick = loadMaps;
+    document.getElementById('tag-filter').onchange = loadMaps;
+    document.getElementById('sort-order').onchange = loadMaps;
+    document.addEventListener('DOMContentLoaded', async () => { await loadTags(); await loadOwnedMaps(); await loadMaps(); });
+})();
+</script>
+</body>
+</html>

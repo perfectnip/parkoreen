@@ -8,7 +8,7 @@ Parkoreen is a multiplayer 2D platformer with a full map editor, real-time multi
 
 - **Frontend**: pure static HTML/JS/CSS — no build step. Plain `<canvas>` 2D rendering, ES6 classes, no framework.
 - **Backend**: Cloudflare Worker (Workers + KV + Durable Object) for auth, map storage, mail, admin tools, and WebSocket multiplayer.
-- **PWA**: service worker uses the `parkoreen-v219` cache. It bypasses cache handling for `/admin` and `/mails` routes.
+- **PWA**: service worker uses the `parkoreen-v238` cache. It bypasses cache handling for `/admin` and `/mails` routes.
 - **Note**: `agent.md` in the repo root is a duplicate of this file (kept for an external tool). Edit `CLAUDE.md` and re-sync `agent.md` if you change either.
 - **Cloudflare dashboard is blocked in the user's home network in China.** Deploy via `wrangler deploy` works (the API at `api.cloudflare.com` is reachable), but `wrangler login` (OAuth to `dash.cloudflare.com`) does not. Plan accordingly if iterating from a blocked network.
 
@@ -100,6 +100,7 @@ CHANGELOG.md            # Pointer to wiki/changelog (canonical Guide changelog)
 - The Durable Object holds room state in `state.storage` keyed by `room:{code}` (6-char code, excludes visually-similar chars) and tracks sessions in a `Map`.
 - **Player colors** computed server-side via `generateOptimalPlayerColor` — tries 72 candidate hues (every 5°), picks the one farthest from existing players' hues; if hue distance < 25°, also adjusts saturation/lightness.
 - **Position sync**: client sends `{x, y, vx, vy, jumps}` every 100ms; server broadcasts to others; remote clients run prediction (`predictedX = serverX + vx * timeSinceUpdate`) with lerp smoothing (`0.2`). Host receives `position_ack` for reconciliation.
+- **Room discovery**: rooms default to private code-only access. Public rooms appear in `/lobbies` while they have free slots; both client and server cap rooms at 10 players.
 - Reconnect via `rejoin_room` restores the room and player list.
 
 ### `.pkrn` file format
@@ -115,7 +116,8 @@ RLE encoding: `0xFF, count, byte` for runs ≥4 identical bytes; `0xFF, 0x00` to
 - **Auth**: SHA-256 of `password + JWT_SECRET`, base64 token `{userId, exp, iat}`. Sessions in KV `SESSIONS` with 7-day TTL.
 - **Reserved display names**: `jimmyqrg`, `parkoreen`, `jimmyqrg160`, `jimmyqrgschool` may only be used by those exact usernames. Server auto-renames unauthorized users to "Change Me" on login.
 - **Admin**: defaults `jimmyqrg`, `parkoreen` plus `ADMIN_USERNAMES` env var. Required for `/admin/*` routes and the editor's "impersonate edit any map" mode (`?admin=1&map=ID`).
-- Routes: `/auth/{signup,login,profile,password}`, `/level-progress`, `/flag/{name}`, `/maps`, `/maps/{id}`, `/mail`, `/mail/unread`, `/mail/{id}`, `/ws`, `/settings`, `/editor/recent-fonts`, `/admin/{users,rooms,maps,global-bans,...}`.
+- Routes: `/auth/{signup,login,profile,password}`, `/level-progress`, `/flag/{name}`, `/maps`, `/community/{tags,maps,publish}`, `/community/maps/{id}/{rating,comments,play,download,host}`, `/lobbies`, `/mail`, `/mail/unread`, `/mail/{id}`, `/ws`, `/settings`, `/editor/recent-fonts`, `/admin/{users,rooms,maps,global-bans,...}`.
+- **Community maps**: publication metadata, map/tag indexes, ratings, and comments live in `MAPS`; tag play/rating preferences live in `USERS`. The current recommendation list ranks a bounded recent catalog using player tag activity, map ratings, and recency.
 - The Wrangler config (`wrangler.toml` or `wrangler.jsonc`) and binding IDs are tracked in `cloudflare-worker/`. KV namespace IDs are listed in `cloudflare-worker/README.md`.
 - **Per-account state (post-`/settings` migration)**: game data is account-bound, not device-bound. KV keys owned per-user:
   - `settings:{userId}` — JSON blob with `{volume, fontSize, keyboardLayout, roleMode, testerShowTouchboxes, theme}`. Whitelisted server-side.
