@@ -852,19 +852,6 @@
                 return;
             }
 
-            // Bug 4 (legacy path): if coming back from completing 0_3 with
-            // the special flag set, complete it (server already recorded it
-            // via host.html's postMessage, but if not, this is the fallback).
-            const specialReturn = sessionStorage.getItem('parkoreen_level_complete_special');
-            if (specialReturn === 'true') {
-                sessionStorage.removeItem('parkoreen_level_complete_special');
-                await completeLevel('0_3');
-                renderLevelGroups();
-                goToGroup(2);
-                runChallengeUnlockAnimation('0_3');
-                return;
-            }
-
             // Bug 4: First-ever visit auto-plays the first level. We use a
             // stable localStorage flag instead of document.referrer so this
             // behaves identically at `/` and `/index.html`.
@@ -876,10 +863,8 @@
             }
         }
 
-        // Bug 8: Challenge level unlock animation. When the user just
-        // completed the last non-challenge level in a group, animate the
-        // challenge card (if any), then slide to the next group and fade its
-        // locked placeholder into the level grid.
+        // Animate the challenge card when the user completes the last regular
+        // level in a group. Keep the level list on the current group.
         async function runChallengeUnlockAnimation(fromLevel) {
             const fromGroup = LEVEL_GROUPS.findIndex(g => g.levels.includes(fromLevel));
             if (fromGroup === -1) return;
@@ -901,25 +886,6 @@
                 }
             }
 
-            // Phase 2: slide to next group (pure horizontal scroll, no fade)
-            const nextGroup = fromGroup + 1;
-            if (nextGroup < LEVEL_GROUPS.length) {
-                await wait(400);
-                goToGroup(nextGroup);
-                // The next group may have been showing a locked placeholder.
-                // Fade the placeholder out and the grid in (400ms each, slight overlap).
-                const lockedNode = container.children[nextGroup];
-                if (lockedNode && lockedNode.classList.contains('level-group-locked')) {
-                    // Re-render so the now-unlocked group renders as a grid.
-                    renderLevelGroups();
-                    // Re-apply the current group's transform after re-render.
-                    container.style.transform = `translateX(${-nextGroup * groupStride}px)`;
-                    // Fade the now-unlocked placeholder out — wait, after re-render
-                    // it's already gone. The locked placeholder was replaced by
-                    // a real grid. Nothing more to do here; the slide itself
-                    // provides the visual transition.
-                }
-            }
         }
 
         function wait(ms) {

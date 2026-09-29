@@ -130,7 +130,7 @@ RLE encoding: `0xFF, count, byte` for runs ≥4 identical bytes; `0xFF, 0x00` to
 - Stored per-user in KV (`level_progress:{userId}`); falls back to `localStorage` for guests.
 - Regular levels unlock when the previous one is completed. Challenge levels unlock when **all non-challenge levels in the group** are completed.
 - Group 0 (levels `0_1`, `0_2`, `0_3`) is required before the "Map Editor" button appears on the dashboard.
-- Special case: completing `0_3` scrolls to group 2 on the levels page on return.
+- Completing a level returns to the level list without changing the selected group.
 
 ## Conventions & Patterns
 

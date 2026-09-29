@@ -5742,8 +5742,14 @@ class GameEngine {
     setupInput() {
         // Keyboard
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
-        document.addEventListener('keyup', (e) => this.onKeyUp(e));
+        // Capture keyup at window level so editor widgets or plugins cannot
+        // stop propagation before the game clears a held movement key.
+        window.addEventListener('keyup', (e) => this.onKeyUp(e), true);
         window.addEventListener('blur', () => this.releaseKeyboardInput());
+        window.addEventListener('pagehide', () => this.releaseKeyboardInput());
+        document.addEventListener('focusin', () => {
+            if (this.isTypingInInput()) this.releaseKeyboardInput();
+        });
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') this.releaseKeyboardInput();
         });

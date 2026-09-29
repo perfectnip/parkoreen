@@ -3050,14 +3050,6 @@
                         sessionStorage.removeItem('parkoreen_current_level');
                         sessionStorage.removeItem('parkoreen_current_level_name');
 
-                        // Special handling for 0_3
-                        if (levelName === '0_3') {
-                            // Save progress and redirect to levels page with scroll to group 2
-                            sessionStorage.setItem('parkoreen_level_complete_special', 'true');
-                            window.location.href = 'index.html';
-                            return;
-                        }
-
                         // For other levels, go back to levels page
                         window.location.href = 'index.html';
                         return;
@@ -3161,14 +3153,7 @@
                 if (showExit) {
                     document.getElementById('end-game-exit').addEventListener('click', async () => {
                         const ln = window.currentPlayingLevel;
-                        // 0_3 is recorded by the existing return-to-levels flow;
-                        // earlier tutorial exits need to be saved here because
-                        // host.html is a top-level page, not an iframe of index.html.
-                        if (ln !== '0_3') await persistLevelCompletion(ln);
-                        if (ln === '0_3') {
-                            // Special case: after 0_3, scroll to group 2 on levels page
-                            sessionStorage.setItem('parkoreen_level_complete_special', 'true');
-                        }
+                        await persistLevelCompletion(ln);
                         window.location.href = 'index.html';
                     });
                 }
