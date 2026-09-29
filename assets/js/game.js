@@ -5600,7 +5600,7 @@ class GameEngine {
 
     renderClouds() {
         const background = this.world?.background;
-        if (background === 'custom') return;
+        if (background !== 'sky' && background !== 'galaxy') return;
         if (!CloudImages.loaded) return;
 
         if (!this.cloudsGenerated) {

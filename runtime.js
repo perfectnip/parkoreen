@@ -1979,7 +1979,8 @@ async function fetchAndCacheLevelProgress() {
         // Cache server response for offline use / fallback
         localStorage.setItem('parkoreen_level_progress', JSON.stringify({
             completed: data.completed || [],
-            group1Completed: data.group1Completed || false
+            group1Completed: data.group1Completed || false,
+            bestTimes: data.bestTimes && typeof data.bestTimes === 'object' ? data.bestTimes : {}
         }));
         return data;
     } catch (e) {

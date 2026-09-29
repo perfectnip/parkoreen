@@ -797,7 +797,12 @@ class Editor {
                         <select class="form-select" id="config-background">
                             <option value="sky">Sky</option>
                             <option value="galaxy">Galaxy</option>
-                                <option value="custom">Custom</option>
+                            <option value="misty-mountains">Misty Mountains</option>
+                            <option value="pine-forest-haze">Pine Forest</option>
+                            <option value="quiet-coast">Quiet Coast</option>
+                            <option value="desert-dunes">Desert Dunes</option>
+                            <option value="twilight-ruins">Twilight Ruins</option>
+                            <option value="custom">Custom</option>
                         </select>
                     </div>
                     

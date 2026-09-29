@@ -3042,7 +3042,7 @@
                     if (window.isLevelMode && window.currentPlayingLevel) {
                         // Mark level as completed
                         const levelName = window.currentPlayingLevel;
-                        await persistLevelCompletion(levelName);
+                        await persistLevelCompletion(levelName, lastEndGameData?.elapsedMs);
 
                         // Post message to parent (index.html) for progress tracking
                         if (window.parent !== window) {
@@ -3135,6 +3135,7 @@
                     // group, defer to index.html to record completion and run
                     // the challenge unlock animation without changing groups.
                     if (isLastNonChallengeLevel(ln)) {
+                        await persistLevelCompletion(ln, lastEndGameData?.elapsedMs);
                         sessionStorage.setItem('parkoreen_pending_complete', ln);
                         // Clean up level state
                         window.isLevelMode = false;
@@ -3148,10 +3149,10 @@
                     // Get next level info
                     const nextLevel = getNextLevelInfo(ln);
                     if (nextLevel) {
-                        await persistLevelCompletion(ln);
+                        await persistLevelCompletion(ln, lastEndGameData?.elapsedMs);
                         playLevelByName(nextLevel);
                     } else {
-                        await persistLevelCompletion(ln);
+                        await persistLevelCompletion(ln, lastEndGameData?.elapsedMs);
                         window.location.href = 'index.html';
                     }
                 });
@@ -3160,7 +3161,7 @@
                 if (showExit) {
                     document.getElementById('end-game-exit').addEventListener('click', async () => {
                         const ln = window.currentPlayingLevel;
-                        await persistLevelCompletion(ln);
+                        await persistLevelCompletion(ln, lastEndGameData?.elapsedMs);
                         window.location.href = 'index.html';
                     });
                 }
@@ -3214,16 +3215,17 @@
         // Persist completed levels from the game page itself. The level list
         // usually navigates to host.html as a top-level page, so postMessage
         // cannot reliably save progression there.
-        async function persistLevelCompletion(levelName) {
+        async function persistLevelCompletion(levelName, elapsedMs = null) {
             if (typeof levelName !== 'string' || !levelName) return;
 
             const progressKey = 'parkoreen_level_progress';
-            let cached = { completed: [], group1Completed: false };
+            let cached = { completed: [], group1Completed: false, bestTimes: {} };
             try {
                 const parsed = JSON.parse(localStorage.getItem(progressKey) || '{}');
                 cached = {
                     completed: Array.isArray(parsed.completed) ? parsed.completed : [],
-                    group1Completed: parsed.group1Completed === true
+                    group1Completed: parsed.group1Completed === true,
+                    bestTimes: parsed.bestTimes && typeof parsed.bestTimes === 'object' ? parsed.bestTimes : {}
                 };
             } catch (error) {
                 console.warn('[LevelProgress] Could not read local progress:', error);
@@ -3244,6 +3246,13 @@
                             if (typeof completedLevel === 'string') completed.add(completedLevel);
                         }
                         cached.group1Completed ||= serverProgress.group1Completed === true;
+                        if (serverProgress.bestTimes && typeof serverProgress.bestTimes === 'object') {
+                            for (const [name, time] of Object.entries(serverProgress.bestTimes)) {
+                                if (Number.isFinite(time) && time > 0) {
+                                    cached.bestTimes[name] = Math.min(cached.bestTimes[name] || Infinity, time);
+                                }
+                            }
+                        }
                     }
                 } catch (error) {
                     console.warn('[LevelProgress] Could not merge server progress:', error);
@@ -3251,10 +3260,14 @@
             }
 
             completed.add(levelName);
+            if (Number.isFinite(elapsedMs) && elapsedMs > 0) {
+                cached.bestTimes[levelName] = Math.min(cached.bestTimes[levelName] || Infinity, Math.floor(elapsedMs));
+            }
             const group0Complete = ['0_1', '0_2', '0_3'].every(level => completed.has(level));
             const progress = {
                 completed: Array.from(completed),
-                group1Completed: cached.group1Completed || group0Complete
+                group1Completed: cached.group1Completed || group0Complete,
+                bestTimes: cached.bestTimes
             };
 
             try {

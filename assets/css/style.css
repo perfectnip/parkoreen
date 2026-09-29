@@ -936,6 +936,22 @@ a:hover {
     background-image: url('/parkoreen/assets/png/bg_galaxy.png');
 }
 
+.game-bg.misty-mountains {
+    background-image: url('/parkoreen/assets/png/backgrounds/misty-mountains.jpg');
+}
+.game-bg.pine-forest-haze {
+    background-image: url('/parkoreen/assets/png/backgrounds/pine-forest-haze.jpg');
+}
+.game-bg.quiet-coast {
+    background-image: url('/parkoreen/assets/png/backgrounds/quiet-coast.jpg');
+}
+.game-bg.desert-dunes {
+    background-image: url('/parkoreen/assets/png/backgrounds/desert-dunes.jpg');
+}
+.game-bg.twilight-ruins {
+    background-image: url('/parkoreen/assets/png/backgrounds/twilight-ruins.jpg');
+}
+
 /* ====================================
    EDITOR UI
    ==================================== */

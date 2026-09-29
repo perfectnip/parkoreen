@@ -671,17 +671,37 @@ async function handleDeleteMap(mapId, env, userId) {
 async function handleGetLevelProgress(env, userId) {
     const progressData = await env.USERS.get(`level_progress:${userId}`);
     if (!progressData) {
-        return jsonResponse({ completed: [], group1Completed: false });
+        return jsonResponse({ completed: [], group1Completed: false, bestTimes: {} });
     }
     return jsonResponse(JSON.parse(progressData));
 }
 
 async function handleUpdateLevelProgress(request, env, userId) {
-    const { completed, group1Completed } = await request.json();
+    const { completed, group1Completed, bestTimes } = await request.json();
+    const priorRaw = await env.USERS.get(`level_progress:${userId}`);
+    let priorBestTimes = {};
+    try {
+        const prior = JSON.parse(priorRaw || '{}');
+        if (prior.bestTimes && typeof prior.bestTimes === 'object' && !Array.isArray(prior.bestTimes)) {
+            priorBestTimes = prior.bestTimes;
+        }
+    } catch (error) {
+        // Recover safely from malformed stored progress while retaining new data.
+    }
+
+    const mergedBestTimes = { ...priorBestTimes };
+    if (bestTimes && typeof bestTimes === 'object' && !Array.isArray(bestTimes)) {
+        for (const [levelName, elapsedMs] of Object.entries(bestTimes).slice(0, 64)) {
+            if (!/^[0-3]_[a-z0-9_]{1,32}$/i.test(levelName)) continue;
+            if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || elapsedMs > 86400000) continue;
+            mergedBestTimes[levelName] = Math.min(mergedBestTimes[levelName] || Infinity, Math.floor(elapsedMs));
+        }
+    }
 
     const progress = {
         completed: Array.isArray(completed) ? completed : [],
-        group1Completed: !!group1Completed
+        group1Completed: !!group1Completed,
+        bestTimes: mergedBestTimes
     };
 
     await env.USERS.put(`level_progress:${userId}`, JSON.stringify(progress));

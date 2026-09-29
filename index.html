@@ -248,6 +248,11 @@
             font-size: 0.8rem;
             color: var(--text-muted);
         }
+        .level-card-best-time {
+            margin-top: 6px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
 
         .level-card-download {
             position: absolute;
@@ -393,6 +398,15 @@
         const SELECTED_GROUP_KEY = 'parkoreen_selected_level_group';
         let completedLevels = new Set();
         let group1Completed = false;
+        let bestTimes = {};
+
+        function formatBestTime(milliseconds) {
+            const ms = Math.max(0, Math.floor(milliseconds));
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const remainder = ms % 1000;
+            return `${minutes}:${String(seconds).padStart(2, '0')}.${String(remainder).padStart(3, '0')}`;
+        }
 
         // DOM Elements
         const container = document.getElementById('levels-container');
@@ -422,6 +436,7 @@
                         const data = await response.json();
                         completedLevels = new Set(data.completed || []);
                         group1Completed = data.group1Completed || false;
+                        bestTimes = data.bestTimes && typeof data.bestTimes === 'object' ? data.bestTimes : {};
                         return;
                     }
                 } catch (e) {
@@ -436,6 +451,7 @@
                     const data = JSON.parse(saved);
                     completedLevels = new Set(data.completed || []);
                     group1Completed = data.group1Completed || false;
+                    bestTimes = data.bestTimes && typeof data.bestTimes === 'object' ? data.bestTimes : {};
                 } catch (e) {
                     console.error('Failed to load progress:', e);
                 }
@@ -457,7 +473,8 @@
                         },
                         body: JSON.stringify({
                             completed: Array.from(completedLevels),
-                            group1Completed: group1Completed
+                            group1Completed: group1Completed,
+                            bestTimes: bestTimes
                         })
                     });
                     if (response.ok) {
@@ -471,7 +488,8 @@
             // Fallback to localStorage for guests or on error
             localStorage.setItem('parkoreen_level_progress', JSON.stringify({
                 completed: Array.from(completedLevels),
-                group1Completed: group1Completed
+                group1Completed: group1Completed,
+                bestTimes: bestTimes
             }));
         }
 
@@ -635,11 +653,13 @@
 
                     const icon = isCompleted ? 'check_circle' : (isLocked ? 'lock' : 'play_circle');
                     const status = isCompleted ? 'Completed' : (isLocked ? 'Locked' : 'Play');
+                    const bestTime = Number(bestTimes[levelName]);
 
                     card.innerHTML = `
                         <span class="level-card-icon material-symbols-outlined">${icon}</span>
                         <span class="level-card-name">${displayName}</span>
                         <span class="level-card-status">${status}</span>
+                        ${Number.isFinite(bestTime) && bestTime > 0 ? `<span class="level-card-best-time">Best: ${formatBestTime(bestTime)}</span>` : ''}
                         <div class="level-card-download" title="Download map">
                             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                         </div>
