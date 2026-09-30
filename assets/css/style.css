@@ -3251,3 +3251,228 @@ body.device-mobile textarea {
 .mb-md { margin-bottom: var(--spacing-md); }
 .gap-sm { gap: var(--spacing-sm); }
 .gap-md { gap: var(--spacing-md); }
+.ai-assistant-overlay[hidden] {
+    display: none;
+}
+
+.ai-assistant-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 25000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(7, 9, 17, .72);
+    backdrop-filter: blur(5px);
+}
+
+.ai-assistant-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(760px, 100%);
+    height: min(780px, 90dvh);
+    overflow: hidden;
+    border: 1px solid rgba(167, 139, 250, .38);
+    border-radius: 18px;
+    background: #171722;
+    color: #f4f2fa;
+    box-shadow: 0 24px 90px rgba(0, 0, 0, .55);
+}
+
+.ai-assistant-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+}
+
+.ai-assistant-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.ai-assistant-header h2 .material-symbols-outlined {
+    color: #b6a0ff;
+}
+
+.ai-assistant-header p {
+    margin: 4px 0 0;
+    color: #aaa8b8;
+    font-size: .78rem;
+}
+
+.ai-assistant-suggestions {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 12px 16px;
+}
+
+.ai-assistant-suggestions button {
+    flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 999px;
+    padding: 7px 11px;
+    background: rgba(255, 255, 255, .05);
+    color: #dedbea;
+    font: inherit;
+    font-size: .75rem;
+    cursor: pointer;
+}
+
+.ai-assistant-suggestions button:hover {
+    border-color: #a78bfa;
+    background: rgba(167, 139, 250, .12);
+}
+
+.ai-assistant-messages {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 8px 20px 18px;
+}
+
+.ai-assistant-message {
+    max-width: 92%;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 12px;
+    padding: 10px 13px;
+    background: rgba(255, 255, 255, .045);
+}
+
+.ai-assistant-message.user {
+    align-self: flex-end;
+    border-color: rgba(139, 119, 220, .35);
+    background: rgba(100, 75, 175, .18);
+}
+
+.ai-assistant-message strong {
+    color: #c5b4ff;
+    font-size: .76rem;
+}
+
+.ai-assistant-message p {
+    margin: 5px 0 0;
+    color: #eeedf3;
+    font-size: .9rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ai-assistant-pending {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 18px 12px;
+    border: 1px solid rgba(167, 139, 250, .3);
+    border-radius: 12px;
+    padding: 12px;
+    background: rgba(110, 85, 190, .12);
+    flex-wrap: wrap;
+}
+
+.ai-assistant-pending > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ai-assistant-pending span {
+    color: #c0bdcd;
+    font-size: .78rem;
+}
+
+.ai-assistant-preview {
+    flex-basis: 100%;
+    max-height: 132px;
+    overflow-y: auto;
+    margin: 0;
+    border-top: 1px solid rgba(255, 255, 255, .1);
+    padding: 8px 8px 0 22px;
+    color: #d7d3e4;
+    font-size: .76rem;
+    line-height: 1.5;
+}
+
+.ai-assistant-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 14px 18px;
+    border-top: 1px solid rgba(255, 255, 255, .1);
+}
+
+.ai-assistant-form textarea {
+    flex: 1;
+    min-width: 0;
+    resize: vertical;
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #101018;
+    color: #fff;
+    font: inherit;
+    line-height: 1.45;
+}
+
+.ai-assistant-form textarea:focus {
+    outline: 2px solid rgba(167, 139, 250, .65);
+    outline-offset: 1px;
+}
+
+.ai-assistant-footnote {
+    margin: 0;
+    padding: 0 18px 12px;
+    color: #9996a7;
+    font-size: .68rem;
+    line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+    #btn-ai-assistant {
+        top: 62px !important;
+        bottom: auto;
+        left: 50%;
+        font-size: .8rem;
+    }
+
+    .ai-assistant-overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .ai-assistant-panel {
+        width: 100%;
+        height: min(88dvh, 780px);
+        border-radius: 18px 18px 0 0;
+    }
+
+    .ai-assistant-header {
+        padding: 14px 16px;
+    }
+
+    .ai-assistant-messages {
+        padding-right: 14px;
+        padding-left: 14px;
+    }
+
+    .ai-assistant-form {
+        padding: 10px 12px;
+    }
+
+    .ai-assistant-form button {
+        min-width: 44px;
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+}

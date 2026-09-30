@@ -491,6 +491,7 @@ class Editor {
     // ========================================
     initUI() {
         this.createEditorUI();
+        this.createAIAssistant();
         this.createToolbar();
         this.createPanels();
         this.createColorPicker();
@@ -520,6 +521,9 @@ class Editor {
             <button class="btn btn-icon btn-secondary editor-btn-corner editor-btn-tr" id="btn-settings" title="Settings">
                 <span class="material-symbols-outlined">settings</span>
             </button>
+            <button class="btn btn-secondary" id="btn-ai-assistant" type="button" title="Ask the Parkoreen AI map assistant" aria-label="Open AI map assistant" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:7px;white-space:nowrap;border-color:#8069dc;background:rgba(47,35,90,.94);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);">
+                <span class="material-symbols-outlined">auto_awesome</span><span>AI Assistant</span>
+            </button>
             <button class="btn btn-icon btn-secondary editor-btn-corner editor-btn-bl" id="btn-add" title="Add">
                 <span class="material-symbols-outlined">add</span>
             </button>
@@ -540,6 +544,246 @@ class Editor {
         this.ui.btnAdd = document.getElementById('btn-add');
         this.ui.btnLayers = document.getElementById('btn-layers');
         this.ui.btnStopTest = document.getElementById('btn-stop-test');
+    }
+
+    createAIAssistant() {
+        const overlay = document.createElement('section');
+        overlay.className = 'ai-assistant-overlay';
+        overlay.id = 'ai-assistant-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-labelledby', 'ai-assistant-title');
+        overlay.hidden = true;
+        overlay.innerHTML = `
+            <div class="ai-assistant-panel">
+                <header class="ai-assistant-header">
+                    <div><h2 id="ai-assistant-title"><span class="material-symbols-outlined">auto_awesome</span> Map Assistant</h2><p>GPT-5.6 Luna · edits are previewed before they change your map</p></div>
+                    <button class="btn btn-icon btn-ghost" type="button" data-ai-close aria-label="Close assistant"><span class="material-symbols-outlined">close</span></button>
+                </header>
+                <div class="ai-assistant-suggestions" aria-label="Example requests">
+                    <button type="button" data-ai-prompt="Build a beginner-friendly parkour level with a clear start, checkpoints, varied jumps, and an end goal.">Build a parkour level</button>
+                    <button type="button" data-ai-prompt="Add a hide-and-seek game mode using triggers and events. Explain how it works.">Add a game mode</button>
+                    <button type="button" data-ai-prompt="Review this map and suggest improvements to its flow and difficulty.">Review my map</button>
+                </div>
+                <div class="ai-assistant-messages" id="ai-assistant-messages" aria-live="polite"></div>
+                <div class="ai-assistant-pending hidden" id="ai-assistant-pending">
+                    <div><strong>Map changes ready</strong><span id="ai-assistant-change-count"></span></div>
+                    <button type="button" class="btn btn-accent" id="ai-assistant-apply">Apply reviewed edits</button>
+                    <ul class="ai-assistant-preview" id="ai-assistant-preview" aria-label="Proposed map edits"></ul>
+                </div>
+                <form class="ai-assistant-form" id="ai-assistant-form">
+                    <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
+                    <button type="submit" class="btn btn-accent" id="ai-assistant-send"><span class="material-symbols-outlined">send</span><span>Send</span></button>
+                </form>
+                <p class="ai-assistant-footnote">Your current map data is sent to the Parkoreen AI service for this request. Embedded image and audio data is omitted. Map changes are undoable.</p>
+            </div>`;
+        document.body.appendChild(overlay);
+        this.ui.aiOverlay = overlay;
+        this._aiConversation = [];
+        this._aiPendingMap = null;
+        this._aiPendingBase = null;
+        this.addAIAssistantMessage('assistant', 'Tell me what you want to build or change. I can work with level layout, objects, physics, plugins, and the map mechanics stored in triggers, events, and variables.');
+
+        document.getElementById('btn-ai-assistant').addEventListener('click', () => this.openAIAssistant());
+        overlay.querySelector('[data-ai-close]').addEventListener('click', () => this.closeAIAssistant());
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) this.closeAIAssistant();
+        });
+        overlay.querySelectorAll('[data-ai-prompt]').forEach(button => button.addEventListener('click', () => {
+            const input = document.getElementById('ai-assistant-input');
+            input.value = button.dataset.aiPrompt || '';
+            input.focus();
+        }));
+        document.getElementById('ai-assistant-form').addEventListener('submit', event => {
+            event.preventDefault();
+            this.sendAIAssistantMessage();
+        });
+        document.getElementById('ai-assistant-apply').addEventListener('click', () => this.applyAIAssistantChanges());
+        overlay.addEventListener('keydown', event => {
+            if (event.key === 'Escape') this.closeAIAssistant();
+        });
+    }
+
+    openAIAssistant() {
+        if (this.engine.state !== GameState.EDITOR) {
+            this.showToast('Return to the editor before using the map assistant.', 'info');
+            return;
+        }
+        this.ui.aiOverlay.hidden = false;
+        document.getElementById('ai-assistant-input').focus();
+    }
+
+    closeAIAssistant() {
+        if (this.ui.aiOverlay) this.ui.aiOverlay.hidden = true;
+    }
+
+    addAIAssistantMessage(role, content) {
+        const list = document.getElementById('ai-assistant-messages');
+        const message = document.createElement('article');
+        message.className = `ai-assistant-message ${role}`;
+        const label = document.createElement('strong');
+        label.textContent = role === 'user' ? 'You' : 'Parkoreen AI';
+        const text = document.createElement('p');
+        text.textContent = content;
+        message.append(label, text);
+        list.appendChild(message);
+        list.scrollTop = list.scrollHeight;
+        return message;
+    }
+
+    stripAIAssistantMedia(value) {
+        if (Array.isArray(value)) return value.map(item => this.stripAIAssistantMedia(item));
+        if (!value || typeof value !== 'object') return value;
+        const clean = {};
+        for (const [key, item] of Object.entries(value)) {
+            if (typeof item === 'string' && item.length > 1000 && /^data:[^,]+,/.test(item)) continue;
+            clean[key] = this.stripAIAssistantMedia(item);
+        }
+        return clean;
+    }
+
+    applyAIAssistantOperations(map, operations) {
+        if (!Array.isArray(operations) || operations.length > 250) throw new Error('The assistant returned too many changes. Ask it to make a smaller set of edits.');
+        const next = JSON.parse(JSON.stringify(map));
+        const allowedRoots = new Set(['objects', 'tilemaps', 'objectStamps', 'layerDefinitions', 'codeData', 'plugins', 'customBackground', 'music', 'background', 'defaultBlockColor', 'defaultSpikeColor', 'defaultTextColor', 'defaultPortalColor', 'defaultBouncerColor', 'showCoinCounter', 'cloudColorSky', 'cloudColorGalaxy', 'checkpointDefaultColor', 'checkpointActiveColor', 'checkpointTouchedColor', 'maxJumps', 'infiniteJumps', 'additionalAirjump', 'collideWithEachOther', 'mapName', 'dieLineY', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed', 'jumpForce', 'gravity', 'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds', 'spikeTouchbox', 'dropHurtOnly', 'storedDataType', 'persistCheckpoints']);
+        const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
+
+        for (const operation of operations) {
+            if (!operation || !['set', 'add', 'remove'].includes(operation.op) || !Array.isArray(operation.path) || operation.path.length < 1 || operation.path.length > 10) {
+                throw new Error('The assistant returned a change that could not be applied safely. Please ask it to try again.');
+            }
+            const path = operation.path.map(segment => String(segment));
+            if (!allowedRoots.has(path[0]) || path.some(segment => forbidden.has(segment))) throw new Error('The assistant tried to edit unsupported map data. Ask it to try again with map objects, settings, or mechanics.');
+            let parent = next;
+            for (const segment of path.slice(0, -1)) {
+                if (Array.isArray(parent)) {
+                    if (!/^\d+$/.test(segment) || Number(segment) >= parent.length) throw new Error('A suggested map object no longer exists.');
+                    parent = parent[Number(segment)];
+                } else if (parent && typeof parent === 'object' && Object.hasOwn(parent, segment)) {
+                    parent = parent[segment];
+                } else {
+                    throw new Error('The assistant referenced map data that is not present. Ask it to try again.');
+                }
+            }
+            const last = path[path.length - 1];
+            if (operation.op === 'add') {
+                if (!Array.isArray(parent?.[last])) throw new Error('The assistant can only add entries to map object, tilemap, or mechanics lists.');
+                const item = JSON.parse(operation.valueJson);
+                if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('The assistant returned an invalid list entry.');
+                parent[last].push(item);
+            } else if (Array.isArray(parent)) {
+                if (!/^\d+$/.test(last) || Number(last) >= parent.length) throw new Error('The assistant referenced an invalid list entry.');
+                if (operation.op === 'remove') parent.splice(Number(last), 1);
+                else parent[Number(last)] = JSON.parse(operation.valueJson);
+            } else if (parent && typeof parent === 'object') {
+                if (operation.op === 'remove') {
+                    if (!Object.hasOwn(parent, last)) throw new Error('The assistant referenced an invalid map setting.');
+                    delete parent[last];
+                } else {
+                    parent[last] = JSON.parse(operation.valueJson);
+                }
+            } else {
+                throw new Error('The assistant returned a change for invalid map data.');
+            }
+        }
+        if (!Array.isArray(next.objects) || next.objects.length > 20000 || JSON.stringify(next).length > 8 * 1024 * 1024) throw new Error('The proposed map is too large or incomplete to apply.');
+        return next;
+    }
+
+    async sendAIAssistantMessage() {
+        const input = document.getElementById('ai-assistant-input');
+        const sendButton = document.getElementById('ai-assistant-send');
+        const prompt = input.value.trim();
+        if (!prompt || sendButton.disabled) return;
+        const token = window.Auth?.getToken?.();
+        if (!token) {
+            this.addAIAssistantMessage('assistant', 'Please sign in to use the Map Assistant.');
+            return;
+        }
+        input.value = '';
+        this.addAIAssistantMessage('user', prompt);
+        this._aiPendingMap = null;
+        this._aiPendingBase = null;
+        document.getElementById('ai-assistant-pending').classList.add('hidden');
+        const baseMap = this.world.toJSON();
+        const mapForAI = this.stripAIAssistantMedia(baseMap);
+        const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map…');
+        sendButton.disabled = true;
+        try {
+            const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ prompt, conversation: this._aiConversation.slice(-8), map: mapForAI })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
+            const operations = Array.isArray(result.operations) ? result.operations : [];
+            waiting.querySelector('p').textContent = result.message || (operations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: (result.message || '').slice(0, 2000) });
+            this._aiConversation = this._aiConversation.slice(-8);
+            if (operations.length) {
+                this._aiPendingMap = this.applyAIAssistantOperations(baseMap, operations);
+                this._aiPendingBase = JSON.stringify(baseMap);
+                document.getElementById('ai-assistant-change-count').textContent = `${operations.length} proposed edit${operations.length === 1 ? '' : 's'} · review before applying`;
+                const preview = document.getElementById('ai-assistant-preview');
+                preview.replaceChildren();
+                for (const operation of operations.slice(0, 12)) {
+                    const row = document.createElement('li');
+                    const pathLabel = operation.path.map(part => /^\d+$/.test(part) ? `#${Number(part) + 1}` : part).join(' › ');
+                    let description = `${operation.op.toUpperCase()} · ${pathLabel}`;
+                    if (operation.op !== 'remove') {
+                        try {
+                            const value = JSON.parse(operation.valueJson);
+                            const valueLabel = typeof value === 'object' ? (value?.name || value?.mapName || value?.appearanceType || value?.type || 'map entry') : JSON.stringify(value);
+                            description += ` → ${String(valueLabel).slice(0, 90)}`;
+                        } catch (_) {}
+                    }
+                    row.textContent = description;
+                    preview.appendChild(row);
+                }
+                if (operations.length > 12) {
+                    const more = document.createElement('li');
+                    more.textContent = `…and ${operations.length - 12} more edits`;
+                    preview.appendChild(more);
+                }
+                document.getElementById('ai-assistant-pending').classList.remove('hidden');
+            }
+        } catch (error) {
+            waiting.querySelector('p').textContent = error.message || 'The map assistant could not complete that request.';
+        } finally {
+            sendButton.disabled = false;
+            input.focus();
+        }
+    }
+
+    async applyAIAssistantChanges() {
+        if (!this._aiPendingMap) return;
+        if (JSON.stringify(this.world.toJSON()) !== this._aiPendingBase) {
+            this._aiPendingMap = null;
+            document.getElementById('ai-assistant-pending').classList.add('hidden');
+            this.addAIAssistantMessage('assistant', 'Your map changed after I prepared those edits, so I cleared that preview. Ask me to make the changes again against the latest map.');
+            return;
+        }
+        const applyButton = document.getElementById('ai-assistant-apply');
+        applyButton.disabled = true;
+        try {
+            this.beginUndoTransaction();
+            this.world.fromJSON(this._aiPendingMap);
+            if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
+            this.updateBackground();
+            this.syncConfigPanel?.();
+            this.updateLayersList();
+            this.triggerMapChange();
+            this._aiPendingMap = null;
+            this._aiPendingBase = null;
+            document.getElementById('ai-assistant-pending').classList.add('hidden');
+            this.addAIAssistantMessage('assistant', 'Applied the map changes. You can undo them with Ctrl+Z (or ⌘Z on Mac).');
+        } catch (error) {
+            this.showToast(error.message || 'Could not apply the assistant changes.', 'error');
+        } finally {
+            this.endUndoTransaction();
+            applyButton.disabled = false;
+        }
     }
 
     createToolbar() {

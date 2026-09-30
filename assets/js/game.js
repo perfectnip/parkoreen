@@ -784,13 +784,9 @@ class Player {
                     } else if (direction === 'vertical' && !this._spikeHasAdjacentBlock(obj, world)) {
                         const flatBox = this.getSpikeFlat(obj);
                         if (this.boxIntersects(box, flatBox)) {
-                            if (!this._flatCollision) this._flatCollision = { collision: true };
-                            this._flatCollision.x = flatBox.x;
-                            this._flatCollision.y = flatBox.y;
-                            this._flatCollision.width = flatBox.width;
-                            this._flatCollision.height = flatBox.height;
-                            this._flatCollision.collision = obj.collision;
-                            collisions.push(this._flatCollision);
+                            // Preserve source metadata such as the object ID
+                            // for landing hooks and plugins.
+                            collisions.push({ ...obj, ...flatBox });
                         }
                     }
                 }
@@ -2963,10 +2959,10 @@ class SpatialHash {
         const y0 = Math.floor(y / cs);
         const x1 = Math.floor((x + w) / cs);
         const y1 = Math.floor((y + h) / cs);
-        // Use integer stamp for dedup — avoids Set allocation and hashing overhead
+        // Use integer stamps for deduplication. Each call returns a stable
+        // result array because gameplay queries may nest during iteration.
         const stamp = ++this._stamp;
-        const result = this._result || (this._result = []);
-        result.length = 0;
+        const result = [];
         for (let cx = x0; cx <= x1; cx++) {
             for (let cy = y0; cy <= y1; cy++) {
                 const cell = this.cells.get(this._key(cx, cy));
@@ -3826,9 +3822,7 @@ class World {
         this.rebuildSpatialHash();
         const spatialResults = this.spatialHash.query(x, y, w, h);
         if (!(w > 0 && h > 0) || this._tilemapCollisionCellCount === 0) return spatialResults;
-        // SpatialHash reuses its result buffer. Tilemap queries can nest during
-        // collision resolution, so give this combined result its own array.
-        const nearby = spatialResults.slice();
+        const nearby = spatialResults;
         const firstX = Math.floor(x / GRID_SIZE) * GRID_SIZE;
         const lastX = (Math.ceil((x + w) / GRID_SIZE) - 1) * GRID_SIZE;
         const firstY = Math.floor(y / GRID_SIZE) * GRID_SIZE;
@@ -5889,11 +5883,11 @@ class GameEngine {
         }
         
         if (window.PluginManager) {
-            if (!this._inputHookData) this._inputHookData = {};
-            this._inputHookData.player = this.localPlayer;
-            this._inputHookData.keys = k;
-            this._inputHookData.layout = layout;
-            window.PluginManager.executeHook('input.update', this._inputHookData);
+            window.PluginManager.executeHook('input.update', {
+                player: this.localPlayer,
+                keys: k,
+                layout
+            });
         }
     }
 

@@ -751,8 +751,8 @@ class PluginManager {
             try {
                 const result = hook.callback(data);
                 hook.consecutiveFailures = 0;
-                if (result !== undefined && result !== data) {
-                    Object.assign(data, result);
+                if (result !== undefined) {
+                    data = { ...data, ...result };
                 }
             } catch (e) {
                 hook.consecutiveFailures++;
