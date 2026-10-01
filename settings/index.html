@@ -243,10 +243,10 @@
 
             // Back button
             document.getElementById('btn-back').onclick = function() {
-                if (window.Navigation && typeof window.Navigation.toDashboard === 'function') {
-                    window.Navigation.toDashboard();
+                if (window.Navigation && typeof window.Navigation.toHome === 'function') {
+                    window.Navigation.toHome();
                 } else {
-                    window.location.href = '/parkoreen/dashboard/';
+                    window.location.href = '/parkoreen/index.html';
                 }
             };
             

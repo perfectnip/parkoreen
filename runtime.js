@@ -1719,6 +1719,10 @@ class EditorPrefs {
 // NAVIGATION
 // ============================================
 const Navigation = {
+    toHome() {
+        window.location.href = '/parkoreen/index.html';
+    },
+
     toDashboard() {
         window.location.href = '/parkoreen/dashboard/';
     },

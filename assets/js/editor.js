@@ -558,8 +558,18 @@ class Editor {
             <div class="ai-assistant-panel">
                 <header class="ai-assistant-header">
                     <div><h2 id="ai-assistant-title"><span class="material-symbols-outlined">auto_awesome</span> Map Assistant</h2><p>GPT-5.6 Luna · edits are previewed before they change your map</p></div>
-                    <button class="btn btn-icon btn-ghost" type="button" data-ai-close aria-label="Close assistant"><span class="material-symbols-outlined">close</span></button>
+                    <div class="ai-assistant-header-actions">
+                        <button type="button" class="btn btn-secondary" id="ai-assistant-new"><span class="material-symbols-outlined">add</span>New chat</button>
+                        <button class="btn btn-icon btn-ghost" type="button" data-ai-close aria-label="Close assistant"><span class="material-symbols-outlined">close</span></button>
+                    </div>
                 </header>
+                <div class="ai-assistant-layout">
+                    <aside class="ai-assistant-history" aria-label="Saved conversations">
+                        <div class="ai-assistant-history-title">Saved conversations</div>
+                        <div class="ai-assistant-thread-list" id="ai-assistant-thread-list"></div>
+                        <p class="ai-assistant-history-note">Saved in this browser for this map.</p>
+                    </aside>
+                    <div class="ai-assistant-chat">
                 <div class="ai-assistant-suggestions" aria-label="Example requests">
                     <button type="button" data-ai-prompt="Build a beginner-friendly parkour level with a clear start, checkpoints, varied jumps, and an end goal.">Build a parkour level</button>
                     <button type="button" data-ai-prompt="Add a hide-and-seek game mode using triggers and events. Explain how it works.">Add a game mode</button>
@@ -568,24 +578,31 @@ class Editor {
                 <div class="ai-assistant-messages" id="ai-assistant-messages" aria-live="polite"></div>
                 <div class="ai-assistant-pending hidden" id="ai-assistant-pending">
                     <div><strong>Map changes ready</strong><span id="ai-assistant-change-count"></span></div>
-                    <button type="button" class="btn btn-accent" id="ai-assistant-apply">Apply reviewed edits</button>
+                    <button type="button" class="btn btn-accent" id="ai-assistant-apply"><span class="material-symbols-outlined">check</span>Apply &amp; view map</button>
                     <ul class="ai-assistant-preview" id="ai-assistant-preview" aria-label="Proposed map edits"></ul>
                 </div>
                 <form class="ai-assistant-form" id="ai-assistant-form">
                     <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
                     <button type="submit" class="btn btn-accent" id="ai-assistant-send"><span class="material-symbols-outlined">send</span><span>Send</span></button>
                 </form>
-                <p class="ai-assistant-footnote">Your current map data is sent to the Parkoreen AI service for this request. Embedded image and audio data is omitted. Map changes are undoable.</p>
+                <p class="ai-assistant-footnote">Chats are saved in this browser. Your current map data is sent to the Parkoreen AI service for each request; embedded image and audio data is omitted. Proposed edits become visible after you choose Apply &amp; view map, and can be undone.</p>
+                    </div>
+                </div>
             </div>`;
         document.body.appendChild(overlay);
         this.ui.aiOverlay = overlay;
         this._aiConversation = [];
+        this._aiThreads = [];
+        this._aiCurrentThreadId = null;
+        this._aiStorageKey = this.getAIAssistantStorageKey();
         this._aiPendingMap = null;
         this._aiPendingBase = null;
-        this.addAIAssistantMessage('assistant', 'Tell me what you want to build or change. I can work with level layout, objects, physics, plugins, and the map mechanics stored in triggers, events, and variables.');
+        this._aiPendingOperations = null;
+        this.loadAIAssistantConversations();
 
         document.getElementById('btn-ai-assistant').addEventListener('click', () => this.openAIAssistant());
         overlay.querySelector('[data-ai-close]').addEventListener('click', () => this.closeAIAssistant());
+        document.getElementById('ai-assistant-new').addEventListener('click', () => this.startAIAssistantConversation());
         overlay.addEventListener('click', (event) => {
             if (event.target === overlay) this.closeAIAssistant();
         });
@@ -598,6 +615,12 @@ class Editor {
             event.preventDefault();
             this.sendAIAssistantMessage();
         });
+        document.getElementById('ai-assistant-input').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                document.getElementById('ai-assistant-form').requestSubmit();
+            }
+        });
         document.getElementById('ai-assistant-apply').addEventListener('click', () => this.applyAIAssistantChanges());
         overlay.addEventListener('keydown', event => {
             if (event.key === 'Escape') this.closeAIAssistant();
@@ -609,6 +632,7 @@ class Editor {
             this.showToast('Return to the editor before using the map assistant.', 'info');
             return;
         }
+        this.syncAIAssistantConversationScope();
         this.ui.aiOverlay.hidden = false;
         document.getElementById('ai-assistant-input').focus();
     }
@@ -617,7 +641,118 @@ class Editor {
         if (this.ui.aiOverlay) this.ui.aiOverlay.hidden = true;
     }
 
-    addAIAssistantMessage(role, content) {
+    getAIAssistantStorageKey() {
+        let account = 'guest';
+        try {
+            const user = window.Auth?.getUser?.();
+            account = user?.id || user?.username || user?.name || account;
+        } catch (_) {}
+        const mapIdentity = window.parkoreenEditorMapId || window.parkoreenCommunityMapId ||
+            window.currentPlayingLevel || this.world?.mechanicsSaveId || this.world?.mapName || 'map';
+        return `parkoreen_ai_chats_v1:${encodeURIComponent(String(account))}:${encodeURIComponent(String(mapIdentity))}`;
+    }
+
+    syncAIAssistantConversationScope() {
+        const storageKey = this.getAIAssistantStorageKey();
+        if (storageKey === this._aiStorageKey) return;
+        this._aiStorageKey = storageKey;
+        this._aiThreads = [];
+        this._aiCurrentThreadId = null;
+        this.loadAIAssistantConversations();
+    }
+
+    loadAIAssistantConversations() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(this._aiStorageKey) || '[]');
+            if (Array.isArray(saved)) {
+                this._aiThreads = saved.slice(0, 12).filter(thread => thread && typeof thread.id === 'string' && Array.isArray(thread.messages))
+                    .map(thread => ({
+                        id: thread.id,
+                        title: String(thread.title || 'Conversation').slice(0, 60),
+                        updatedAt: Number(thread.updatedAt) || Date.now(),
+                        messages: thread.messages.slice(-50).filter(message => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
+                            .map(message => ({ role: message.role, content: message.content.slice(0, 4000) })),
+                        conversation: Array.isArray(thread.conversation)
+                            ? thread.conversation.slice(-8).filter(message => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
+                                .map(message => ({ role: message.role, content: message.content.slice(0, 2000) }))
+                            : []
+                    }));
+            }
+        } catch (_) {
+            this._aiThreads = [];
+        }
+        if (!this._aiThreads.length) {
+            this.startAIAssistantConversation();
+            return;
+        }
+        this.selectAIAssistantConversation(this._aiThreads[0].id);
+    }
+
+    startAIAssistantConversation() {
+        const thread = {
+            id: globalThis.crypto?.randomUUID?.() || `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            title: 'New conversation',
+            updatedAt: Date.now(),
+            messages: [],
+            conversation: []
+        };
+        this._aiThreads.unshift(thread);
+        this._aiThreads = this._aiThreads.slice(0, 12);
+        this.selectAIAssistantConversation(thread.id);
+        this.addAIAssistantMessage('assistant', 'Tell me what you want to build or change. I can work with level layout, objects, physics, plugins, and map mechanics such as triggers, events, and variables.');
+    }
+
+    selectAIAssistantConversation(id) {
+        const thread = this._aiThreads.find(item => item.id === id);
+        if (!thread) return;
+        this._aiCurrentThreadId = thread.id;
+        this._aiConversation = thread.conversation.slice(-8);
+        this._aiPendingMap = null;
+        this._aiPendingBase = null;
+        this._aiPendingOperations = null;
+        document.getElementById('ai-assistant-pending').classList.add('hidden');
+        const messages = document.getElementById('ai-assistant-messages');
+        messages.replaceChildren();
+        thread.messages.forEach(message => this.addAIAssistantMessage(message.role, message.content, false));
+        this.renderAIAssistantConversationList();
+    }
+
+    persistAIAssistantMessage(role, content) {
+        const thread = this._aiThreads.find(item => item.id === this._aiCurrentThreadId);
+        if (!thread) return;
+        const text = String(content || '').slice(0, 4000);
+        thread.messages.push({ role, content: text });
+        thread.messages = thread.messages.slice(-50);
+        if (role === 'user' && thread.title === 'New conversation') thread.title = text.slice(0, 48) || 'New conversation';
+        thread.updatedAt = Date.now();
+        this.saveAIAssistantConversations();
+        this.renderAIAssistantConversationList();
+    }
+
+    saveAIAssistantConversations() {
+        try {
+            localStorage.setItem(this._aiStorageKey, JSON.stringify(this._aiThreads.slice(0, 12)));
+        } catch (_) {
+            this.showToast('Could not save assistant conversations in this browser.', 'error');
+        }
+    }
+
+    renderAIAssistantConversationList() {
+        const list = document.getElementById('ai-assistant-thread-list');
+        if (!list) return;
+        list.replaceChildren();
+        for (const thread of this._aiThreads) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `ai-assistant-thread${thread.id === this._aiCurrentThreadId ? ' active' : ''}`;
+            button.textContent = thread.title;
+            button.title = `${thread.title} · ${new Date(thread.updatedAt).toLocaleDateString()}`;
+            button.addEventListener('click', () => this.selectAIAssistantConversation(thread.id));
+            list.appendChild(button);
+        }
+    }
+
+    addAIAssistantMessage(role, content, persist = true) {
         const list = document.getElementById('ai-assistant-messages');
         const message = document.createElement('article');
         message.className = `ai-assistant-message ${role}`;
@@ -628,6 +763,7 @@ class Editor {
         message.append(label, text);
         list.appendChild(message);
         list.scrollTop = list.scrollHeight;
+        if (persist) this.persistAIAssistantMessage(role, content);
         return message;
     }
 
@@ -690,6 +826,54 @@ class Editor {
         return next;
     }
 
+    focusAIAssistantChanges(baseMap, nextMap, operations) {
+        if (!operations.some(operation => ['objects', 'tilemaps'].includes(operation?.path?.[0]))) return;
+        const changedObjects = new Set();
+        const changedTilemaps = new Set();
+        for (const operation of operations) {
+            const root = operation?.path?.[0];
+            const index = Number(operation?.path?.[1]);
+            if (root === 'objects') {
+                if (Number.isInteger(index)) changedObjects.add(index);
+                else (nextMap.objects || []).forEach((_, i) => changedObjects.add(i));
+            } else if (root === 'tilemaps') {
+                if (Number.isInteger(index)) changedTilemaps.add(index);
+                else (nextMap.tilemaps || []).forEach((_, i) => changedTilemaps.add(i));
+            }
+        }
+        const bounds = [];
+        const addBounds = (x, y, width, height) => {
+            x = Number(x); y = Number(y); width = Number(width); height = Number(height);
+            if ([x, y, width, height].every(Number.isFinite) && width >= 0 && height >= 0) {
+                bounds.push({ left: x, top: y, right: x + Math.max(width, 1), bottom: y + Math.max(height, 1) });
+            }
+        };
+        for (const index of changedObjects) {
+            const object = nextMap.objects?.[index] || baseMap.objects?.[index];
+            if (object) addBounds(object.x, object.y, object.width ?? 32, object.height ?? 32);
+        }
+        for (const index of changedTilemaps) {
+            const layer = nextMap.tilemaps?.[index] || baseMap.tilemaps?.[index];
+            if (!layer) continue;
+            if (Array.isArray(layer.cells) && layer.cells.length) {
+                for (const cell of layer.cells) addBounds(cell.x, cell.y, cell.width ?? layer.cellWidth ?? 32, cell.height ?? layer.cellHeight ?? 32);
+            } else {
+                addBounds(layer.x, layer.y, layer.width ?? 32, layer.height ?? 32);
+            }
+        }
+        if (!bounds.length) return;
+        const left = Math.min(...bounds.map(item => item.left));
+        const top = Math.min(...bounds.map(item => item.top));
+        const right = Math.max(...bounds.map(item => item.right));
+        const bottom = Math.max(...bounds.map(item => item.bottom));
+        const camera = this.camera;
+        const padding = 128;
+        const fitZoom = Math.min(camera.width / (right - left + padding * 2), camera.height / (bottom - top + padding * 2));
+        camera.setZoom(Math.max(camera.minZoom, Math.min(camera.defaultZoom, fitZoom)));
+        camera.targetX = camera.x = (left + right) / 2 - camera.width / 2 / camera.zoom;
+        camera.targetY = camera.y = (top + bottom) / 2 - camera.height / 2 / camera.zoom;
+    }
+
     async sendAIAssistantMessage() {
         const input = document.getElementById('ai-assistant-input');
         const sendButton = document.getElementById('ai-assistant-send');
@@ -704,11 +888,14 @@ class Editor {
         this.addAIAssistantMessage('user', prompt);
         this._aiPendingMap = null;
         this._aiPendingBase = null;
+        this._aiPendingOperations = null;
         document.getElementById('ai-assistant-pending').classList.add('hidden');
         const baseMap = this.world.toJSON();
         const mapForAI = this.stripAIAssistantMedia(baseMap);
         const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map…');
         sendButton.disabled = true;
+        document.getElementById('ai-assistant-new').disabled = true;
+        document.querySelectorAll('#ai-assistant-thread-list button').forEach(button => { button.disabled = true; });
         try {
             const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
                 method: 'POST',
@@ -718,12 +905,17 @@ class Editor {
             const result = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
             const operations = Array.isArray(result.operations) ? result.operations : [];
-            waiting.querySelector('p').textContent = result.message || (operations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
-            this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: (result.message || '').slice(0, 2000) });
+            const assistantReply = result.message || (operations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            waiting.querySelector('p').textContent = assistantReply;
+            this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: assistantReply.slice(0, 2000) });
             this._aiConversation = this._aiConversation.slice(-8);
+            const thread = this._aiThreads.find(item => item.id === this._aiCurrentThreadId);
+            if (thread) thread.conversation = this._aiConversation.slice(-8);
+            this.persistAIAssistantMessage('assistant', assistantReply);
             if (operations.length) {
                 this._aiPendingMap = this.applyAIAssistantOperations(baseMap, operations);
                 this._aiPendingBase = JSON.stringify(baseMap);
+                this._aiPendingOperations = operations;
                 document.getElementById('ai-assistant-change-count').textContent = `${operations.length} proposed edit${operations.length === 1 ? '' : 's'} · review before applying`;
                 const preview = document.getElementById('ai-assistant-preview');
                 preview.replaceChildren();
@@ -749,9 +941,13 @@ class Editor {
                 document.getElementById('ai-assistant-pending').classList.remove('hidden');
             }
         } catch (error) {
-            waiting.querySelector('p').textContent = error.message || 'The map assistant could not complete that request.';
+            const errorMessage = error.message || 'The map assistant could not complete that request.';
+            waiting.querySelector('p').textContent = errorMessage;
+            this.persistAIAssistantMessage('assistant', errorMessage);
         } finally {
             sendButton.disabled = false;
+            document.getElementById('ai-assistant-new').disabled = false;
+            document.querySelectorAll('#ai-assistant-thread-list button').forEach(button => { button.disabled = false; });
             input.focus();
         }
     }
@@ -760,6 +956,8 @@ class Editor {
         if (!this._aiPendingMap) return;
         if (JSON.stringify(this.world.toJSON()) !== this._aiPendingBase) {
             this._aiPendingMap = null;
+            this._aiPendingBase = null;
+            this._aiPendingOperations = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
             this.addAIAssistantMessage('assistant', 'Your map changed after I prepared those edits, so I cleared that preview. Ask me to make the changes again against the latest map.');
             return;
@@ -767,17 +965,23 @@ class Editor {
         const applyButton = document.getElementById('ai-assistant-apply');
         applyButton.disabled = true;
         try {
+            const baseMap = JSON.parse(this._aiPendingBase);
+            const nextMap = this._aiPendingMap;
+            const operations = this._aiPendingOperations || [];
             this.beginUndoTransaction();
-            this.world.fromJSON(this._aiPendingMap);
+            this.world.fromJSON(nextMap);
             if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
             this.updateBackground();
             this.syncConfigPanel?.();
             this.updateLayersList();
             this.triggerMapChange();
+            this.focusAIAssistantChanges(baseMap, nextMap, operations);
             this._aiPendingMap = null;
             this._aiPendingBase = null;
+            this._aiPendingOperations = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
-            this.addAIAssistantMessage('assistant', 'Applied the map changes. You can undo them with Ctrl+Z (or ⌘Z on Mac).');
+            this.closeAIAssistant();
+            this.showToast('AI edits applied and centered on the changed map content. Undo with Ctrl+Z (or ⌘Z on Mac).', 'success');
         } catch (error) {
             this.showToast(error.message || 'Could not apply the assistant changes.', 'error');
         } finally {
@@ -2240,9 +2444,9 @@ class Editor {
                         <span class="material-symbols-outlined">help</span>
                         How To Play
                     </button>
-                    <button class="btn btn-primary" id="settings-back-to-dashboard" style="width: 100%;">
+                    <button class="btn btn-primary" id="settings-back-to-home" style="width: 100%;">
                         <span class="material-symbols-outlined">home</span>
-                        Back to Dashboard
+                        Back to Levels
                     </button>
                 </div>
             </div>
@@ -6566,13 +6770,13 @@ class Editor {
             }
         });
         
-        // Back to Dashboard button
-        document.getElementById('settings-back-to-dashboard').addEventListener('click', () => {
+        // Back to Levels button
+        document.getElementById('settings-back-to-home').addEventListener('click', () => {
             if (confirm('Are you sure you want to leave? Unsaved changes will be lost.')) {
-                if (typeof Navigation !== 'undefined') {
-                    Navigation.toDashboard();
+                if (typeof Navigation !== 'undefined' && typeof Navigation.toHome === 'function') {
+                    Navigation.toHome();
                 } else {
-                    window.location.href = '/parkoreen/dashboard/';
+                    window.location.href = '/parkoreen/index.html';
                 }
             }
         });
