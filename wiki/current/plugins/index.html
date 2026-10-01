@@ -35,11 +35,11 @@
     <table class="wiki-table">
       <thead><tr><th>Feature</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td>Mantis Claw</td><td>Player can cling to and jump off walls.</td></tr>
+        <tr><td>Mantis Claw</td><td>Player can cling to eligible solid walls and jump off them. Hazards and non-wall objects, including spikes, text, teleportals, bouncers, and coins, cannot be used as claw surfaces.</td></tr>
         <tr><td>Monarch Wings</td><td>Enable a double jump and choose the number of extra jumps. Tune the upward force from 0.5× to 2× the map's normal jump force (default 0.85×).</td></tr>
         <tr><td>Attack</td><td>Player can slash in a directional arc. Choose Base or Quick Slash speed in Map Config; camera follow smoothness is set in the general camera settings.</td></tr>
         <tr><td>Pogo</td><td>Attacking downward onto an enabled solid block or tilemap cell, spike, or Soul Statue bounces the player upward. Solid-surface pogo requires the projected feet sweep to reach the surface from above and places the feet on that contact plane before rebound; the long nail hitbox alone cannot trigger an early bounce while the player is still airborne above it.</td></tr>
-        <tr><td>Pogo strength</td><td>Map Config sets the bounce to 0.5–2× normal jump strength; the default is 1.2×.</td></tr>
+        <tr><td>Pogo strength</td><td>Map Config sets the bounce force from 0.5× to at most 0.71× normal jump force. The default 0.71× reaches about half the height of a maximum jump; smaller values produce a shorter rebound. Legacy settings above 0.71× are capped.</td></tr>
         <tr><td>Soul Statue</td><td>Nail hits restore soul energy and support downward pogo attacks, whether placed as a map object or as an obstacle acting type.</td></tr>
         <tr><td>Visual effects</td><td>Map settings can turn nail slashes, nail-hit sparks, lateral shards and an upward rebound flare from down-slash pogo impacts, directional damage flashes after HP loss, landing dust, Soul Statue motes, camera shake, dash trails, and charge/Focus auras on or off, tune hit and landing shake, and choose effect colors. Completing a Focus heal releases a short pulse with radial motes in the configured heal color.</td></tr>
       </tbody>

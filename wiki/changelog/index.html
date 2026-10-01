@@ -254,6 +254,8 @@
 
     <h3>Gameplay &amp; plugins</h3>
     <ul>
+      <li><strong>Hollow Knight Mantis Claw</strong>: spikes are excluded as wall-cling surfaces, including imported spikes identified through their appearance type.</li>
+      <li><strong>Hollow Knight pogo height</strong>: default rebound force is 0.71× maximum jump force (about half its height), and the setting caps stronger legacy values at that limit.</li>
       <li><strong>Named plugin assets</strong>: API v1 manifests can declare images, sprite sheets, JSON, and other plugin files. Preflight and review packages include the declared files, and <code>ctx.api.getAssetUrl(name)</code> resolves only declared assets with the plugin release version in the URL.</li>
       <li><strong>Circular ground colliders</strong>: ground blocks can use a circle solid shape, resolved against the player's box on horizontal and vertical movement. The Hollow Knight wall-cling and super-dash checks and HP safe-ground recovery respect the same collider. Box remains the default; one-way platforms are box-only. The tester touchbox overlay displays circular colliders.</li>
       <li><strong>Plugin packages for review</strong>: <code>tools/package-plugin.mjs</code> validates a plugin before writing a bounded ZIP containing only <code>plugin.json</code> and manifest-declared runtime assets, with sizes and SHA-256 hashes in <code>plugin-package.json</code>. <code>tools/verify-plugin-package.mjs</code> checks the ZIP structure, safe paths, file list, sizes, CRCs, and hashes without extracting or executing code. Hashes detect package corruption but do not authenticate its author. Packages are for review and transfer, not installation; plugin execution remains limited to reviewed bundled code.</li>
@@ -284,6 +286,7 @@
 
     <h3>Clouds &amp; backgrounds</h3>
     <ul>
+      <li><strong>Background presets</strong>: add Misty Mountains, Pine Forest, Quiet Coast, Desert Dunes, and Twilight Ruins. The editor offers image previews for each background.</li>
       <li>More <strong>cloud SVG</strong> variants and loader updates.</li>
       <li>Grid + cloud rendering fixes.</li>
     </ul>
