@@ -3,7 +3,7 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'parkoreen-v243';
+const CACHE_NAME = 'parkoreen-v244';
 const ASSETS_TO_CACHE = [
     '/parkoreen/',
     '/parkoreen/index.html',
@@ -101,6 +101,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
+    // Cache API keys must use HTTP(S). Browser extensions can issue requests
+    // through a controlled page, but chrome-extension: URLs cannot be cached.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return;
+    }
+
     // Skip non-GET requests
     if (event.request.method !== 'GET') {
         return;
@@ -129,16 +135,13 @@ self.addEventListener('fetch', (event) => {
                     // Fetch in background to update cache
                     event.waitUntil(
                         fetch(event.request)
-                            .then((networkResponse) => {
-                                if (networkResponse.ok) {
-                                    caches.open(CACHE_NAME)
-                                        .then((cache) => {
-                                            cache.put(event.request, networkResponse.clone());
-                                        });
-                                }
+                            .then(async (networkResponse) => {
+                                if (networkResponse.status !== 200) return;
+                                const cache = await caches.open(CACHE_NAME);
+                                await cache.put(event.request, networkResponse.clone());
                             })
                             .catch(() => {
-                                // Network failed, but we have cache
+                                // Network or cache write failed; keep serving the cached response.
                             })
                     );
                     return cachedResponse;
@@ -150,13 +153,13 @@ self.addEventListener('fetch', (event) => {
                         // Cache the response for future (only cache complete 200 responses)
                         if (networkResponse.ok && networkResponse.status === 200) {
                             const responseToCache = networkResponse.clone();
-                            caches.open(CACHE_NAME)
-                                .then((cache) => {
-                                    cache.put(event.request, responseToCache);
-                                })
-                                .catch(() => {
-                                    // Ignore cache errors
-                                });
+                            event.waitUntil(
+                                caches.open(CACHE_NAME)
+                                    .then((cache) => cache.put(event.request, responseToCache))
+                                    .catch(() => {
+                                        // Ignore cache errors; the network response still succeeds.
+                                    })
+                            );
                         }
                         return networkResponse;
                     })
