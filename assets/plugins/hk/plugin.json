@@ -57,10 +57,10 @@
         "pogoBouncePower": {
             "type": "number",
             "label": "Pogo Bounce Strength",
-            "description": "Upward strength after a downward nail hit, relative to normal jump force.",
-            "default": 1.2,
+            "description": "Upward strength after a downward nail hit, relative to normal jump force. 0.71 reaches about half the maximum jump height.",
+            "default": 0.71,
             "min": 0.5,
-            "max": 2
+            "max": 0.71
         },
         "monarchWing": {
             "type": "boolean",

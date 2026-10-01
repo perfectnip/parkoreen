@@ -936,6 +936,51 @@ a:hover {
     background-image: url('/parkoreen/assets/png/bg_galaxy.png');
 }
 
+.game-bg.misty-mountains { background-image: url('/parkoreen/assets/png/backgrounds/misty-mountains.jpg'); }
+.game-bg.pine-forest-haze { background-image: url('/parkoreen/assets/png/backgrounds/pine-forest-haze.jpg'); }
+.game-bg.quiet-coast { background-image: url('/parkoreen/assets/png/backgrounds/quiet-coast.jpg'); }
+.game-bg.desert-dunes { background-image: url('/parkoreen/assets/png/backgrounds/desert-dunes.jpg'); }
+.game-bg.twilight-ruins { background-image: url('/parkoreen/assets/png/backgrounds/twilight-ruins.jpg'); }
+
+.background-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.background-preset {
+    min-width: 0;
+    padding: 4px;
+    overflow: hidden;
+    color: var(--text-primary);
+    text-align: left;
+    background: var(--surface);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.background-preset:hover,
+.background-preset.selected { border-color: var(--primary); }
+
+.background-preset img {
+    display: block;
+    width: 100%;
+    height: 58px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.background-preset span {
+    display: block;
+    padding: 5px 2px 2px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* ====================================
    EDITOR UI
    ==================================== */

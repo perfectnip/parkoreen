@@ -1041,8 +1041,22 @@ class Editor {
                         <select class="form-select" id="config-background">
                             <option value="sky">Sky</option>
                             <option value="galaxy">Galaxy</option>
-                                <option value="custom">Custom</option>
+                            <option value="misty-mountains">Misty Mountains</option>
+                            <option value="pine-forest-haze">Pine Forest</option>
+                            <option value="quiet-coast">Quiet Coast</option>
+                            <option value="desert-dunes">Desert Dunes</option>
+                            <option value="twilight-ruins">Twilight Ruins</option>
+                            <option value="custom">Custom</option>
                         </select>
+                        <div class="background-preset-grid" id="background-preset-grid" role="group" aria-label="Background previews">
+                            <button type="button" class="background-preset" data-background="sky" aria-label="Select Sky background"><img src="assets/png/bg_sky.png" alt=""><span>Sky</span></button>
+                            <button type="button" class="background-preset" data-background="galaxy" aria-label="Select Galaxy background"><img src="assets/png/bg_galaxy.png" alt=""><span>Galaxy</span></button>
+                            <button type="button" class="background-preset" data-background="misty-mountains" aria-label="Select Misty Mountains background"><img src="assets/png/backgrounds/misty-mountains.jpg" alt=""><span>Misty Mountains</span></button>
+                            <button type="button" class="background-preset" data-background="pine-forest-haze" aria-label="Select Pine Forest background"><img src="assets/png/backgrounds/pine-forest-haze.jpg" alt=""><span>Pine Forest</span></button>
+                            <button type="button" class="background-preset" data-background="quiet-coast" aria-label="Select Quiet Coast background"><img src="assets/png/backgrounds/quiet-coast.jpg" alt=""><span>Quiet Coast</span></button>
+                            <button type="button" class="background-preset" data-background="desert-dunes" aria-label="Select Desert Dunes background"><img src="assets/png/backgrounds/desert-dunes.jpg" alt=""><span>Desert Dunes</span></button>
+                            <button type="button" class="background-preset" data-background="twilight-ruins" aria-label="Select Twilight Ruins background"><img src="assets/png/backgrounds/twilight-ruins.jpg" alt=""><span>Twilight Ruins</span></button>
+                        </div>
                     </div>
                     
                         <!-- Cloud Colors -->
@@ -1623,8 +1637,8 @@ class Editor {
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="config-hk-pogo-bounce-power">Pogo Bounce Strength</label>
-                            <input type="number" class="form-input" id="config-hk-pogo-bounce-power" min="0.5" max="2" step="0.1" value="1.2">
-                            <small style="color: #888; font-size: 11px;">Upward bounce after a downward nail hit, relative to normal jump strength.</small>
+                            <input type="number" class="form-input" id="config-hk-pogo-bounce-power" min="0.5" max="0.71" step="0.01" value="0.71">
+                            <small style="color: #888; font-size: 11px;">0.71 reaches about half the maximum jump height after a downward nail hit.</small>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="config-hk-nail-speed">Nail Attack Speed</label>
@@ -5493,7 +5507,16 @@ class Editor {
             }
 
             this.updateBackground();
+            this.syncBackgroundPresetSelection();
             this.triggerMapChange();
+        });
+
+        document.querySelectorAll('.background-preset').forEach((button) => {
+            button.addEventListener('click', () => {
+                const bgSelect = document.getElementById('config-background');
+                bgSelect.value = button.dataset.background;
+                bgSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            });
         });
         
         // Cloud colors
@@ -5958,7 +5981,7 @@ class Editor {
         document.getElementById('config-hk-pogo-bounce-power')?.addEventListener('change', (e) => {
             this.ensureHKConfig();
             const value = Number.parseFloat(e.target.value);
-            this.world.plugins.hk.pogoBouncePower = Math.max(0.5, Math.min(2, Number.isFinite(value) ? value : 1.2));
+            this.world.plugins.hk.pogoBouncePower = Math.max(0.5, Math.min(0.71, Number.isFinite(value) ? value : 0.71));
             e.target.value = this.world.plugins.hk.pogoBouncePower;
             this.triggerMapChange();
         });
@@ -11157,6 +11180,7 @@ class Editor {
         // Background
         const bgSelect = document.getElementById('config-background');
         if (bgSelect) bgSelect.value = this.world.background;
+        this.syncBackgroundPresetSelection();
         
         // Colors
         const blockColor = document.getElementById('config-block-color');
@@ -11431,7 +11455,7 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         const hk = this.world.plugins?.hk;
         if (hkGravity) hkGravity.value = hk?.defaultGravity ?? 1.14;
         if (hkMaxSoul) hkMaxSoul.value = hk?.maxSoul ?? 99;
-        if (hkPogoBouncePower) hkPogoBouncePower.value = hk?.pogoBouncePower ?? 1.2;
+        if (hkPogoBouncePower) hkPogoBouncePower.value = Math.min(0.71, hk?.pogoBouncePower ?? 0.71);
         if (hkNailSpeed) hkNailSpeed.value = hk?.nailSpeed === 'quickSlash' ? 'quickSlash' : 'base';
         if (hkMonarchWing) hkMonarchWing.checked = hk?.monarchWing ?? false;
         if (hkMonarchWingAmount) hkMonarchWingAmount.value = hk?.monarchWingAmount ?? 1;
@@ -11464,6 +11488,15 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
         this.updateZoneButtonState();
     }
     
+    syncBackgroundPresetSelection() {
+        const selectedBackground = this.world?.background;
+        document.querySelectorAll('.background-preset').forEach((button) => {
+            const selected = button.dataset.background === selectedBackground;
+            button.classList.toggle('selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+        });
+    }
+
     syncCustomBackgroundUI() {
         const customOptions = document.getElementById('custom-bg-options');
         const dropzone = document.getElementById('custom-bg-dropzone');

@@ -17,7 +17,7 @@ const HK_DEFAULTS = {
     attackCooldown: 210, // ms (base: 410ms total, quickSlash: 250ms total)
     nailSpeed: 'base', // 'base' (0.41s) or 'quickSlash' (0.25s)
     attackRange: 38,
-    pogoBouncePower: 1.2, // Fraction of normal jump (higher than normal jump for satisfying bounce)
+    pogoBouncePower: 0.7071067812, // Velocity ratio for half the maximum jump height
     monarchWingJumpPower: 0.85, // Fraction of normal jump
     slashEffects: true,
     impactEffects: true,

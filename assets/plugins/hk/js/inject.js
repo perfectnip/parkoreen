@@ -493,7 +493,7 @@
                         };
                         const configuredPogoPower = config.pogoBouncePower;
                         const pogoMultiplier = Number.isFinite(configuredPogoPower)
-                            ? Math.max(0.5, Math.min(2, configuredPogoPower))
+                            ? Math.max(0.5, Math.min(0.71, configuredPogoPower))
                             : HK_DEFAULTS.pogoBouncePower;
                         player.vy = worldJumpForce * pogoMultiplier;
                         player.monarchWingsUsed = 0;
@@ -1390,7 +1390,10 @@
         for (let i = 0; i < nearby.length; i++) {
             const obj = nearby[i];
             if (!obj.collision) continue;
-            if (obj.actingType === 'text' || obj.actingType === 'teleportal' || obj.actingType === 'bouncer' || obj.appearanceType === 'coin') continue;
+            // Spikes are hazards, not climbable wall surfaces. Check both
+            // fields because imported/legacy objects may only set appearanceType.
+            if (obj.actingType === 'text' || obj.actingType === 'teleportal' || obj.actingType === 'bouncer' ||
+                obj.actingType === 'spike' || obj.appearanceType === 'spike' || obj.appearanceType === 'coin') continue;
             if (colliderIntersectsBox(player, _wallBox, obj)) return direction;
         }
         return 0;
