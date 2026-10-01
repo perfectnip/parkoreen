@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Editor — Current — Parkoreen Guide</title>
+  <title>Editor — V0.6 — Parkoreen Guide</title>
   <link rel="stylesheet" href="../../wiki.css">
   <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
@@ -13,22 +13,30 @@
     <span class="topbar-sep">/</span>
     <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
     <span class="topbar-sep">/</span>
-    <a class="topbar-crumb" href="..">Current</a>
+    <a class="topbar-crumb" href="..">V0.6</a>
     <span class="topbar-sep">/</span>
     <span class="topbar-crumb">Editor</span>
     <a class="topbar-home" href="../../..">← Parkoreen</a>
     <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
   </div>
   <div class="page-wrap">
-    <a class="back-link" href="..">← Current Overview</a>
+    <a class="back-link" href="..">← V0.6 Overview</a>
     <div class="page-header">
-      <span class="version-badge">Current</span>
+      <span class="version-badge">V0.6</span>
       <h1>🖊 Editor</h1>
-      <p class="subtitle">All editor tools, multi-select, keyboard shortcuts, and workflow in the current version.</p>
+      <p class="subtitle">All editor tools, AI assistance, multi-select, keyboard shortcuts, and workflow in V0.6.</p>
     </div>
 
     <h2>Grid &amp; snapping</h2>
     <p>All objects snap to a <strong>32×32 px grid</strong>. Grid lines are visible on the canvas in edit mode.</p>
+
+    <h2>Open the Level Editor</h2>
+    <p>From the Parkoreen home page, choose <strong>Level Editor</strong> in the top menu or open the menu panel and select <strong>Level Editor</strong>. Use <strong>My Maps Dashboard</strong> when you want to manage your saved maps. The Home button returns to the level list.</p>
+
+    <h2>AI Map Assistant</h2>
+    <p>In the editor, choose <strong>AI Assistant</strong> to ask for help creating or changing a map. You can request layout edits, object or map-setting changes, or help with Mechanics such as triggers and Events. The assistant uses the map data as context; embedded image and audio data are omitted from the request. You must be signed in, and the site must have its AI service configured.</p>
+    <p>When the assistant proposes edits, review the change list and choose <strong>Apply &amp; view map</strong>. The editor applies the preview, closes the assistant, and centers the camera on the changed objects or tile cells when possible. Use <kbd>Ctrl</kbd>+<kbd>Z</kbd> on Windows/Linux or <kbd>⌘</kbd>+<kbd>Z</kbd> on Mac to undo. A response without proposed edits only adds chat guidance; it does not change the map.</p>
+    <p>Use <strong>New chat</strong> to begin another conversation or choose a saved conversation from the history list. Conversations are stored in this browser, separately for each account and map. They do not sync to other browsers or devices, and clearing site storage removes them.</p>
 
     <h2>Object layers</h2>
     <p>Open <strong>Layers</strong> to manage named draw layers and assign visual objects to them. The built-in depths remain compatible with existing maps: <code>0</code> behind the player, <code>1</code> at player depth (drawn just below the player), and <code>2</code> above the player. Use the add buttons to create custom layers on either side of the player, then rename or remove them. Custom layers can set separate horizontal and vertical parallax factors from <code>0</code> to <code>2</code>; lower values move scenery more slowly than the camera, and <code>1</code> keeps normal camera movement. The editor keeps all layers aligned for precise placement; parallax is applied during Play and Test. Zones and buttons remain visible overlays. Draw layers do not change collision. Layer names, parallax settings, and object assignments survive map save/load and <code>.pkrn</code> export/import.</p>
