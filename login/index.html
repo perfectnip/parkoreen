@@ -135,6 +135,8 @@
                     console.error('[Login] Error:', err);
                     if (err && err.message && err.message.startsWith('Login timed out')) {
                         toastError('Timed Out. Please check your connection and try again.');
+                    } else if (err && err.message && err.message.startsWith('Network error')) {
+                        toastError('The login service is temporarily unavailable. Please try again later.');
                     } else {
                         // Show generic error for security, but log actual error for debugging
                         toastError('The username or password you entered is incorrect.');
