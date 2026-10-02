@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embedding Parkoreen — V0.6 Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar"><a class="topbar-logo" href="../../../">Parkoreen</a><span class="topbar-sep">/</span><a class="topbar-logo topbar-wiki" href="../../">Guide</a><span class="topbar-sep">/</span><a class="topbar-logo" href="..">V0.6</a><span class="topbar-sep">/</span><span class="topbar-crumb">Embedding</span><a class="topbar-home" href="../../../">← Parkoreen</a><button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'☾ Dark':'☀ Light';})()">☀ Light</button></div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Guide</a>
+    <div class="page-header"><span class="version-badge">V0.6</span><h1>Embedding Parkoreen</h1><p class="subtitle">Place the game itself in an iframe on a page hosted at the same origin.</p></div>
+    <h2>Embed the game root</h2>
+    <p>Use the deployed game URL directly. There is no separate wrapper page:</p>
+    <pre><code>&lt;iframe
+  src="https://perfectnip.github.io/parkoreen/"
+  title="Parkoreen"
+  width="100%"
+  height="720"
+  style="border:0"
+  allow="fullscreen"
+  allowfullscreen&gt;
+&lt;/iframe&gt;</code></pre>
+    <p>Adjust the height to fit your page. On small screens, use a responsive height such as <code>min-height: 80vh</code>. The game adapts its controls and layout to the available device and input.</p>
+    <h2>Same-origin requirements</h2>
+    <p>For the parent page and game to share browser storage or communicate with each other, they must have the same scheme, hostname, and port. A page hosted at <code>https://perfectnip.github.io/parkoreen/</code> can embed the game root at that same origin. A page on a different hostname is cross-origin; the game can still be framed when the host allows it, but browser same-origin storage and direct parent-page access are unavailable.</p>
+    <p>Parkoreen keeps its internal page navigation inside the iframe. The same-origin game pages can access the same browser storage, including locally saved settings and level progress. Account-backed services still use the game’s configured backend.</p>
+    <h2>Test your embed</h2>
+    <ol>
+      <li>Open the parent page from its deployed same-origin URL, not from a <code>file://</code> path.</li>
+      <li>Confirm the frame is tall enough for the game and its menus.</li>
+      <li>Navigate between the home screen, levels, and editor to confirm the frame remains in place.</li>
+      <li>On touch devices, check that the touch controls are not covered or clipped by the parent page.</li>
+    </ol>
+    <p>Embedding does not expose a supported API for controlling the game from a parent page. For map sharing, hosting, and room codes, see <a href="../community/">Community Maps and Lobbies</a>.</p>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>
