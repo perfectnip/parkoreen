@@ -576,8 +576,9 @@ class Editor {
                 </div>
                 <div class="ai-assistant-messages" id="ai-assistant-messages" aria-live="polite"></div>
                 <div class="ai-assistant-pending hidden" id="ai-assistant-pending">
-                    <div><strong id="ai-assistant-result-title">Map updated</strong><span id="ai-assistant-change-count"></span></div>
-                    <button type="button" class="btn btn-secondary" id="ai-assistant-apply"><span class="material-symbols-outlined">undo</span>Undo AI edit</button>
+                    <div class="ai-assistant-progress-copy"><strong id="ai-assistant-result-title">AI is building on your map</strong><span id="ai-assistant-change-count"></span><span class="ai-assistant-progress-track"><span id="ai-assistant-progress-bar"></span></span></div>
+                    <button type="button" class="btn btn-accent" id="ai-assistant-accept"><span class="material-symbols-outlined">check</span>Accept edit</button>
+                    <button type="button" class="btn btn-secondary hidden" id="ai-assistant-undo"><span class="material-symbols-outlined">undo</span>Undo AI edit</button>
                 </div>
                 <form class="ai-assistant-form" id="ai-assistant-form">
                     <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
@@ -596,6 +597,11 @@ class Editor {
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
         this._aiAppliedSnapshot = null;
+        this._aiPreviewMap = null;
+        this._aiPreviewBase = null;
+        this._aiPreviewObjects = [];
+        this._aiPreviewVisibleCount = 0;
+        this._aiPreviewAccepted = false;
         this.loadAIAssistantConversations();
 
         document.getElementById('btn-ai-assistant').addEventListener('click', () => this.openAIAssistant());
@@ -632,7 +638,8 @@ class Editor {
             event.preventDefault();
             aiForm.requestSubmit();
         });
-        document.getElementById('ai-assistant-apply').addEventListener('click', () => this.undoAIAssistantChanges());
+        document.getElementById('ai-assistant-accept').addEventListener('click', () => { this._aiPreviewAccepted = true; });
+        document.getElementById('ai-assistant-undo').addEventListener('click', () => this.undoAIAssistantChanges());
         overlay.addEventListener('keydown', event => {
             if (event.key === 'Escape') this.closeAIAssistant();
         });
@@ -1031,72 +1038,128 @@ class Editor {
         this._aiPendingMap = null;
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
+        this._aiPreviewMap = null;
+        this._aiPreviewObjects = [];
         document.getElementById('ai-assistant-pending').classList.add('hidden');
-        const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map…');
+        const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map… Close this panel if you want to edit while I work.');
+        waiting.classList.add('is-thinking');
         sendButton.disabled = true;
         document.getElementById('ai-assistant-new').disabled = true;
         document.querySelectorAll('#ai-assistant-thread-list button').forEach(button => { button.disabled = true; });
         try {
-            const protectedSettingRoots = new Set([
+            const protectedRoots = new Set([
                 'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds',
                 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed',
                 'jumpForce', 'gravity', 'maxJumps', 'infiniteJumps', 'additionalAirjump'
             ]);
-            const explicitlyRequestedSettingChange = /\b(camera|zoom|follow mode|framing|camera bounds|physics|player speed|gravity|jump force|air control|max jumps|infinite jumps)\b/i.test(prompt);
+            const explicitSettings = /\b(camera|zoom|follow mode|framing|camera bounds|physics|player speed|gravity|jump force|air control|max jumps|infinite jumps)\b/i.test(prompt);
+            const editRequest = /\b(build|create|add|make|generate|change|update|remove|delete|fix|redesign|place|draw|convert|extend|construct|design|improve|put)\b/i.test(prompt);
             const conversation = this._aiConversation.slice(-8);
-            let baseMap = this.world.toJSON();
-            let operations = [];
-            let result = null;
-            let ignoredProtectedSettingEdits = 0;
-            // If the player edits while the model is generating, discard the stale
-            // proposal and ask it to continue from a fresh snapshot. Keep retrying
-            // while edits continue, with a small cap to avoid runaway requests.
-            for (let attempt = 0; attempt < 4; attempt++) {
-                const requestMap = JSON.stringify(baseMap);
-                const requestPrompt = attempt === 0 ? prompt : [
-                    'The user changed the map while you were working. Continue the original request using the latest map snapshot below.',
-                    'Preserve the user\'s new edits and settings. Re-plan against this exact current map; do not overwrite or duplicate existing content.',
-                    `Original request: ${prompt}`,
-                    'Your previous proposal is context only. Return operations that apply cleanly to the current map.'
-                ].join('\n');
-                if (attempt > 0) waiting.querySelector('p').textContent = 'The map changed while I worked. Rebuilding on your latest edits…';
+            let retryForEmptyEdit = false;
+            let assistantReply = '';
+            let done = false;
+
+            for (let attempt = 0; attempt < 4 && !done; attempt++) {
+                const baseMap = this.world.toJSON();
+                const baseSnapshot = JSON.stringify(baseMap);
+                const requestPrompt = attempt === 0 ? prompt : retryForEmptyEdit
+                    ? `The previous response did not include any map operations. The user requested an actual map edit. Complete this request now with valid structured operations. Original request: ${prompt}`
+                    : `The user changed the map while you were working. Continue the original request on the current map below. Preserve their new edits and settings, build on what is already present, do not duplicate existing content, and return concrete operations. Original request: ${prompt}`;
+                if (attempt > 0) waiting.querySelector('p').textContent = retryForEmptyEdit
+                    ? 'The first reply did not include map edits. Trying again with your request…'
+                    : 'The map changed while I worked. Rebuilding on your latest edits…';
                 const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                     body: JSON.stringify({ prompt: requestPrompt, conversation, map: this.stripAIAssistantMedia(baseMap), mechanicsReference: this.getAIAssistantMechanicsReference() })
                 });
-                result = await response.json().catch(() => ({}));
+                const result = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
-                operations = Array.isArray(result.operations) ? result.operations : [];
-                const currentMap = this.world.toJSON();
-                if (JSON.stringify(currentMap) === requestMap) break;
-                if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
-                baseMap = currentMap;
-            }
-            const safeOperations = operations.filter(operation => explicitlyRequestedSettingChange || !protectedSettingRoots.has(operation?.path?.[0]));
-            ignoredProtectedSettingEdits = operations.length - safeOperations.length;
-            let assistantReply = result.message || (safeOperations.length ? 'I updated the map.' : 'I could not produce map changes. Try describing the goal more specifically.');
-            if (ignoredProtectedSettingEdits) assistantReply += ' I kept your existing camera and movement settings because this request did not ask to change them.';
-            if (safeOperations.length) {
+
+                if (JSON.stringify(this.world.toJSON()) !== baseSnapshot) {
+                    if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
+                    retryForEmptyEdit = false;
+                    continue;
+                }
+
+                const operations = Array.isArray(result.operations) ? result.operations : [];
+                const safeOperations = operations.filter(operation => explicitSettings || !protectedRoots.has(operation?.path?.[0]));
+                const ignoredSettings = operations.length - safeOperations.length;
+                assistantReply = result.message || (safeOperations.length ? 'I prepared an edit for your map.' : 'I could not produce a map edit.');
+                if (ignoredSettings) assistantReply += ' I kept your camera and movement settings because this request did not ask to change them.';
+
+                if (!safeOperations.length) {
+                    if (editRequest && attempt === 0) {
+                        retryForEmptyEdit = true;
+                        continue;
+                    }
+                    if (editRequest) assistantReply += ' No editable map changes were returned, so the map is unchanged. Try a smaller, specific edit.';
+                    done = true;
+                    break;
+                }
+
                 const nextMap = this.applyAIAssistantOperations(baseMap, safeOperations);
+                if (JSON.stringify(nextMap) === baseSnapshot) {
+                    assistantReply += ' The returned operations did not change map data, so the map is unchanged. Please try a more specific edit.';
+                    done = true;
+                    break;
+                }
+
+                this._aiPendingMap = nextMap;
+                this._aiPendingBase = baseSnapshot;
+                this._aiPendingOperations = safeOperations;
+                this._aiPreviewMap = nextMap;
+                this._aiPreviewBase = baseSnapshot;
+                this._aiPreviewObjects = this.getAIAssistantChangedObjects(baseMap, nextMap);
+                this._aiPreviewVisibleCount = 0;
+                this._aiPreviewAccepted = false;
+                document.getElementById('ai-assistant-result-title').textContent = 'AI is building on your map';
+                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edits · close this panel to edit too`;
+                document.getElementById('ai-assistant-progress-bar').style.width = '0%';
+                document.getElementById('ai-assistant-pending').classList.remove('is-applied');
+                document.getElementById('ai-assistant-accept').classList.remove('hidden');
+                document.getElementById('ai-assistant-undo').classList.add('hidden');
+                document.getElementById('ai-assistant-pending').classList.remove('hidden');
+                waiting.querySelector('p').textContent = 'Previewing each map change on the canvas…';
+
+                const previewFinished = await this.animateAIAssistantPreview();
+                this._aiPreviewObjects = [];
+                if (!previewFinished || JSON.stringify(this.world.toJSON()) !== baseSnapshot) {
+                    this._aiPreviewMap = null;
+                    this._aiPendingMap = null;
+                    document.getElementById('ai-assistant-pending').classList.add('hidden');
+                    if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
+                    retryForEmptyEdit = false;
+                    continue;
+                }
+
                 this.beginUndoTransaction();
                 try {
                     this.world.fromJSON(nextMap);
-                    if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
-                    this.updateBackground();
-                    this.syncConfigPanel?.();
-                    this.updateLayersList();
-                    this.triggerMapChange();
-                    this.focusAIAssistantChanges(baseMap, nextMap, safeOperations);
-                    this._aiAppliedSnapshot = JSON.stringify(this.world.toJSON());
-                    document.getElementById('ai-assistant-result-title').textContent = 'Applied to your map';
-                    document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edit${safeOperations.length === 1 ? '' : 's'} · undo anytime`;
-                    document.getElementById('ai-assistant-pending').classList.remove('hidden');
-                    this.showToast('AI edits applied. Use Undo AI edit to revert them.', 'success');
                 } finally {
                     this.endUndoTransaction();
                 }
+                this._aiAppliedSnapshot = JSON.stringify(this.world.toJSON());
+                this._aiPreviewMap = null;
+                this._aiPendingMap = null;
+                this._aiPendingBase = null;
+                this._aiPendingOperations = null;
+                document.getElementById('ai-assistant-result-title').textContent = 'Applied to your map';
+                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edits · undo anytime`;
+                document.getElementById('ai-assistant-pending').classList.add('is-applied');
+                document.getElementById('ai-assistant-accept').classList.add('hidden');
+                document.getElementById('ai-assistant-undo').classList.remove('hidden');
+                if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
+                this.updateBackground();
+                this.syncConfigPanel?.();
+                this.updateLayersList();
+                this.triggerMapChange();
+                this.focusAIAssistantChanges(baseMap, nextMap, safeOperations);
+                this.showToast('AI edits applied. Use Undo AI edit to revert them.', 'success');
+                done = true;
             }
+
+            waiting.classList.remove('is-thinking');
             waiting.querySelector('p').textContent = assistantReply;
             this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: assistantReply.slice(0, 2000) });
             this._aiConversation = this._aiConversation.slice(-8);
@@ -1104,6 +1167,9 @@ class Editor {
             if (thread) thread.conversation = this._aiConversation.slice(-8);
             this.persistAIAssistantMessage('assistant', assistantReply);
         } catch (error) {
+            waiting.classList.remove('is-thinking');
+            this._aiPreviewObjects = [];
+            this._aiPreviewMap = null;
             const errorMessage = error.message || 'The map assistant could not complete that request.';
             waiting.querySelector('p').textContent = errorMessage;
             this.persistAIAssistantMessage('assistant', errorMessage);
@@ -1115,9 +1181,35 @@ class Editor {
         }
     }
 
+    getAIAssistantChangedObjects(baseMap, nextMap) {
+        const previous = new Map((baseMap.objects || []).map(object => [object.id, object]));
+        const changed = (nextMap.objects || []).filter(object => JSON.stringify(previous.get(object.id)) !== JSON.stringify(object));
+        const currentIds = new Set((nextMap.objects || []).map(object => object.id));
+        const removed = (baseMap.objects || []).filter(object => !currentIds.has(object.id)).map(object => ({ ...object, aiPreviewRemoved: true }));
+        return [...changed, ...removed];
+    }
+
+    async animateAIAssistantPreview() {
+        const items = this._aiPreviewObjects;
+        const duration = Math.max(900, Math.min(4500, items.length * 18));
+        const started = performance.now();
+        const progressBar = document.getElementById('ai-assistant-progress-bar');
+        while (true) {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            if (JSON.stringify(this.world.toJSON()) !== this._aiPreviewBase) return false;
+            const progress = this._aiPreviewAccepted ? 1 : Math.min(1, (performance.now() - started) / duration);
+            this._aiPreviewVisibleCount = items.length ? Math.max(1, Math.ceil(items.length * progress)) : 0;
+            progressBar.style.width = `${Math.round(progress * 100)}%`;
+            document.getElementById('ai-assistant-change-count').textContent = items.length
+                ? `${this._aiPreviewVisibleCount} / ${items.length} map pieces · close this panel to edit too`
+                : 'Previewing settings and mechanics · close this panel to edit too';
+            if (progress >= 1) return true;
+        }
+    }
+
     async undoAIAssistantChanges() {
         if (!this._aiAppliedSnapshot) return;
-        const applyButton = document.getElementById('ai-assistant-apply');
+        const applyButton = document.getElementById('ai-assistant-undo');
         if (JSON.stringify(this.world.toJSON()) !== this._aiAppliedSnapshot) {
             this._aiAppliedSnapshot = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
@@ -12586,6 +12678,44 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
     // RENDERING
     // ========================================
     renderOverlay(ctx, camera) {
+        // The assistant's proposed objects are drawn as a live canvas ghost
+        // preview. The actual world stays untouched until this sequence ends,
+        // so edits made by the player can be detected and preserved safely.
+        if (this._aiPreviewObjects?.length && this.engine.state === GameState.EDITOR) {
+            const visible = this._aiPreviewObjects.slice(0, this._aiPreviewVisibleCount || 0);
+            const viewRight = camera.x + ctx.canvas.width / camera.zoom;
+            const viewBottom = camera.y + ctx.canvas.height / camera.zoom;
+            const pulse = .34 + (Math.sin(performance.now() / 150) + 1) * .11;
+            ctx.save();
+            ctx.setLineDash([8 / camera.zoom, 5 / camera.zoom]);
+            ctx.lineDashOffset = -(performance.now() / 50) % (13 / camera.zoom);
+            for (const object of visible) {
+                const width = object.width ?? object.w ?? 32;
+                const height = object.height ?? object.h ?? 32;
+                const x = object.x - camera.x;
+                const y = object.y - camera.y;
+                if (x + width < 0 || y + height < 0 || object.x > viewRight || object.y > viewBottom) continue;
+                const color = object.aiPreviewRemoved ? '#ff7185' : (object.color || object.c || '#65e7b3');
+                ctx.globalAlpha = object.aiPreviewRemoved ? .56 : pulse;
+                ctx.fillStyle = color;
+                ctx.strokeStyle = object.aiPreviewRemoved ? '#ff526d' : '#f4fff9';
+                ctx.lineWidth = 2 / camera.zoom;
+                ctx.fillRect(x, y, width, height);
+                ctx.strokeRect(x, y, width, height);
+                if (object.aiPreviewRemoved) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + width, y + height);
+                    ctx.moveTo(x + width, y);
+                    ctx.lineTo(x, y + height);
+                    ctx.stroke();
+                }
+            }
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
         // Grid (only in editor mode, not testing)
         if (this.engine.state === GameState.EDITOR) {
             this.renderGrid(ctx, camera);

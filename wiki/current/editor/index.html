@@ -33,6 +33,9 @@
     <h2>Object layers</h2>
     <p>Open <strong>Layers</strong> to manage named draw layers and assign visual objects to them. The built-in depths remain compatible with existing maps: <code>0</code> behind the player, <code>1</code> at player depth (drawn just below the player), and <code>2</code> above the player. Use the add buttons to create custom layers on either side of the player, then rename or remove them. Custom layers can set separate horizontal and vertical parallax factors from <code>0</code> to <code>2</code>; lower values move scenery more slowly than the camera, and <code>1</code> keeps normal camera movement. The editor keeps all layers aligned for precise placement; parallax is applied during Play and Test. Zones and buttons remain visible overlays. Draw layers do not change collision. Layer names, parallax settings, and object assignments survive map save/load and <code>.pkrn</code> export/import.</p>
 
+    <h2>Map Assistant</h2>
+    <p>Open <strong>Map Assistant</strong> from the editor toolbar and describe the change you want. While it thinks, you can close the assistant and continue editing. If the map changes before the assistant is ready, it rebuilds its proposal on your latest map. When it has concrete edits, colored outlines and fills appear progressively on the canvas as a preview; choose <strong>Accept edit</strong> to finish early, or let the preview complete to apply it. After application, <strong>Undo AI edit</strong> reverses that assistant edit. If the assistant returns no map operations, it tells you the map was left unchanged instead of implying an edit succeeded.</p>
+
     <h2>Toolbar buttons</h2>
     <table class="wiki-table">
       <thead><tr><th>Button</th><th>Purpose</th></tr></thead>
