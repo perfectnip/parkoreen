@@ -16,9 +16,95 @@
     let hasUnsavedChanges = false;
     let keyCapturingElement = null; // For "Other" key capture
     let savedSceneMapsPromise = null;
+    let pendingObjectSelection = false;
+    let pendingObjectSelectionConfig = null;
+    let pendingObjectSelectionKeyHandler = null;
     
     // Get world reference safely
-    const getWorld = () => typeof world !== 'undefined' ? world : null;
+    const getWorld = () => (typeof world !== 'undefined' && world) || window.editor?.world || window.engine?.world || null;
+
+    const getEditorObjects = () => {
+        const runtimeWorld = getWorld();
+        const editorWorld = window.editor?.world;
+        // The Mechanics editor can open while the runtime's active world is a
+        // different scene. Prefer the world being edited so its picker sees the
+        // actual objects on the canvas.
+        if (Array.isArray(editorWorld?.objects)) return editorWorld.objects;
+        return Array.isArray(runtimeWorld?.objects) ? runtimeWorld.objects : [];
+    };
+
+    const finishObjectSelection = (confirm) => {
+        if (!pendingObjectSelection) return;
+        pendingObjectSelection = false;
+        if (pendingObjectSelectionKeyHandler) {
+            document.removeEventListener('keydown', pendingObjectSelectionKeyHandler, true);
+            pendingObjectSelectionKeyHandler = null;
+        }
+        const restoreConfig = pendingObjectSelectionConfig;
+        pendingObjectSelectionConfig = null;
+        const editorInstance = window.editor;
+        const picker = document.getElementById('mechanics-object-picker-controls');
+        if (confirm) {
+            const ids = Array.from(editorInstance?.selectedObjects || [])
+                .filter(object => object?.type === 'block' && object.id)
+                .map(object => String(object.id));
+            const button = document.getElementById('trigger-pick-objects');
+            if (button) button.dataset.objectIds = JSON.stringify([...new Set(ids)]);
+            const selected = getEditorObjects().filter(object => ids.includes(String(object?.id)));
+            const label = document.getElementById('trigger-selected-objects');
+            if (label) label.innerHTML = selected.length
+                ? selected.map(object => escapeHtml(`${object.name || object.appearanceType || 'Object'} · (${Math.round(object.x)}, ${Math.round(object.y)})`)).join('<br>')
+                : 'No objects selected. Use Select objects on map, then Confirm.';
+            markUnsaved();
+        }
+        picker?.remove();
+        if (editorInstance?.isSelectionActive) editorInstance.exitSelectionMode();
+        if (editorInstance) editorInstance._mechanicsSelectionFilter = null;
+        editorInstance?.ui?.selectionToolbar?.querySelectorAll('[data-sel-cmd="done"], [data-sel-cmd="save-stamp"]').forEach(button => { button.hidden = false; });
+        codeEditorOverlay?.classList.add('active');
+        if (!confirm) renderTriggerConfig(
+            document.getElementById('trigger-type')?.value || CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT,
+            restoreConfig || { ...(editingBlock?.config || {}), selectionMode: 'specific' }
+        );
+    };
+
+    const beginObjectSelection = () => {
+        const editorInstance = window.editor;
+        if (!editorInstance || !Array.isArray(editorInstance.world?.objects)) {
+            showToast('Return to the map editor to select objects.', 'error');
+            return;
+        }
+        if (editorInstance.isSelectionActive) editorInstance.exitSelectionMode();
+        const pickButton = document.getElementById('trigger-pick-objects');
+        let selectedIds = [];
+        try { selectedIds = JSON.parse(pickButton?.dataset.objectIds || '[]'); } catch (_) {}
+        pendingObjectSelectionConfig = {
+            ...(editingBlock?.config || {}),
+            selectionMode: 'specific',
+            objectIds: Array.isArray(selectedIds) ? selectedIds : [],
+            shape: document.getElementById('trigger-config-shape')?.value || 'box'
+        };
+        pendingObjectSelection = true;
+        pendingObjectSelectionKeyHandler = event => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            finishObjectSelection(false);
+        };
+        document.addEventListener('keydown', pendingObjectSelectionKeyHandler, true);
+        codeEditorOverlay?.classList.remove('active');
+        editorInstance._mechanicsSelectionFilter = object => object?.type === 'block';
+        editorInstance.enterSelectionMode();
+        editorInstance.ui?.selectionToolbar?.querySelectorAll('[data-sel-cmd="done"], [data-sel-cmd="save-stamp"]').forEach(button => { button.hidden = true; });
+        const controls = document.createElement('div');
+        controls.id = 'mechanics-object-picker-controls';
+        controls.setAttribute('role', 'group');
+        controls.setAttribute('aria-label', 'Confirm selected map objects');
+        controls.innerHTML = '<span>Select map blocks with the Select (V) tool</span><button type="button" class="btn btn-secondary" data-picker-cancel>Cancel</button><button type="button" class="btn btn-accent" data-picker-confirm>Confirm</button>';
+        document.body.appendChild(controls);
+        controls.querySelector('[data-picker-cancel]').addEventListener('click', () => finishObjectSelection(false));
+        controls.querySelector('[data-picker-confirm]').addEventListener('click', () => finishObjectSelection(true));
+    };
     
     // Get world's code data
     const getCodeData = () => {
@@ -443,6 +529,12 @@
 
     // Handle keyboard shortcuts
     const handleKeyDown = (e) => {
+        if (pendingObjectSelection && e.key === 'Escape') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            finishObjectSelection(false);
+            return;
+        }
         // Escape to go back/close
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -483,6 +575,40 @@
             
             .code-editor-overlay.active {
                 display: flex;
+            }
+
+            #mechanics-object-picker-controls {
+                position: fixed;
+                z-index: 26000;
+                top: max(12px, env(safe-area-inset-top));
+                left: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                width: max-content;
+                max-width: calc(100vw - 24px);
+                padding: 10px 12px;
+                border: 1px solid rgba(148, 127, 229, .48);
+                border-radius: 14px;
+                color: #fff;
+                background: rgba(22, 25, 39, .96);
+                box-shadow: 0 12px 40px rgba(0, 0, 0, .38);
+                transform: translateX(-50%);
+                animation: mechanics-picker-in 180ms cubic-bezier(.2,.8,.2,1) both;
+            }
+
+            #mechanics-object-picker-controls > span { font-size: 13px; color: #e7e3f5; }
+            #mechanics-object-picker-controls .btn { white-space: nowrap; }
+            #mechanics-object-picker-controls .btn[hidden] { display: none; }
+            @keyframes mechanics-picker-in {
+                from { opacity: 0; translate: 0 -6px; }
+                to { opacity: 1; translate: 0 0; }
+            }
+
+            @media (max-width: 640px) {
+                #mechanics-object-picker-controls { left: 8px; right: 8px; width: auto; max-width: none; flex-wrap: wrap; transform: none; }
+                #mechanics-object-picker-controls > span { flex-basis: 100%; text-align: center; }
             }
             
             .code-editor-container {
@@ -1634,14 +1760,19 @@
                 break;
             case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
             case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
-                if (!config.objectId) return 'No map object selected';
                 if (config.shape !== undefined && !['box', 'circle', 'capsule'].includes(config.shape)) {
                     return 'Choose a box, circle, or capsule contact shape';
                 }
-                const object = (getWorld()?.objects || []).find(item =>
-                    item?.id === config.objectId && item._mechanicsEnabled !== false && item._collected !== true
-                );
-                if (!object) return 'Selected map object not found';
+                if (config.selectionMode === 'type') {
+                    if (config.matchDisplayType !== true && config.matchRoleType !== true) return 'Enable Display Type, Role Type, or both';
+                    if (config.matchDisplayType === true && !config.displayType) return 'Choose a Display Type';
+                    if (config.matchRoleType === true && !config.roleType) return 'Choose a Role Type';
+                } else {
+                    const ids = Array.isArray(config.objectIds) ? config.objectIds : (config.objectId ? [config.objectId] : []);
+                    if (!ids.length) return 'Select at least one map object';
+                    const objects = getEditorObjects();
+                    if (ids.some(id => !objects.some(item => String(item?.id) === String(id)))) return 'A selected map object no longer exists';
+                }
                 break;
             }
             case CODE_TRIGGER_TYPES.PLAYER_ATTACKS_OBJECT: {
@@ -4626,9 +4757,7 @@
         const supportedTrigger = CODE_TRIGGER_TYPE_INFO.some(type => type.id === triggerType);
         const zones = getZones();
         const tilemaps = getWorld()?.tilemaps || [];
-        const objects = (getWorld()?.objects || []).filter(object =>
-            object && object._mechanicsEnabled !== false && object._collected !== true
-        );
+        const objects = getEditorObjects();
         
         let html = '';
         
@@ -4651,24 +4780,43 @@
 
             case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
             case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
-                const hasObjects = objects.length > 0;
+                const selectorMode = config.selectionMode === 'type' ? 'type' : 'specific';
+                const displayTypes = [...new Set(['ground', 'spike', 'checkpoint', 'spawnpoint', 'endpoint', 'bouncer', 'coin', 'spinner', 'zone', 'text', 'button', 'teleportal', 'soulStatus', 'soulStatue', ...objects.map(object => object.appearanceType).filter(value => typeof value === 'string' && value)])].sort();
+                const roleTypes = [...new Set(['ground', 'spike', 'checkpoint', 'spawnpoint', 'endpoint', 'bouncer', 'coin', 'zone', 'text', 'button', 'teleportal', 'soulStatus', ...objects.map(object => object.actingType).filter(value => typeof value === 'string' && value)])].sort();
+                const selectedIds = Array.isArray(config.objectIds) ? config.objectIds : (config.objectId ? [config.objectId] : []);
+                const selectedObjects = objects.filter(object => selectedIds.includes(object.id));
+                const displayChecked = config.matchDisplayType === true;
+                const roleChecked = config.matchRoleType === true;
                 html = `
                     <div class="trigger-form-group">
-                        <label class="trigger-form-label">Map object</label>
-                        <select class="trigger-form-select" id="trigger-config-object" ${!hasObjects ? 'disabled' : ''}>
-                            <option value="">${hasObjects ? 'Select an object…' : 'No available objects'}</option>
-                            ${objects.map(object => {
-                                const label = `${object.name || object.displayName || object.appearanceType || object.type || 'Object'} · (${Math.round(object.x)}, ${Math.round(object.y)})`;
-                                return `<option value="${escapeHtml(object.id)}" ${config.objectId === object.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-                            }).join('')}
+                        <label class="trigger-form-label" for="trigger-config-selection-mode">Object selection</label>
+                        <select class="trigger-form-select" id="trigger-config-selection-mode">
+                            <option value="specific" ${selectorMode === 'specific' ? 'selected' : ''}>Choose Specific Objects</option>
+                            <option value="type" ${selectorMode === 'type' ? 'selected' : ''}>Choose Object Type</option>
                         </select>
+                        <div id="trigger-specific-objects" ${selectorMode !== 'specific' ? 'hidden' : ''}>
+                            <button type="button" class="btn btn-secondary" id="trigger-pick-objects" data-object-ids="${escapeHtml(JSON.stringify(selectedIds))}"><span class="material-symbols-outlined">select_all</span> Select objects on map</button>
+                            <p class="trigger-description" id="trigger-selected-objects" aria-live="polite">${selectedObjects.length ? selectedObjects.map(object => escapeHtml(`${object.name || object.appearanceType || 'Object'} · (${Math.round(object.x)}, ${Math.round(object.y)})`)).join('<br>') : 'No objects selected. Use Select objects on map, then Confirm.'}</p>
+                        </div>
+                        <div id="trigger-object-types" ${selectorMode !== 'type' ? 'hidden' : ''}>
+                            <label class="trigger-form-label"><input type="checkbox" id="trigger-match-display-type" ${displayChecked ? 'checked' : ''}> Display Type</label>
+                            <select class="trigger-form-select" id="trigger-config-display-type" ${displayChecked ? '' : 'disabled'}>
+                                <option value="">Choose a display type…</option>
+                                ${displayTypes.map(type => `<option value="${escapeHtml(type)}" ${config.displayType === type ? 'selected' : ''}>${escapeHtml(type)}</option>`).join('')}
+                            </select>
+                            <label class="trigger-form-label" style="margin-top:10px"><input type="checkbox" id="trigger-match-role-type" ${roleChecked ? 'checked' : ''}> Role Type</label>
+                            <select class="trigger-form-select" id="trigger-config-role-type" ${roleChecked ? '' : 'disabled'}>
+                                <option value="">Choose a role type…</option>
+                                ${roleTypes.map(type => `<option value="${escapeHtml(type)}" ${config.roleType === type ? 'selected' : ''}>${escapeHtml(type)}</option>`).join('')}
+                            </select>
+                            ${!objects.length ? '<p class="trigger-description">No map objects are available yet. You can still choose a type; it will match objects added later.</p>' : ''}
+                        </div>
                         <label class="trigger-form-label" style="margin-top: 10px;">Contact shape</label>
                         <select class="trigger-form-select" id="trigger-config-shape">
                             <option value="box" ${(config.shape || 'box') === 'box' ? 'selected' : ''}>Box</option>
                             <option value="circle" ${config.shape === 'circle' ? 'selected' : ''}>Circle</option>
                             <option value="capsule" ${config.shape === 'capsule' ? 'selected' : ''}>Capsule</option>
                         </select>
-                        ${!hasObjects ? '<p class="trigger-description error">Add a map object in the editor first</p>' : ''}
                         <p class="trigger-description">${triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT ? 'Fires once when the player stops touching the object.' : 'Fires once when the player begins touching the object.'} Circle and capsule use a radius equal to half the object’s shorter side; capsule rounds the ends along the longer axis. ${triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT ? 'It can fire again after the player leaves. ' : ''}This setting affects trigger contact only, not solid platform collision.</p>
                     </div>
                 `;
@@ -5027,6 +5175,40 @@
             el.addEventListener('change', markUnsaved);
             el.addEventListener('input', markUnsaved);
         });
+
+        if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(triggerType)) {
+            const selectionMode = document.getElementById('trigger-config-selection-mode');
+            const readObjectSelectionConfig = () => {
+                const button = document.getElementById('trigger-pick-objects');
+                let objectIds = [];
+                try { objectIds = JSON.parse(button?.dataset.objectIds || '[]'); } catch (_) {}
+                return {
+                    ...config,
+                    selectionMode: selectionMode?.value || 'specific',
+                    objectIds: Array.isArray(objectIds) ? objectIds : [],
+                    matchDisplayType: document.getElementById('trigger-match-display-type')?.checked === true,
+                    displayType: document.getElementById('trigger-config-display-type')?.value || '',
+                    matchRoleType: document.getElementById('trigger-match-role-type')?.checked === true,
+                    roleType: document.getElementById('trigger-config-role-type')?.value || '',
+                    shape: document.getElementById('trigger-config-shape')?.value || config.shape || 'box'
+                };
+            };
+            selectionMode?.addEventListener('change', () => {
+                renderTriggerConfig(triggerType, readObjectSelectionConfig());
+                markUnsaved();
+            });
+            document.getElementById('trigger-match-display-type')?.addEventListener('change', event => {
+                const select = document.getElementById('trigger-config-display-type');
+                if (select) select.disabled = !event.target.checked;
+                markUnsaved();
+            });
+            document.getElementById('trigger-match-role-type')?.addEventListener('change', event => {
+                const select = document.getElementById('trigger-config-role-type');
+                if (select) select.disabled = !event.target.checked;
+                markUnsaved();
+            });
+            document.getElementById('trigger-pick-objects')?.addEventListener('click', beginObjectSelection);
+        }
     };
     
     // Show key capture dialog for "Other" key
@@ -5098,7 +5280,21 @@
 
             case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT:
             case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT:
-                config.objectId = document.getElementById('trigger-config-object')?.value || '';
+                config.selectionMode = document.getElementById('trigger-config-selection-mode')?.value === 'type' ? 'type' : 'specific';
+                config.objectIds = [];
+                if (config.selectionMode === 'specific') {
+                    try {
+                        const selectedIds = JSON.parse(document.getElementById('trigger-pick-objects')?.dataset.objectIds || '[]');
+                        if (Array.isArray(selectedIds)) config.objectIds = [...new Set(selectedIds.filter(id => typeof id === 'string'))];
+                    } catch (_) {}
+                    config.objectId = config.objectIds[0] || '';
+                } else {
+                    config.matchDisplayType = document.getElementById('trigger-match-display-type')?.checked === true;
+                    config.displayType = document.getElementById('trigger-config-display-type')?.value || '';
+                    config.matchRoleType = document.getElementById('trigger-match-role-type')?.checked === true;
+                    config.roleType = document.getElementById('trigger-config-role-type')?.value || '';
+                    config.objectId = '';
+                }
                 config.shape = ['circle', 'capsule'].includes(document.getElementById('trigger-config-shape')?.value)
                     ? document.getElementById('trigger-config-shape').value : 'box';
                 break;
@@ -5165,6 +5361,9 @@
         editingBlock.config = config;
         
         const codeData = getCodeData();
+        const savedIndex = codeData.triggers.findIndex(trigger => String(trigger?.id ?? '') === String(editingBlock.id ?? ''));
+        if (savedIndex === -1) codeData.triggers.push(editingBlock);
+        else codeData.triggers[savedIndex] = editingBlock;
         saveCodeData(codeData);
         
         showToast('Trigger saved', 'success');
@@ -6298,7 +6497,8 @@
         window.CodeEditor = {
             open: openCodeEditor,
             close: closeCodeEditor,
-            isOpen: () => typeof CODE_STATE !== 'undefined' ? CODE_STATE.isEditorOpen : false
+            isOpen: () => typeof CODE_STATE !== 'undefined' ? CODE_STATE.isEditorOpen : false,
+            getEventActionTemplates: () => Object.fromEntries(CODE_EVENT_ACTION_TYPES.map(({ id }) => [id, createEventAction(id)]))
         };
     }
 })();

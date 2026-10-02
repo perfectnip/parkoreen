@@ -789,8 +789,99 @@ class Editor {
         return clean;
     }
 
+    getAIAssistantMechanicsReference() {
+        const baseObject = {
+            id: 'ai_unique_id', x: 0, y: 0, width: 64, height: 32,
+            type: 'block', appearanceType: 'ground', actingType: 'ground',
+            collision: true, collisionShape: 'box', collisionPoints: null, polygonOneWay: false,
+            oneWayPlatform: false, color: this.world?.defaultBlockColor || '#787878', opacity: 1, layer: 1, rotation: 0,
+            flipHorizontal: false, texture: 'solid', spriteSheet: null
+        };
+        const object = (overrides) => ({ ...baseObject, ...overrides });
+        const plugins = Array.from(window.PluginManager?.plugins?.values?.() || []).map(plugin => ({
+            id: plugin.id,
+            name: plugin.name,
+            version: plugin.version,
+            description: plugin.description,
+            dependencies: plugin.dependencies || [],
+            features: plugin.features || [],
+            editorFeatures: plugin.editorFeatures || {},
+            config: plugin.config || {},
+            controls: plugin.controls || {}
+        }));
+        const globals = (name, fallback = []) => window[name] ?? fallback;
+        const triggerTypes = globals('CODE_TRIGGER_TYPES', {});
+        const triggerConfigTemplates = {};
+        const addTriggerConfig = (key, config) => {
+            const id = triggerTypes[key];
+            if (id) triggerConfigTemplates[id] = { ...config, eventId: 'event_id' };
+        };
+        addTriggerConfig('PLAYER_TOUCH_OBJECT', { selectionMode: 'specific', objectIds: ['object_id'], objectId: 'object_id', shape: 'box' });
+        addTriggerConfig('PLAYER_LEAVE_OBJECT', { selectionMode: 'specific', objectIds: ['object_id'], objectId: 'object_id', shape: 'box' });
+        addTriggerConfig('PLAYER_ATTACKS_OBJECT', { objectId: 'object_id', pogoable: false });
+        addTriggerConfig('PLAYER_ENTER_ZONE', { zoneName: 'zone_name' });
+        addTriggerConfig('PLAYER_LEAVE_ZONE', { zoneName: 'zone_name' });
+        addTriggerConfig('PLAYER_TOUCH_TILEMAP', { tilemapId: 'tilemap_id', collisionType: 'any' });
+        addTriggerConfig('PLAYER_LEAVE_TILEMAP', { tilemapId: 'tilemap_id', collisionType: 'any' });
+        addTriggerConfig('PLAYER_KEY_INPUT', { keys: ['Space'] });
+        addTriggerConfig('PLAYER_ACTION_INPUT', { action: 'jump' });
+        addTriggerConfig('PLAYER_STATS', { stat: 'username', statValue: '' });
+        addTriggerConfig('PLAYER_HEALTH_CHANGED', { direction: 'any' });
+        addTriggerConfig('PLAYER_PRESS_BUTTON', { buttonName: 'button_name' });
+        addTriggerConfig('VARIABLE_CONDITION', { variableId: 'variable_id', operator: 'equals', value: '' });
+        addTriggerConfig('REPEAT', { interval: 1, unit: 'seconds' });
+        const pluginMechanicsActions = window.PluginManager?.getMechanicsActionControls?.() || [];
+        return {
+            format: 'Parkoreen World.toJSON() expanded map format; objects are full WorldObject records.',
+            levelRequirements: [
+                'A playable level must have a koreen object with appearanceType="spawnpoint" AND actingType="spawnpoint". The runtime uses actingType to set the spawn.',
+                'A complete level needs a reachable koreen object with appearanceType="endpoint" AND actingType="endpoint" so the player can finish.',
+                'Place the spawn in a safe, open area above or on the starting platform; do not overlap it with solid geometry or hazards.',
+                'Build a physically reachable route from spawn to endpoint using the current physics settings. Keep hazards avoidable and checkpoints on safe ground.',
+                'For an empty map, create the full requested level using these canonical formats; an empty object list is not a missing schema.'
+            ],
+            objectTemplates: {
+                platform: object({ name: 'Platform', appearanceType: 'ground', actingType: 'ground' }),
+                spawnPoint: object({ id: 'ai_spawn', type: 'koreen', name: 'Spawn Point', appearanceType: 'spawnpoint', actingType: 'spawnpoint', collision: false, color: '#4CAF50' }),
+                endPoint: object({ id: 'ai_endpoint', type: 'koreen', name: 'End Point', appearanceType: 'endpoint', actingType: 'endpoint', collision: false, color: '#FFD700' }),
+                spike: object({ id: 'ai_spike', name: 'Spike', appearanceType: 'spike', actingType: 'spike', color: this.world?.defaultSpikeColor || '#c45a3f' }),
+                checkpoint: object({ id: 'ai_checkpoint', type: 'koreen', name: 'Checkpoint', appearanceType: 'checkpoint', actingType: 'checkpoint', color: '#4CAF50' }),
+                bouncer: object({ id: 'ai_bouncer', name: 'Bouncer', appearanceType: 'bouncer', actingType: 'bouncer', bouncerStrength: 20, bouncerDirection: 0, bouncerMatchAppearance: true, bouncerAppearanceDirection: 0 }),
+                coin: object({ id: 'ai_coin', type: 'koreen', name: 'Coin', appearanceType: 'coin', actingType: 'coin', collision: false, coinAmount: 1, coinActivityScope: 'global' }),
+                spinner: object({ id: 'ai_spinner', type: 'spinner', name: 'Spinner', appearanceType: 'spinner', actingType: 'spike', spinSpeed: 1 }),
+                zone: object({ id: 'ai_zone', type: 'koreen', name: 'Zone', appearanceType: 'zone', actingType: 'zone', collision: false, zoneName: 'zone_name', color: 'rgba(255, 255, 255, 0.3)' }),
+                text: object({ id: 'ai_text', type: 'text', name: 'Text', appearanceType: 'text', actingType: 'text', collision: false, content: 'Label', font: 'Parkoreen Game', fontSize: 24 }),
+                button: object({ id: 'ai_button', type: 'koreen', name: 'Button', appearanceType: 'button', actingType: 'button', collision: false, displayName: 'Button', displayDescription: '', buttonVisible: true, buttonInteraction: 'click', buttonOnlyOnce: false }),
+                teleportal: object({ id: 'ai_teleportal', type: 'koreen', name: 'Teleportal', appearanceType: 'teleportal', actingType: 'teleportal', collision: false, teleportalName: 'Portal', sendTo: [], receiveFrom: [] })
+            },
+            mechanics: {
+                codeDataShape: {
+                    triggers: globals('CODE_DEFAULT_TRIGGER', { id: 'trigger_id', name: 'Game Starts', type: 'trigger', enabled: true, triggerType: 'gameStarts', config: {} }),
+                    events: globals('CODE_DEFAULT_EVENT', { id: 'event_id', name: 'Event', type: 'event', enabled: true, actions: [] }),
+                    variables: globals('CODE_DEFAULT_VARIABLE', { id: 'variable_id', name: 'Variable', type: 'variable', enabled: true, variableType: 'variable', scope: 'map', valueType: 'integer', defaultValue: 0 })
+                },
+                triggers: globals('CODE_TRIGGER_TYPE_INFO'),
+                triggerConfigTemplates,
+                eventActions: globals('CODE_EVENT_ACTION_TYPES'),
+                eventActionTemplates: window.CodeEditor?.getEventActionTemplates?.() || {},
+                playerActions: [...globals('CODE_PLAYER_ACTIONS'), ...pluginMechanicsActions.map(action => ({
+                    id: `pluginControl:${action.id}`, label: action.label || action.id,
+                    hasValue: action.hasValue === true, valueType: action.valueType || null,
+                    valuePlaceholder: action.valuePlaceholder || null, defaultValue: action.defaultValue ?? null
+                }))],
+                playerStats: globals('CODE_PLAYER_STATS'),
+                variableTypes: globals('CODE_VARIABLE_TYPES'),
+                valueTypes: globals('CODE_VALUE_TYPES'),
+                sounds: globals('CODE_CORE_SOUND_NAMES')
+            },
+            pluginMechanicsActions,
+            plugins,
+            enabledPlugins: this.world?.plugins || {}
+        };
+    }
+
     applyAIAssistantOperations(map, operations) {
-        if (!Array.isArray(operations) || operations.length > 250) throw new Error('The assistant returned too many changes. Ask it to make a smaller set of edits.');
+        if (!Array.isArray(operations) || operations.length > 500) throw new Error('The assistant returned too many changes. Ask it to make a smaller set of edits.');
         const next = JSON.parse(JSON.stringify(map));
         const allowedRoots = new Set(['objects', 'tilemaps', 'objectStamps', 'layerDefinitions', 'codeData', 'plugins', 'customBackground', 'music', 'background', 'defaultBlockColor', 'defaultSpikeColor', 'defaultTextColor', 'defaultPortalColor', 'defaultBouncerColor', 'showCoinCounter', 'cloudColorSky', 'cloudColorGalaxy', 'checkpointDefaultColor', 'checkpointActiveColor', 'checkpointTouchedColor', 'maxJumps', 'infiniteJumps', 'additionalAirjump', 'collideWithEachOther', 'mapName', 'dieLineY', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed', 'jumpForce', 'gravity', 'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds', 'spikeTouchbox', 'dropHurtOnly', 'storedDataType', 'persistCheckpoints']);
         const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
@@ -911,7 +1002,7 @@ class Editor {
             const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ prompt, conversation: this._aiConversation.slice(-8), map: mapForAI })
+                body: JSON.stringify({ prompt, conversation: this._aiConversation.slice(-8), map: mapForAI, mechanicsReference: this.getAIAssistantMechanicsReference() })
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
@@ -930,7 +1021,7 @@ class Editor {
                 document.getElementById('ai-assistant-change-count').textContent = `${operations.length} edit${operations.length === 1 ? '' : 's'}`;
                 const preview = document.getElementById('ai-assistant-preview');
                 preview.replaceChildren();
-                for (const operation of operations.slice(0, 12)) {
+                for (const operation of operations) {
                     const row = document.createElement('li');
                     const pathLabel = operation.path.map(part => /^\d+$/.test(part) ? `#${Number(part) + 1}` : part).join(' › ');
                     let description = `${operation.op.toUpperCase()} · ${pathLabel}`;
@@ -943,11 +1034,6 @@ class Editor {
                     }
                     row.textContent = description;
                     preview.appendChild(row);
-                }
-                if (operations.length > 12) {
-                    const more = document.createElement('li');
-                    more.textContent = `…and ${operations.length - 12} more edits`;
-                    preview.appendChild(more);
                 }
                 document.getElementById('ai-assistant-pending').classList.remove('hidden');
             }
@@ -7526,6 +7612,7 @@ class Editor {
         this.selectionRect = null;
         this.selectionMovingObjects = null;
         this.selectionMoveStart = null;
+        this._mechanicsSelectionFilter = null;
         
         // Hide secondary toolbars
         this.ui.selectionToolbar.classList.add('hidden');
@@ -7541,6 +7628,7 @@ class Editor {
     }
     
     setSelectionMode(mode) {
+        if (this._mechanicsSelectionFilter && mode === SelectionMode.MOUSE) return;
         this.selectionMode = mode;
         this.selectionRect = null;
         this.selectionMovingObjects = null;
@@ -7590,7 +7678,7 @@ class Editor {
         switch (cmd) {
             case 'select-all':
                 for (const obj of this.world.objects) {
-                    this.selectedObjects.add(obj);
+                    if (!this._mechanicsSelectionFilter || this._mechanicsSelectionFilter(obj)) this.selectedObjects.add(obj);
                 }
                 break;
             case 'deselect-all':
@@ -7599,7 +7687,7 @@ class Editor {
             case 'reverse': {
                 const newSelection = new Set();
                 for (const obj of this.world.objects) {
-                    if (!this.selectedObjects.has(obj)) {
+                    if ((!this._mechanicsSelectionFilter || this._mechanicsSelectionFilter(obj)) && !this.selectedObjects.has(obj)) {
                         newSelection.add(obj);
                     }
                 }
@@ -8009,6 +8097,7 @@ class Editor {
         const rect = { x: rectX, y: rectY, width: rectW, height: rectH };
         
         for (const obj of this.world.objects) {
+            if (this._mechanicsSelectionFilter && !this._mechanicsSelectionFilter(obj)) continue;
             const objRect = { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
             if (this.rectsOverlap(rect, objRect)) {
                 if (this.selectionAction === SelectionAction.SELECT) {
@@ -8031,7 +8120,7 @@ class Editor {
     // Handle Multi-Select mode click
     handleMultiSelectClick(worldX, worldY) {
         const obj = this.world.getObjectAt(worldX, worldY);
-        if (!obj) return;
+        if (!obj || (this._mechanicsSelectionFilter && !this._mechanicsSelectionFilter(obj))) return;
         
         if (this.selectionAction === SelectionAction.SELECT) {
             this.selectedObjects.add(obj);
@@ -8044,6 +8133,7 @@ class Editor {
     // Handle Mouse mode click (config or move)
     handleMouseModeDown(worldX, worldY) {
         const obj = this.world.getObjectAt(worldX, worldY);
+        if (obj && this._mechanicsSelectionFilter && !this._mechanicsSelectionFilter(obj)) return;
         
         if (obj && this.selectedObjects.has(obj)) {
             // Start moving all selected objects

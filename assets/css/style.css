@@ -1657,7 +1657,8 @@ a:hover {
    ==================================== */
 .placement-toolbar {
     position: fixed;
-    bottom: calc(var(--spacing-lg) + 80px);
+    top: max(72px, env(safe-area-inset-top));
+    bottom: auto;
     left: 50%;
     transform: translateX(-50%) translateY(20px);
     display: flex;
@@ -1668,7 +1669,11 @@ a:hover {
     box-shadow: var(--shadow-lg);
     z-index: var(--z-toolbar);
     flex-wrap: wrap;
-    max-width: 90vw;
+    width: min(1100px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 88px - env(safe-area-inset-top));
+    overflow: auto;
+    align-content: flex-start;
     justify-content: center;
     opacity: 0;
     visibility: hidden;
@@ -3449,7 +3454,7 @@ body.device-mobile textarea {
 
 .ai-assistant-preview {
     flex-basis: 100%;
-    max-height: 132px;
+    max-height: min(30vh, 280px);
     overflow-y: auto;
     margin: 0;
     border-top: 1px solid rgba(255, 255, 255, .1);
@@ -3457,6 +3462,7 @@ body.device-mobile textarea {
     color: #d7d3e4;
     font-size: .76rem;
     line-height: 1.5;
+    scrollbar-gutter: stable;
 }
 
 .ai-assistant-form {
@@ -3751,6 +3757,59 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .ai-assistant-form { border-color: var(--ui-border); }
 .ai-assistant-history { background: rgba(5, 13, 24, .34); border-color: var(--ui-border); }
 .ai-assistant-form textarea { background: rgba(8, 15, 27, .82); }
+
+/* Keep the full Tilemap Brush controls reachable on short screens. */
+@media (max-width: 640px) {
+    .placement-toolbar {
+        top: max(64px, env(safe-area-inset-top));
+        bottom: auto;
+        left: 8px;
+        width: auto;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 80px - env(safe-area-inset-top));
+        transform: translateY(14px);
+    }
+
+    .placement-toolbar.active { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .btn,
+    .toolbar-btn,
+    .placement-opt-btn,
+    .ai-assistant-thread,
+    .code-block-card,
+    .config-section-header,
+    .layers-panel .layer-item,
+    .ai-assistant-suggestions button {
+        transition: transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms ease,
+            border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+    }
+
+    .btn:hover:not(:disabled),
+    .toolbar-btn:hover:not(:disabled),
+    .placement-opt-btn:hover:not(:disabled),
+    .ai-assistant-thread:hover:not(:disabled),
+    .ai-assistant-suggestions button:hover {
+        transform: translateY(-2px);
+    }
+
+    .btn:active:not(:disabled),
+    .toolbar-btn:active:not(:disabled),
+    .placement-opt-btn:active:not(:disabled) {
+        transform: translateY(0) scale(.97);
+    }
+
+    .ai-assistant-panel,
+    .code-editor-container {
+        animation: parkoreen-panel-in 220ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    @keyframes parkoreen-panel-in {
+        from { opacity: 0; transform: translateY(8px) scale(.99); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+}
 
 .page-footer { color: var(--text-muted); }
 

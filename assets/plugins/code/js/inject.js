@@ -78,10 +78,24 @@
         return object;
     };
 
-    const findTouchingMechanicsObject = (world, objectId, player, shape = 'box') => {
-        if (!world || !objectId || !player) return null;
+    const matchesTouchObjectSelector = (object, selector) => {
+        if (!object || !selector) return false;
+        const config = typeof selector === 'string' ? { objectId: selector } : selector;
+        if (config.selectionMode === 'type') {
+            const hasDisplay = config.matchDisplayType === true;
+            const hasRole = config.matchRoleType === true;
+            if (!hasDisplay && !hasRole) return false;
+            return (!hasDisplay || object.appearanceType === config.displayType) &&
+                (!hasRole || object.actingType === config.roleType);
+        }
+        const ids = Array.isArray(config.objectIds) ? config.objectIds : (config.objectId ? [config.objectId] : []);
+        return ids.some(id => object.id === id || (object._mechanicsSpawned === true && object._mechanicsSpawnTemplateId === id));
+    };
+
+    const findTouchingMechanicsObject = (world, selector, player, shape = 'box') => {
+        if (!world || !selector || !player) return null;
         return (world.objects || []).find(object =>
-            (object.id === objectId || (object._mechanicsSpawned === true && object._mechanicsSpawnTemplateId === objectId)) &&
+            matchesTouchObjectSelector(object, selector) &&
             object._mechanicsEnabled !== false && object._collected !== true &&
             (shape === 'circle' ? isPlayerInCircle(player, object)
                 : shape === 'capsule' && typeof player.collisionShapeIntersectsBox === 'function'
@@ -4784,7 +4798,7 @@
         if (!isMechanicsTriggerEnabledInSnapshot(world, trigger, enabledSnapshot)) {
             if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType)) {
                 const state = getTriggerState(getPlayerState(player, world), trigger);
-                const touchedObject = findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape);
+                const touchedObject = findTouchingMechanicsObject(world, trigger.config, player, trigger.config?.shape);
                 state.wasTouchingObject = Boolean(touchedObject);
                 if (touchedObject) state.lastTouchedObjectId = touchedObject.id;
             } else if ([CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP, CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP].includes(trigger.triggerType)) {
@@ -4888,14 +4902,15 @@
                            playerState.previousZones.has(config.zoneName);
 
                 case CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT: {
-                    const object = typeof config.objectId === 'string' ? world?.getObjectById?.(config.objectId) : null;
+                    const object = (world?.objects || []).find(candidate => matchesTouchObjectSelector(candidate, config) &&
+                        candidate._mechanicsEnabled !== false && candidate._collected !== true);
                     if (!object) {
-                        reportTriggerTargetError(world, trigger, 'Player Touches Object needs an existing map object.');
+                        reportTriggerTargetError(world, trigger, 'Player Touches Object needs a matching, enabled map object.');
                         return false;
                     }
                     clearTriggerTargetError(world, trigger);
                     const touchState = getTriggerState(playerState, trigger);
-                    const touchedObject = findTouchingMechanicsObject(world, config.objectId, player, config.shape);
+                    const touchedObject = findTouchingMechanicsObject(world, config, player, config.shape);
                     const touching = Boolean(touchedObject);
                     const justTouched = touching && !touchState.wasTouchingObject;
                     touchState.wasTouchingObject = touching;
@@ -4904,14 +4919,15 @@
                 }
 
                 case CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT: {
-                    const object = typeof config.objectId === 'string' ? world?.getObjectById?.(config.objectId) : null;
+                    const object = (world?.objects || []).find(candidate => matchesTouchObjectSelector(candidate, config) &&
+                        candidate._mechanicsEnabled !== false && candidate._collected !== true);
                     if (!object) {
-                        reportTriggerTargetError(world, trigger, 'Player Leaves Object needs an existing map object.');
+                        reportTriggerTargetError(world, trigger, 'Player Leaves Object needs a matching, enabled map object.');
                         return false;
                     }
                     clearTriggerTargetError(world, trigger);
                     const touchState = getTriggerState(playerState, trigger);
-                    const touchedObject = findTouchingMechanicsObject(world, config.objectId, player, config.shape);
+                    const touchedObject = findTouchingMechanicsObject(world, config, player, config.shape);
                     const wasTouching = touchState.wasTouchingObject === true;
                     touchState.wasTouchingObject = Boolean(touchedObject);
                     if (touchedObject) touchState.lastTouchedObjectId = touchedObject.id;
@@ -5397,7 +5413,7 @@
                         const linkedEventId = trigger.config?.eventId || trigger.config?.actionId;
                         if (linkedEventId) {
                             const touchedObject = trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT
-                                ? findTouchingMechanicsObject(world, trigger.config?.objectId, player, trigger.config?.shape)
+                                ? findTouchingMechanicsObject(world, trigger.config, player, trigger.config?.shape)
                                 : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT
                                     ? world?.getObjectById?.(getTriggerState(getPlayerState(player, world), trigger).leftObjectId)
                                 : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_TOUCH_TILEMAP
@@ -5733,7 +5749,8 @@
                     (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_ACTION_INPUT && trigger.config?.action !== 'touchOtherPlayer') ||
                     (!isRootEventRequest && (!choiceParentEventId || typeof request.playerId !== 'string' || !request.playerId)) ||
                     !eventUsesSharedMechanics(world, request.eventId)) return;
-                const requestedTouchObject = world.getObjectById?.(request.touchedObjectId);
+                const requestedTouchObject = world.getObjectById?.(request.touchedObjectId) ||
+                    world.objects?.find(object => String(object?.id) === String(request.touchedObjectId));
                 const requestedTilemapCell = world.getTilemapColliderById?.(request.touchedObjectId) ||
                     (trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_LEAVE_TILEMAP
                         ? getMechanicsTilemapCollider(world, request.touchedObjectId) : null);
@@ -5746,9 +5763,7 @@
                         )));
                 const touchedObject = [CODE_TRIGGER_TYPES.PLAYER_TOUCH_OBJECT, CODE_TRIGGER_TYPES.PLAYER_LEAVE_OBJECT].includes(trigger.triggerType) &&
                     requestedTouchObject && requestedTouchObject._mechanicsEnabled !== false &&
-                    requestedTouchObject._collected !== true && (requestedTouchObject.id === trigger.config?.objectId ||
-                        (requestedTouchObject._mechanicsSpawned === true &&
-                            requestedTouchObject._mechanicsSpawnTemplateId === trigger.config?.objectId))
+                    requestedTouchObject._collected !== true && matchesTouchObjectSelector(requestedTouchObject, trigger.config)
                     ? requestedTouchObject
                     : trigger.triggerType === CODE_TRIGGER_TYPES.PLAYER_PRESS_BUTTON &&
                         requestedTouchObject?.appearanceType === 'button' &&

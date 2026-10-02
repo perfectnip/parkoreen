@@ -24,7 +24,7 @@
         'inject.js',
         'editor.js'
     ];
-    const CODE_SCRIPT_VERSION = '22';
+    const CODE_SCRIPT_VERSION = '23';
 
     function loadOne(url) {
         return new Promise(function (resolve) {
