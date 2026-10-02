@@ -3200,7 +3200,9 @@ Do not claim edits are already applied: return all proposed edits as operations 
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    // Give map-sized requests a little more room while keeping a firm ceiling
+    // on upstream usage. Low reasoning effort keeps routine editor changes fast.
+    const timeout = setTimeout(() => controller.abort(), 60000);
     try {
         const openAIResponse = await fetch('https://api.openai.com/v1/responses', {
             method: 'POST',
@@ -3210,8 +3212,8 @@ Do not claim edits are already applied: return all proposed edits as operations 
             },
             body: JSON.stringify({
                 model: 'gpt-5.6-luna',
-                reasoning: { effort: 'medium' },
-                max_output_tokens: 16000,
+                reasoning: { effort: 'low' },
+                max_output_tokens: 12000,
                 instructions,
                 input,
                 text: { format: { type: 'json_schema', name: 'parkoreen_map_assistant', strict: true, schema } }
@@ -3248,7 +3250,7 @@ Do not claim edits are already applied: return all proposed edits as operations 
         }
         return jsonResponse({ message: suggestion.message.slice(0, 3000), operations: suggestion.operations });
     } catch (error) {
-        if (error?.name === 'AbortError') return errorResponse('The assistant took too long to respond. Please try a smaller request.', 504);
+        if (error?.name === 'AbortError') return errorResponse('The AI request timed out before it could finish. Try again, or split a very large map change into smaller steps. Your map was not changed.', 504);
         console.error('Map assistant request failed:', error?.message || 'Unknown provider error');
         return errorResponse('The AI service is temporarily unavailable. Please try again shortly.', 502);
     } finally {

@@ -5704,12 +5704,8 @@ class GameEngine {
             }
         }, { passive: false });
         
-        // Prevent browser zoom via Ctrl+/- keys (use game zoom instead)
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '_')) {
-                e.preventDefault();
-            }
-        });
+        // Leave browser-level keyboard shortcuts (copy, paste, undo, zoom, etc.)
+        // to the browser. Editor/game shortcuts are handled by their own controls.
     }
 
     resizeCanvas() {
@@ -5759,14 +5755,23 @@ class GameEngine {
 
     isTypingInInput() {
         const activeEl = document.activeElement;
-        return activeEl && (
-            activeEl.tagName === 'INPUT' || 
-            activeEl.tagName === 'TEXTAREA' || 
-            activeEl.contentEditable === 'true'
+        return !!activeEl && (
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) ||
+            activeEl.isContentEditable === true ||
+            activeEl.closest?.('[contenteditable="true"]')
         );
     }
 
+    isAIAssistantOpen() {
+        const overlay = document.getElementById('ai-assistant-overlay');
+        return !!overlay && !overlay.hidden;
+    }
+
     onKeyDown(e) {
+        // Modifier shortcuts belong to the browser whenever text is being edited
+        // or the assistant is open (including when focus is on its controls).
+        if ((e.ctrlKey || e.metaKey || e.altKey) && (this.isTypingInInput() || this.isAIAssistantOpen())) return;
+
         // Don't capture keyboard for player/game when typing in input
         if (this.isTypingInInput()) {
             // Still emit for editor shortcuts (they have their own input check)
@@ -5803,7 +5808,7 @@ class GameEngine {
 
     onKeyUp(e) {
         // Don't capture keyboard for player/game when typing in input
-        if (this.isTypingInInput()) {
+        if (this.isTypingInInput() || this.isAIAssistantOpen()) {
             if (this.keys[e.code] === true) this.releaseKeyboardKey(e.code);
             return;
         }
