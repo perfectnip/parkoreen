@@ -360,8 +360,8 @@
             .levels-nav-btn:hover:not(:disabled) svg { animation: level-arrow-nudge 320ms ease both; }
             #btn-prev:hover:not(:disabled) svg { animation-name: level-arrow-nudge-left; }
             @keyframes level-viewport-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-            @keyframes level-nav-arrive { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes level-indicator-arrive { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+            @keyframes level-nav-arrive { from { filter: blur(3px); } to { filter: none; } }
+            @keyframes level-indicator-arrive { from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(.96); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
             @keyframes level-arrow-nudge { 50% { transform: translateX(3px); } }
             @keyframes level-arrow-nudge-left { 50% { transform: translateX(-3px); } }
         }
