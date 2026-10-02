@@ -33,14 +33,28 @@
         #map-dialog { width:min(600px,94vw); max-height:86vh; overflow:auto; border:1px solid rgba(255,255,255,.15); border-radius:16px; background:var(--bg-medium,#1a1a2e); color:var(--text-primary,#fff); }
         #map-dialog::backdrop { background:rgba(0,0,0,.7); }
     </style>
+    <link rel="stylesheet" href="../assets/css/site.css">
 </head>
 <body>
 <main class="community-wrap">
     <header class="community-head">
-        <div><h1>Parkoreen Community</h1><div class="community-meta">Find a map, share your creations, and play together.</div></div>
-        <div class="community-head"><a class="btn btn-secondary" href="../index.html"><span class="material-symbols-outlined">home</span>Home</a><a class="btn btn-secondary" href="../join.html"><span class="material-symbols-outlined">groups</span>Lobbies</a></div>
+        <a class="community-brand" href="../index.html">P<span>／</span> PARKOREEN</a>
+        <nav class="community-links" aria-label="Community navigation"><a class="btn btn-secondary" href="../index.html"><span class="material-symbols-outlined">home</span>Levels</a><a class="btn btn-secondary" href="../join.html"><span class="material-symbols-outlined">groups</span>Lobbies</a></nav>
     </header>
+    <section class="community-intro"><span class="site-kicker">CREATED BY PLAYERS <span> / </span> PLAYED BY EVERYONE</span><h1>Find your next run<span class="site-period">.</span></h1><p>Courses from the Parkoreen community, from quick races to strange experiments.</p></section>
+    <div class="community-layout">
+    <section class="community-browse" aria-label="Community maps">
+    <div class="community-section-heading"><div><span class="site-kicker">EXPLORE</span><h2>Community maps</h2></div></div>
+    <div class="community-toolbar">
+        <label class="form-label">Tag <select class="form-select" id="tag-filter"><option value="">All tags</option></select></label>
+        <label class="form-label">Order <select class="form-select" id="sort-order"><option value="suggested">Suggested for you</option><option value="top">Highest rated</option><option value="new">Recently published</option></select></label>
+        <button class="btn btn-secondary" id="refresh-maps" type="button"><span class="material-symbols-outlined">refresh</span> Refresh</button>
+    </div>
+    <div class="community-grid" id="community-grid"></div>
+    <p id="community-status" class="community-meta">Loading maps…</p>
+    </section>
     <section class="card publish-card" id="publish-card">
+        <span class="site-kicker">SHARE A COURSE</span>
         <h2>Publish a map</h2>
         <p class="community-meta">Choose tags that describe the map. New tags are added to the shared tag list when published.</p>
         <form id="publish-form">
@@ -53,13 +67,7 @@
             <div style="margin-top:12px;"><button class="btn btn-primary" type="submit">Publish map</button></div>
         </form>
     </section>
-    <div class="community-toolbar">
-        <label class="form-label">Tag <select class="form-select" id="tag-filter"><option value="">All tags</option></select></label>
-        <label class="form-label">Order <select class="form-select" id="sort-order"><option value="suggested">Suggested for you</option><option value="top">Highest rated</option><option value="new">Recently published</option></select></label>
-        <button class="btn btn-secondary" id="refresh-maps" type="button">Refresh</button>
     </div>
-    <div class="community-grid" id="community-grid"></div>
-    <p id="community-status" class="community-meta">Loading maps…</p>
 </main>
 
 <dialog id="map-dialog">
