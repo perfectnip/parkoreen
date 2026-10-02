@@ -55,6 +55,9 @@
     <p>If a Mechanics action or Python event fails during <strong>Test Game</strong>, Parkoreen shows a brief error notice with the Event, action, and message. Recent failures remain in the Mechanics dashboard after testing; select an error to reopen its Event. Repeated copies of the same failure are rate-limited so a broken repeating flow does not flood the screen. See the <a href="../mechanics/">Mechanics guide</a> for trigger types, Event flows, variables, templates, and hosted-room behavior.</p>
     <p>If a map contains a trigger or action type from a newer Parkoreen version, an older editor keeps the trigger configuration and linked Event, or the action and its saved fields, while you edit the map. Unknown variable and List item value types also remain intact when you make other edits. You can remove or replace an unsupported record explicitly. An older runtime cannot execute unknown mechanic types; it records an author-facing error until the map is opened in a version that supports them or they are replaced.</p>
 
+    <h2>Map Assistant</h2>
+    <p>Open <strong>Map Assistant</strong> from the editor toolbar and describe the change you want. While it thinks, you can close the assistant and continue editing. If the map changes before the assistant is ready, it rebuilds its proposal on your latest map. When it has concrete edits, colored outlines and fills appear progressively on the canvas as a preview; choose <strong>Accept edit</strong> to finish early, or let the preview complete to apply it. After application, <strong>Undo AI edit</strong> reverses that assistant edit. If the assistant returns no map operations, it tells you the map was left unchanged instead of implying an edit succeeded.</p>
+
     <h2>Editor tools</h2>
     <table class="wiki-table">
       <thead><tr><th>Tool</th><th>Shortcut</th><th>Description</th></tr></thead>

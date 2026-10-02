@@ -577,15 +577,14 @@ class Editor {
                 </div>
                 <div class="ai-assistant-messages" id="ai-assistant-messages" aria-live="polite"></div>
                 <div class="ai-assistant-pending hidden" id="ai-assistant-pending">
-                    <div><strong>Map changes ready</strong><span id="ai-assistant-change-count"></span></div>
-                    <button type="button" class="btn btn-accent" id="ai-assistant-apply"><span class="material-symbols-outlined">check</span>Apply &amp; view map</button>
-                    <ul class="ai-assistant-preview" id="ai-assistant-preview" aria-label="Proposed map edits"></ul>
+                    <div class="ai-assistant-progress-copy"><strong id="ai-assistant-result-title">AI is building on your map</strong><span id="ai-assistant-change-count"></span><span class="ai-assistant-progress-track"><span id="ai-assistant-progress-bar"></span></span></div>
+                    <button type="button" class="btn btn-accent" id="ai-assistant-accept"><span class="material-symbols-outlined">check</span>Accept edit</button>
+                    <button type="button" class="btn btn-secondary hidden" id="ai-assistant-undo"><span class="material-symbols-outlined">undo</span>Undo AI edit</button>
                 </div>
                 <form class="ai-assistant-form" id="ai-assistant-form">
                     <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
                     <button type="submit" class="btn btn-accent" id="ai-assistant-send"><span class="material-symbols-outlined">send</span><span>Send</span></button>
                 </form>
-                <p class="ai-assistant-footnote">Chats are saved in this browser. Your current map data is sent to the Parkoreen AI service for each request; embedded image and audio data is omitted. Proposed edits become visible after you choose Apply &amp; view map, and can be undone.</p>
                     </div>
                 </div>
             </div>`;
@@ -598,6 +597,12 @@ class Editor {
         this._aiPendingMap = null;
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
+        this._aiAppliedSnapshot = null;
+        this._aiPreviewMap = null;
+        this._aiPreviewBase = null;
+        this._aiPreviewObjects = [];
+        this._aiPreviewVisibleCount = 0;
+        this._aiPreviewAccepted = false;
         this.loadAIAssistantConversations();
 
         document.getElementById('btn-ai-assistant').addEventListener('click', () => this.openAIAssistant());
@@ -621,7 +626,8 @@ class Editor {
                 document.getElementById('ai-assistant-form').requestSubmit();
             }
         });
-        document.getElementById('ai-assistant-apply').addEventListener('click', () => this.applyAIAssistantChanges());
+        document.getElementById('ai-assistant-accept').addEventListener('click', () => { this._aiPreviewAccepted = true; });
+        document.getElementById('ai-assistant-undo').addEventListener('click', () => this.undoAIAssistantChanges());
         overlay.addEventListener('keydown', event => {
             if (event.key === 'Escape') this.closeAIAssistant();
         });
@@ -778,8 +784,110 @@ class Editor {
         return clean;
     }
 
+    getAIAssistantMechanicsReference() {
+        const baseObject = {
+            id: 'ai_unique_id', x: 0, y: 0, width: 64, height: 32,
+            type: 'block', appearanceType: 'ground', actingType: 'ground',
+            collision: true, collisionShape: 'box', collisionPoints: null, polygonOneWay: false,
+            oneWayPlatform: false, color: this.world?.defaultBlockColor || '#787878', opacity: 1, layer: 1, rotation: 0,
+            flipHorizontal: false, texture: 'solid', spriteSheet: null
+        };
+        const object = (overrides) => ({ ...baseObject, ...overrides });
+        const plugins = Array.from(window.PluginManager?.plugins?.values?.() || []).map(plugin => ({
+            id: plugin.id,
+            name: plugin.name,
+            version: plugin.version,
+            description: plugin.description,
+            dependencies: plugin.dependencies || [],
+            features: plugin.features || [],
+            editorFeatures: plugin.editorFeatures || {},
+            config: plugin.config || {},
+            controls: plugin.controls || {}
+        }));
+        const globals = (name, fallback = []) => window[name] ?? fallback;
+        const triggerTypes = globals('CODE_TRIGGER_TYPES', {});
+        const triggerConfigTemplates = {};
+        const addTriggerConfig = (key, config) => {
+            const id = triggerTypes[key];
+            if (id) triggerConfigTemplates[id] = { ...config, eventId: 'event_id' };
+        };
+        addTriggerConfig('PLAYER_TOUCH_OBJECT', { selectionMode: 'specific', objectIds: ['object_id'], objectId: 'object_id', shape: 'box' });
+        addTriggerConfig('PLAYER_LEAVE_OBJECT', { selectionMode: 'specific', objectIds: ['object_id'], objectId: 'object_id', shape: 'box' });
+        addTriggerConfig('PLAYER_ATTACKS_OBJECT', { objectId: 'object_id', pogoable: false });
+        addTriggerConfig('PLAYER_ENTER_ZONE', { zoneName: 'zone_name' });
+        addTriggerConfig('PLAYER_LEAVE_ZONE', { zoneName: 'zone_name' });
+        addTriggerConfig('PLAYER_TOUCH_TILEMAP', { tilemapId: 'tilemap_id', collisionType: 'any' });
+        addTriggerConfig('PLAYER_LEAVE_TILEMAP', { tilemapId: 'tilemap_id', collisionType: 'any' });
+        addTriggerConfig('PLAYER_KEY_INPUT', { keys: ['Space'] });
+        addTriggerConfig('PLAYER_ACTION_INPUT', { action: 'jump' });
+        addTriggerConfig('PLAYER_STATS', { stat: 'username', statValue: '' });
+        addTriggerConfig('PLAYER_HEALTH_CHANGED', { direction: 'any' });
+        addTriggerConfig('PLAYER_PRESS_BUTTON', { buttonName: 'button_name' });
+        addTriggerConfig('VARIABLE_CONDITION', { variableId: 'variable_id', operator: 'equals', value: '' });
+        addTriggerConfig('REPEAT', { interval: 1, unit: 'seconds' });
+        const pluginMechanicsActions = window.PluginManager?.getMechanicsActionControls?.() || [];
+        return {
+            format: 'Parkoreen World.toJSON() expanded map format; objects are full WorldObject records.',
+            levelRequirements: [
+                'A playable level must have a koreen object with appearanceType="spawnpoint" AND actingType="spawnpoint". The runtime uses actingType to set the spawn.',
+                'A complete level needs a reachable koreen object with appearanceType="endpoint" AND actingType="endpoint" so the player can finish.',
+                'Place the spawn in a safe, open area above or on the starting platform; do not overlap it with solid geometry or hazards.',
+                'Build a physically reachable route from spawn to endpoint using the current physics settings. Keep hazards avoidable and checkpoints on safe ground.',
+                'For an empty map, create the full requested level using these canonical formats; an empty object list is not a missing schema.'
+            ],
+            physics: {
+                gridSize: GRID_SIZE,
+                playerSpeed: this.world?.playerSpeed ?? 5,
+                gravity: this.world?.gravity ?? 0.71,
+                jumpForce: this.world?.jumpForce ?? -13.2,
+                estimatedMaximumJumpHeight: Math.pow(Math.abs(this.world?.jumpForce ?? -13.2), 2) / (2 * (this.world?.gravity ?? 0.71)),
+                estimatedMaximumAirTime: (2 * Math.abs(this.world?.jumpForce ?? -13.2)) / (this.world?.gravity ?? 0.71),
+                estimatedMaximumHorizontalTravel: ((2 * Math.abs(this.world?.jumpForce ?? -13.2)) / (this.world?.gravity ?? 0.71)) * (this.world?.playerSpeed ?? 5),
+                cameraFollowMode: this.world?.cameraFollowMode || 'both',
+                note: 'Treat estimates as theoretical limits, not targets; keep every generated jump comfortably below them.'
+            },
+            objectTemplates: {
+                platform: object({ name: 'Platform', appearanceType: 'ground', actingType: 'ground' }),
+                spawnPoint: object({ id: 'ai_spawn', type: 'koreen', name: 'Spawn Point', width: 32, height: 32, appearanceType: 'spawnpoint', actingType: 'spawnpoint', collision: false, color: '#4CAF50' }),
+                endPoint: object({ id: 'ai_endpoint', type: 'koreen', name: 'End Point', width: 32, height: 32, appearanceType: 'endpoint', actingType: 'endpoint', collision: false, color: '#FFD700' }),
+                spike: object({ id: 'ai_spike', name: 'Spike', appearanceType: 'spike', actingType: 'spike', color: this.world?.defaultSpikeColor || '#c45a3f' }),
+                checkpoint: object({ id: 'ai_checkpoint', type: 'koreen', name: 'Checkpoint', width: 32, height: 32, appearanceType: 'checkpoint', actingType: 'checkpoint', collision: false, color: '#4CAF50' }),
+                bouncer: object({ id: 'ai_bouncer', name: 'Bouncer', appearanceType: 'bouncer', actingType: 'bouncer', bouncerStrength: 20, bouncerDirection: 0, bouncerMatchAppearance: true, bouncerAppearanceDirection: 0 }),
+                coin: object({ id: 'ai_coin', type: 'koreen', name: 'Coin', appearanceType: 'coin', actingType: 'coin', collision: false, coinAmount: 1, coinActivityScope: 'global' }),
+                spinner: object({ id: 'ai_spinner', type: 'spinner', name: 'Spinner', appearanceType: 'spinner', actingType: 'spike', spinSpeed: 1 }),
+                zone: object({ id: 'ai_zone', type: 'koreen', name: 'Zone', appearanceType: 'zone', actingType: 'zone', collision: false, zoneName: 'zone_name', color: 'rgba(255, 255, 255, 0.3)' }),
+                text: object({ id: 'ai_text', type: 'text', name: 'Text', appearanceType: 'text', actingType: 'text', collision: false, content: 'Label', font: 'Parkoreen Game', fontSize: 24 }),
+                button: object({ id: 'ai_button', type: 'koreen', name: 'Button', appearanceType: 'button', actingType: 'button', collision: false, displayName: 'Button', displayDescription: '', buttonVisible: true, buttonInteraction: 'click', buttonOnlyOnce: false }),
+                teleportal: object({ id: 'ai_teleportal', type: 'koreen', name: 'Teleportal', appearanceType: 'teleportal', actingType: 'teleportal', collision: false, teleportalName: 'Portal', sendTo: [], receiveFrom: [] })
+            },
+            mechanics: {
+                codeDataShape: {
+                    triggers: globals('CODE_DEFAULT_TRIGGER', { id: 'trigger_id', name: 'Game Starts', type: 'trigger', enabled: true, triggerType: 'gameStarts', config: {} }),
+                    events: globals('CODE_DEFAULT_EVENT', { id: 'event_id', name: 'Event', type: 'event', enabled: true, actions: [] }),
+                    variables: globals('CODE_DEFAULT_VARIABLE', { id: 'variable_id', name: 'Variable', type: 'variable', enabled: true, variableType: 'variable', scope: 'map', valueType: 'integer', defaultValue: 0 })
+                },
+                triggers: globals('CODE_TRIGGER_TYPE_INFO'),
+                triggerConfigTemplates,
+                eventActions: globals('CODE_EVENT_ACTION_TYPES'),
+                eventActionTemplates: window.CodeEditor?.getEventActionTemplates?.() || {},
+                playerActions: [...globals('CODE_PLAYER_ACTIONS'), ...pluginMechanicsActions.map(action => ({
+                    id: `pluginControl:${action.id}`, label: action.label || action.id,
+                    hasValue: action.hasValue === true, valueType: action.valueType || null,
+                    valuePlaceholder: action.valuePlaceholder || null, defaultValue: action.defaultValue ?? null
+                }))],
+                playerStats: globals('CODE_PLAYER_STATS'),
+                variableTypes: globals('CODE_VARIABLE_TYPES'),
+                valueTypes: globals('CODE_VALUE_TYPES'),
+                sounds: globals('CODE_CORE_SOUND_NAMES')
+            },
+            pluginMechanicsActions,
+            plugins,
+            enabledPlugins: this.world?.plugins || {}
+        };
+    }
+
     applyAIAssistantOperations(map, operations) {
-        if (!Array.isArray(operations) || operations.length > 250) throw new Error('The assistant returned too many changes. Ask it to make a smaller set of edits.');
+        if (!Array.isArray(operations) || operations.length > 500) throw new Error('The assistant returned too many changes. Ask it to make a smaller set of edits.');
         const next = JSON.parse(JSON.stringify(map));
         const allowedRoots = new Set(['objects', 'tilemaps', 'objectStamps', 'layerDefinitions', 'codeData', 'plugins', 'customBackground', 'music', 'background', 'defaultBlockColor', 'defaultSpikeColor', 'defaultTextColor', 'defaultPortalColor', 'defaultBouncerColor', 'showCoinCounter', 'cloudColorSky', 'cloudColorGalaxy', 'checkpointDefaultColor', 'checkpointActiveColor', 'checkpointTouchedColor', 'maxJumps', 'infiniteJumps', 'additionalAirjump', 'collideWithEachOther', 'mapName', 'dieLineY', 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed', 'jumpForce', 'gravity', 'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds', 'spikeTouchbox', 'dropHurtOnly', 'storedDataType', 'persistCheckpoints']);
         const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
@@ -830,15 +938,25 @@ class Editor {
         if (!operations.some(operation => ['objects', 'tilemaps'].includes(operation?.path?.[0]))) return;
         const changedObjects = new Set();
         const changedTilemaps = new Set();
+        let objectCount = baseMap.objects?.length || 0;
+        let tilemapCount = baseMap.tilemaps?.length || 0;
         for (const operation of operations) {
             const root = operation?.path?.[0];
             const index = Number(operation?.path?.[1]);
             if (root === 'objects') {
                 if (Number.isInteger(index)) changedObjects.add(index);
-                else (nextMap.objects || []).forEach((_, i) => changedObjects.add(i));
+                else if (operation.op === 'add') changedObjects.add(objectCount++);
+                else {
+                    (nextMap.objects || []).forEach((_, i) => changedObjects.add(i));
+                    objectCount = nextMap.objects?.length || 0;
+                }
             } else if (root === 'tilemaps') {
                 if (Number.isInteger(index)) changedTilemaps.add(index);
-                else (nextMap.tilemaps || []).forEach((_, i) => changedTilemaps.add(i));
+                else if (operation.op === 'add') changedTilemaps.add(tilemapCount++);
+                else {
+                    (nextMap.tilemaps || []).forEach((_, i) => changedTilemaps.add(i));
+                    tilemapCount = nextMap.tilemaps?.length || 0;
+                }
             }
         }
         const bounds = [];
@@ -867,9 +985,9 @@ class Editor {
         const right = Math.max(...bounds.map(item => item.right));
         const bottom = Math.max(...bounds.map(item => item.bottom));
         const camera = this.camera;
-        const padding = 128;
-        const fitZoom = Math.min(camera.width / (right - left + padding * 2), camera.height / (bottom - top + padding * 2));
-        camera.setZoom(Math.max(camera.minZoom, Math.min(camera.defaultZoom, fitZoom)));
+        // Center on the edited objects without zooming out to fit them. A
+        // root-level append previously included every existing map object and
+        // could shrink the editor view dramatically after even a small edit.
         camera.targetX = camera.x = (left + right) / 2 - camera.width / 2 / camera.zoom;
         camera.targetY = camera.y = (top + bottom) / 2 - camera.height / 2 / camera.zoom;
     }
@@ -889,58 +1007,138 @@ class Editor {
         this._aiPendingMap = null;
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
+        this._aiPreviewMap = null;
+        this._aiPreviewObjects = [];
         document.getElementById('ai-assistant-pending').classList.add('hidden');
-        const baseMap = this.world.toJSON();
-        const mapForAI = this.stripAIAssistantMedia(baseMap);
-        const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map…');
+        const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map… Close this panel if you want to edit while I work.');
+        waiting.classList.add('is-thinking');
         sendButton.disabled = true;
         document.getElementById('ai-assistant-new').disabled = true;
         document.querySelectorAll('#ai-assistant-thread-list button').forEach(button => { button.disabled = true; });
         try {
-            const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ prompt, conversation: this._aiConversation.slice(-8), map: mapForAI })
-            });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
-            const operations = Array.isArray(result.operations) ? result.operations : [];
-            const assistantReply = result.message || (operations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            const protectedRoots = new Set([
+                'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds',
+                'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed',
+                'jumpForce', 'gravity', 'maxJumps', 'infiniteJumps', 'additionalAirjump'
+            ]);
+            const explicitSettings = /\b(camera|zoom|follow mode|framing|camera bounds|physics|player speed|gravity|jump force|air control|max jumps|infinite jumps)\b/i.test(prompt);
+            const editRequest = /\b(build|create|add|make|generate|change|update|remove|delete|fix|redesign|place|draw|convert|extend|construct|design|improve|put)\b/i.test(prompt);
+            const conversation = this._aiConversation.slice(-8);
+            let retryForEmptyEdit = false;
+            let assistantReply = '';
+            let done = false;
+
+            for (let attempt = 0; attempt < 4 && !done; attempt++) {
+                const baseMap = this.world.toJSON();
+                const baseSnapshot = JSON.stringify(baseMap);
+                const requestPrompt = attempt === 0 ? prompt : retryForEmptyEdit
+                    ? `The previous response did not include any map operations. The user requested an actual map edit. Complete this request now with valid structured operations. Original request: ${prompt}`
+                    : `The user changed the map while you were working. Continue the original request on the current map below. Preserve their new edits and settings, build on what is already present, do not duplicate existing content, and return concrete operations. Original request: ${prompt}`;
+                if (attempt > 0) waiting.querySelector('p').textContent = retryForEmptyEdit
+                    ? 'The first reply did not include map edits. Trying again with your request…'
+                    : 'The map changed while I worked. Rebuilding on your latest edits…';
+                const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ prompt: requestPrompt, conversation, map: this.stripAIAssistantMedia(baseMap), mechanicsReference: this.getAIAssistantMechanicsReference() })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
+
+                if (JSON.stringify(this.world.toJSON()) !== baseSnapshot) {
+                    if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
+                    retryForEmptyEdit = false;
+                    continue;
+                }
+
+                const operations = Array.isArray(result.operations) ? result.operations : [];
+                const safeOperations = operations.filter(operation => explicitSettings || !protectedRoots.has(operation?.path?.[0]));
+                const ignoredSettings = operations.length - safeOperations.length;
+                assistantReply = result.message || (safeOperations.length ? 'I prepared an edit for your map.' : 'I could not produce a map edit.');
+                if (ignoredSettings) assistantReply += ' I kept your camera and movement settings because this request did not ask to change them.';
+
+                if (!safeOperations.length) {
+                    if (editRequest && attempt === 0) {
+                        retryForEmptyEdit = true;
+                        continue;
+                    }
+                    if (editRequest) assistantReply += ' No editable map changes were returned, so the map is unchanged. Try a smaller, specific edit.';
+                    done = true;
+                    break;
+                }
+
+                const nextMap = this.applyAIAssistantOperations(baseMap, safeOperations);
+                if (JSON.stringify(nextMap) === baseSnapshot) {
+                    assistantReply += ' The returned operations did not change map data, so the map is unchanged. Please try a more specific edit.';
+                    done = true;
+                    break;
+                }
+
+                this._aiPendingMap = nextMap;
+                this._aiPendingBase = baseSnapshot;
+                this._aiPendingOperations = safeOperations;
+                this._aiPreviewMap = nextMap;
+                this._aiPreviewBase = baseSnapshot;
+                this._aiPreviewObjects = this.getAIAssistantChangedObjects(baseMap, nextMap);
+                this._aiPreviewVisibleCount = 0;
+                this._aiPreviewAccepted = false;
+                document.getElementById('ai-assistant-result-title').textContent = 'AI is building on your map';
+                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edits · close this panel to edit too`;
+                document.getElementById('ai-assistant-progress-bar').style.width = '0%';
+                document.getElementById('ai-assistant-pending').classList.remove('is-applied');
+                document.getElementById('ai-assistant-accept').classList.remove('hidden');
+                document.getElementById('ai-assistant-undo').classList.add('hidden');
+                document.getElementById('ai-assistant-pending').classList.remove('hidden');
+                waiting.querySelector('p').textContent = 'Previewing each map change on the canvas…';
+
+                const previewFinished = await this.animateAIAssistantPreview();
+                this._aiPreviewObjects = [];
+                if (!previewFinished || JSON.stringify(this.world.toJSON()) !== baseSnapshot) {
+                    this._aiPreviewMap = null;
+                    this._aiPendingMap = null;
+                    document.getElementById('ai-assistant-pending').classList.add('hidden');
+                    if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
+                    retryForEmptyEdit = false;
+                    continue;
+                }
+
+                this.beginUndoTransaction();
+                try {
+                    this.world.fromJSON(nextMap);
+                } finally {
+                    this.endUndoTransaction();
+                }
+                this._aiAppliedSnapshot = JSON.stringify(this.world.toJSON());
+                this._aiPreviewMap = null;
+                this._aiPendingMap = null;
+                this._aiPendingBase = null;
+                this._aiPendingOperations = null;
+                document.getElementById('ai-assistant-result-title').textContent = 'Applied to your map';
+                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edits · undo anytime`;
+                document.getElementById('ai-assistant-pending').classList.add('is-applied');
+                document.getElementById('ai-assistant-accept').classList.add('hidden');
+                document.getElementById('ai-assistant-undo').classList.remove('hidden');
+                if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
+                this.updateBackground();
+                this.syncConfigPanel?.();
+                this.updateLayersList();
+                this.triggerMapChange();
+                this.focusAIAssistantChanges(baseMap, nextMap, safeOperations);
+                this.showToast('AI edits applied. Use Undo AI edit to revert them.', 'success');
+                done = true;
+            }
+
+            waiting.classList.remove('is-thinking');
             waiting.querySelector('p').textContent = assistantReply;
             this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: assistantReply.slice(0, 2000) });
             this._aiConversation = this._aiConversation.slice(-8);
             const thread = this._aiThreads.find(item => item.id === this._aiCurrentThreadId);
             if (thread) thread.conversation = this._aiConversation.slice(-8);
             this.persistAIAssistantMessage('assistant', assistantReply);
-            if (operations.length) {
-                this._aiPendingMap = this.applyAIAssistantOperations(baseMap, operations);
-                this._aiPendingBase = JSON.stringify(baseMap);
-                this._aiPendingOperations = operations;
-                document.getElementById('ai-assistant-change-count').textContent = `${operations.length} proposed edit${operations.length === 1 ? '' : 's'} · review before applying`;
-                const preview = document.getElementById('ai-assistant-preview');
-                preview.replaceChildren();
-                for (const operation of operations.slice(0, 12)) {
-                    const row = document.createElement('li');
-                    const pathLabel = operation.path.map(part => /^\d+$/.test(part) ? `#${Number(part) + 1}` : part).join(' › ');
-                    let description = `${operation.op.toUpperCase()} · ${pathLabel}`;
-                    if (operation.op !== 'remove') {
-                        try {
-                            const value = JSON.parse(operation.valueJson);
-                            const valueLabel = typeof value === 'object' ? (value?.name || value?.mapName || value?.appearanceType || value?.type || 'map entry') : JSON.stringify(value);
-                            description += ` → ${String(valueLabel).slice(0, 90)}`;
-                        } catch (_) {}
-                    }
-                    row.textContent = description;
-                    preview.appendChild(row);
-                }
-                if (operations.length > 12) {
-                    const more = document.createElement('li');
-                    more.textContent = `…and ${operations.length - 12} more edits`;
-                    preview.appendChild(more);
-                }
-                document.getElementById('ai-assistant-pending').classList.remove('hidden');
-            }
         } catch (error) {
+            waiting.classList.remove('is-thinking');
+            this._aiPreviewObjects = [];
+            this._aiPreviewMap = null;
             const errorMessage = error.message || 'The map assistant could not complete that request.';
             waiting.querySelector('p').textContent = errorMessage;
             this.persistAIAssistantMessage('assistant', errorMessage);
@@ -952,40 +1150,55 @@ class Editor {
         }
     }
 
-    async applyAIAssistantChanges() {
-        if (!this._aiPendingMap) return;
-        if (JSON.stringify(this.world.toJSON()) !== this._aiPendingBase) {
-            this._aiPendingMap = null;
-            this._aiPendingBase = null;
-            this._aiPendingOperations = null;
+    getAIAssistantChangedObjects(baseMap, nextMap) {
+        const previous = new Map((baseMap.objects || []).map(object => [object.id, object]));
+        const changed = (nextMap.objects || []).filter(object => JSON.stringify(previous.get(object.id)) !== JSON.stringify(object));
+        const currentIds = new Set((nextMap.objects || []).map(object => object.id));
+        const removed = (baseMap.objects || []).filter(object => !currentIds.has(object.id)).map(object => ({ ...object, aiPreviewRemoved: true }));
+        return [...changed, ...removed];
+    }
+
+    async animateAIAssistantPreview() {
+        const items = this._aiPreviewObjects;
+        const duration = Math.max(900, Math.min(4500, items.length * 18));
+        const started = performance.now();
+        const progressBar = document.getElementById('ai-assistant-progress-bar');
+        while (true) {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            if (JSON.stringify(this.world.toJSON()) !== this._aiPreviewBase) return false;
+            const progress = this._aiPreviewAccepted ? 1 : Math.min(1, (performance.now() - started) / duration);
+            this._aiPreviewVisibleCount = items.length ? Math.max(1, Math.ceil(items.length * progress)) : 0;
+            progressBar.style.width = `${Math.round(progress * 100)}%`;
+            document.getElementById('ai-assistant-change-count').textContent = items.length
+                ? `${this._aiPreviewVisibleCount} / ${items.length} map pieces · close this panel to edit too`
+                : 'Previewing settings and mechanics · close this panel to edit too';
+            if (progress >= 1) return true;
+        }
+    }
+
+    async undoAIAssistantChanges() {
+        if (!this._aiAppliedSnapshot) return;
+        const applyButton = document.getElementById('ai-assistant-undo');
+        if (JSON.stringify(this.world.toJSON()) !== this._aiAppliedSnapshot) {
+            this._aiAppliedSnapshot = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
-            this.addAIAssistantMessage('assistant', 'Your map changed after I prepared those edits, so I cleared that preview. Ask me to make the changes again against the latest map.');
+            this.showToast('The map has changed since the AI edit. Use the regular undo history to step back through recent edits.', 'info');
             return;
         }
-        const applyButton = document.getElementById('ai-assistant-apply');
         applyButton.disabled = true;
         try {
-            const baseMap = JSON.parse(this._aiPendingBase);
-            const nextMap = this._aiPendingMap;
-            const operations = this._aiPendingOperations || [];
-            this.beginUndoTransaction();
-            this.world.fromJSON(nextMap);
+            this.undo();
             if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
             this.updateBackground();
             this.syncConfigPanel?.();
             this.updateLayersList();
             this.triggerMapChange();
-            this.focusAIAssistantChanges(baseMap, nextMap, operations);
-            this._aiPendingMap = null;
-            this._aiPendingBase = null;
-            this._aiPendingOperations = null;
+            this._aiAppliedSnapshot = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
-            this.closeAIAssistant();
-            this.showToast('AI edits applied and centered on the changed map content. Undo with Ctrl+Z (or ⌘Z on Mac).', 'success');
+            this.showToast('AI edit undone.', 'success');
         } catch (error) {
-            this.showToast(error.message || 'Could not apply the assistant changes.', 'error');
+            this.showToast(error.message || 'Could not undo the AI edit.', 'error');
         } finally {
-            this.endUndoTransaction();
             applyButton.disabled = false;
         }
     }
@@ -12430,6 +12643,45 @@ if (bouncerColor) bouncerColor.value = this.world.defaultBouncerColor || '#461A0
     // RENDERING
     // ========================================
     renderOverlay(ctx, camera) {
+        // The assistant's proposed objects are drawn as a live canvas ghost
+        // preview. The actual world stays untouched until this sequence ends,
+        // so edits made by the player can be detected and preserved safely.
+        if (this._aiPreviewObjects?.length && this.engine.state === GameState.EDITOR) {
+            const visible = this._aiPreviewObjects.slice(0, this._aiPreviewVisibleCount || 0);
+            const viewRight = camera.x + ctx.canvas.width / camera.zoom;
+            const viewBottom = camera.y + ctx.canvas.height / camera.zoom;
+            const pulse = .34 + (Math.sin(performance.now() / 150) + 1) * .11;
+            ctx.save();
+            ctx.setLineDash([8 / camera.zoom, 5 / camera.zoom]);
+            ctx.lineDashOffset = -(performance.now() / 50) % (13 / camera.zoom);
+            for (const object of visible) {
+                const width = object.width ?? object.w ?? 32;
+                const height = object.height ?? object.h ?? 32;
+                const x = object.x - camera.x;
+                const y = object.y - camera.y;
+                if (x + width < 0 || y + height < 0 || object.x > viewRight || object.y > viewBottom) continue;
+                const color = object.aiPreviewRemoved ? '#ff7185' : (object.color || object.c || '#65e7b3');
+                ctx.globalAlpha = object.aiPreviewRemoved ? .56 : pulse;
+                ctx.fillStyle = color;
+                ctx.strokeStyle = object.aiPreviewRemoved ? '#ff526d' : '#f4fff9';
+                ctx.lineWidth = 2 / camera.zoom;
+                ctx.fillRect(x, y, width, height);
+                ctx.strokeRect(x, y, width, height);
+                if (object.aiPreviewRemoved) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + width, y + height);
+                    ctx.moveTo(x + width, y);
+                    ctx.lineTo(x, y + height);
+                    ctx.stroke();
+                }
+            }
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+
         // Grid (only in editor mode, not testing)
         if (this.engine.state === GameState.EDITOR) {
             this.renderGrid(ctx, camera);

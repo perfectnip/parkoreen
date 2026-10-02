@@ -399,7 +399,7 @@
             { id: 0, name: 'Group 1', levels: ['0_1', '0_2', '0_3'] },
             { id: 1, name: 'Group 2', levels: ['1_1', '1_2', '1_3', '1_x_challenge_level'] },
             { id: 2, name: 'Group 3', levels: ['2_1', '2_2', '2_x_challenge_level'] },
-            { id: 3, name: 'Group 4', levels: ['3_1', '3_2', '3_3', '3_4', '3_5'] }
+            { id: 3, name: 'Group 4', levels: ['3_1', '3_2', '3_3', '3_4', '3_5', '3_6_rainbow_tower'] }
         ];
 
         const LEVEL_BASE_PATH = 'assets/pkrn/levels/';
@@ -643,9 +643,11 @@
                     card.dataset.level = levelName;
                     card.dataset.group = groupIndex;
 
-                    const displayName = levelName.startsWith(group.id + '_')
-                        ? 'Level ' + (levelIndex + 1)
-                        : levelName.replace(/^[0-9]_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    const displayName = levelName === '3_6_rainbow_tower'
+                        ? 'Rainbow Tower'
+                        : levelName.startsWith(group.id + '_')
+                            ? 'Level ' + (levelIndex + 1)
+                            : levelName.replace(/^[0-9]_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
                     const icon = isCompleted ? 'check_circle' : (isLocked ? 'lock' : 'play_circle');
                     const status = isCompleted ? 'Completed' : (isLocked ? 'Locked' : 'Play');
