@@ -585,7 +585,6 @@ class Editor {
                     <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
                     <button type="submit" class="btn btn-accent" id="ai-assistant-send"><span class="material-symbols-outlined">send</span><span>Send</span></button>
                 </form>
-                <p class="ai-assistant-footnote">Chats are saved in this browser. Your current map data is sent to the Parkoreen AI service for each request; embedded image and audio data is omitted. Proposed edits become visible after you choose Apply &amp; view map, and can be undone.</p>
                     </div>
                 </div>
             </div>`;
