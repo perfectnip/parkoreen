@@ -613,11 +613,24 @@ class Editor {
             event.preventDefault();
             this.sendAIAssistantMessage();
         });
-        document.getElementById('ai-assistant-input').addEventListener('keydown', event => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                document.getElementById('ai-assistant-form').requestSubmit();
-            }
+        const aiInput = document.getElementById('ai-assistant-input');
+        const aiForm = document.getElementById('ai-assistant-form');
+        let aiInputComposing = false;
+        aiInput.addEventListener('compositionstart', () => { aiInputComposing = true; });
+        aiInput.addEventListener('compositionend', () => { aiInputComposing = false; });
+        aiInput.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.shiftKey) return;
+            if (window.ParkoreenDevice?.isMobile?.()) return;
+
+            // IMEs use Enter to accept the current candidate. In some browsers
+            // that key event reports isComposing=false, so also check the
+            // composition state and legacy 229 key code before treating it as
+            // the send key. Leave the event untouched so the IME can commit its
+            // text (and insert a line break when that is its default action).
+            if (aiInputComposing || event.isComposing || event.keyCode === 229) return;
+
+            event.preventDefault();
+            aiForm.requestSubmit();
         });
         document.getElementById('ai-assistant-apply').addEventListener('click', () => this.applyAIAssistantChanges());
         overlay.addEventListener('keydown', event => {
