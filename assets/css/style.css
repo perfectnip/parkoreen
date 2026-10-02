@@ -3913,7 +3913,7 @@ textarea.form-input {
 @media (prefers-reduced-motion: no-preference) {
     .map-card,
     .community-card,
-    .level-card { animation: parkoreen-card-in 420ms cubic-bezier(.2,.8,.2,1) both; }
+    .level-card { animation: parkoreen-card-in 420ms cubic-bezier(.2,.8,.2,1) backwards; }
 
     .map-grid > :nth-child(2), .community-grid > :nth-child(2), .levels-groups-container .level-card:nth-child(2) { animation-delay: 35ms; }
     .map-grid > :nth-child(3), .community-grid > :nth-child(3), .levels-groups-container .level-card:nth-child(3) { animation-delay: 70ms; }
@@ -4238,6 +4238,44 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
     }
 
     .placement-toolbar.active { transform: translateY(0); }
+}
+
+/* A little more motion across the game UI, keeping the existing palette and
+   respecting the system's reduced-motion setting. */
+@keyframes parkoreen-soft-enter {
+    from { opacity: 0; transform: translateY(12px) scale(.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes parkoreen-row-enter {
+    from { opacity: 0; transform: translateX(10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+@keyframes parkoreen-icon-tap {
+    0% { transform: scale(1); }
+    55% { transform: scale(1.18) rotate(-7deg); }
+    100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .page-header { animation: parkoreen-soft-enter 360ms cubic-bezier(.2,.8,.2,1) both; }
+    .auth-card, .join-card, .settings-card {
+        animation: parkoreen-soft-enter 420ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .community-head { animation: parkoreen-soft-enter 360ms cubic-bezier(.2,.8,.2,1) both; }
+    .dashboard-menu-row { animation: parkoreen-row-enter 250ms cubic-bezier(.2,.8,.2,1) backwards; }
+    .dashboard-menu-row:nth-child(2) { animation-delay: 35ms; }
+    .dashboard-menu-row:nth-child(3) { animation-delay: 70ms; }
+    .dashboard-menu-row:nth-child(4) { animation-delay: 105ms; }
+    .community-card:hover, .map-card:hover, .level-card:hover:not(.locked) {
+        transition-timing-function: cubic-bezier(.2,.8,.2,1);
+    }
+    .page-header .btn:active:not(:disabled) .material-symbols-outlined,
+    .dashboard-menu-row:active .material-symbols-outlined {
+        animation: parkoreen-icon-tap 260ms cubic-bezier(.2,.8,.2,1);
+    }
+    .auth-card .btn, .join-card .btn, .settings-card .btn {
+        transition: transform 180ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms ease;
+    }
 }
 
 @media (prefers-reduced-motion: no-preference) {
