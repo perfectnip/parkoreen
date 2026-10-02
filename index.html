@@ -323,10 +323,10 @@
             </div>
             <h1 class="page-title">Parkoreen</h1>
             <div class="page-header-right">
-                <button class="btn btn-primary hidden" id="btn-map-editor">
+                <a class="btn btn-primary" id="btn-map-editor" href="dashboard/">
                     <span class="material-symbols-outlined">construction</span>
                     Level Editor
-                </button>
+                </a>
                 <button class="btn btn-secondary dashboard-menu-trigger" id="btn-menu" type="button" title="Menu" aria-label="Open menu">
                     <span class="material-symbols-outlined">menu</span>
                 </button>
@@ -362,14 +362,6 @@
             </button>
         </div>
         <div class="dashboard-menu-panel-body">
-            <a href="host.html" class="dashboard-menu-row" style="text-decoration:none;">
-                <span class="material-symbols-outlined">edit_square</span>
-                <span>Level Editor</span>
-            </a>
-            <a href="dashboard/" class="dashboard-menu-row" style="text-decoration:none;">
-                <span class="material-symbols-outlined">dashboard</span>
-                <span>My Maps Dashboard</span>
-            </a>
             <a href="community/" class="dashboard-menu-row" style="text-decoration:none;">
                 <span class="material-symbols-outlined">public</span>
                 <span>Community</span>
@@ -418,10 +410,21 @@
         const menuPanel = document.getElementById('dash-menu-panel');
         const menuBackdrop = document.getElementById('dash-menu-backdrop');
         const menuClose = document.getElementById('dash-menu-close');
-        const btnMapEditor = document.getElementById('btn-map-editor');
 
         // Load progress from API (account) or localStorage (guest fallback)
         async function loadProgress() {
+            // Keep a local copy as a recovery source. The account endpoint can
+            // be briefly unavailable, and older builds could also overwrite a
+            // newer local completion with an empty server response.
+            let cachedProgress = { completed: [], group1Completed: false };
+            try {
+                const saved = JSON.parse(localStorage.getItem('parkoreen_level_progress') || '{}');
+                cachedProgress = {
+                    completed: Array.isArray(saved.completed) ? saved.completed : [],
+                    group1Completed: !!saved.group1Completed
+                };
+            } catch (e) {}
+
             // Check if user is logged in via runtime.js settings
             const isLoggedIn = window.Settings && window.Settings.user && window.Settings.user.id;
 
@@ -435,8 +438,33 @@
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        completedLevels = new Set(data.completed || []);
-                        group1Completed = data.group1Completed || false;
+                        completedLevels = new Set([
+                            ...cachedProgress.completed,
+                            ...(Array.isArray(data.completed) ? data.completed : [])
+                        ]);
+                        group1Completed = cachedProgress.group1Completed || !!data.group1Completed;
+                        const group0Complete = LEVEL_GROUPS[0].levels.every(level => completedLevels.has(level));
+                        group1Completed = group1Completed || group0Complete;
+                        localStorage.setItem('parkoreen_level_progress', JSON.stringify({
+                            completed: Array.from(completedLevels),
+                            group1Completed
+                        }));
+                        const serverCompleted = new Set(Array.isArray(data.completed) ? data.completed : []);
+                        if (Array.from(completedLevels).some(level => !serverCompleted.has(level))) {
+                            // Restore locally cached completions to the account.
+                            // The Worker merges this with its stored progress.
+                            fetch(window.Settings.apiUrl + '/level-progress', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + localStorage.getItem('parkoreen_token')
+                                },
+                                body: JSON.stringify({
+                                    completed: Array.from(completedLevels),
+                                    group1Completed
+                                })
+                            }).catch(() => {});
+                        }
                         return;
                     }
                 } catch (e) {
@@ -445,20 +473,20 @@
             }
 
             // Fallback to localStorage for guests or on error
-            const saved = localStorage.getItem('parkoreen_level_progress');
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    completedLevels = new Set(data.completed || []);
-                    group1Completed = data.group1Completed || false;
-                } catch (e) {
-                    console.error('Failed to load progress:', e);
-                }
-            }
+            completedLevels = new Set(cachedProgress.completed);
+            group1Completed = cachedProgress.group1Completed || LEVEL_GROUPS[0].levels.every(level => completedLevels.has(level));
         }
 
         // Save progress to API (account) or localStorage (guest fallback)
         async function saveProgress() {
+            const progress = {
+                completed: Array.from(completedLevels),
+                group1Completed
+            };
+            // Persist immediately, before attempting the network, so a Worker
+            // outage cannot make a completed level look unfinished next visit.
+            localStorage.setItem('parkoreen_level_progress', JSON.stringify(progress));
+
             const isLoggedIn = window.Settings && window.Settings.user && window.Settings.user.id;
 
             if (isLoggedIn) {
@@ -470,10 +498,7 @@
                             'Content-Type': 'application/json',
                             'Authorization': 'Bearer ' + token
                         },
-                        body: JSON.stringify({
-                            completed: Array.from(completedLevels),
-                            group1Completed: group1Completed
-                        })
+                        body: JSON.stringify(progress)
                     });
                     if (response.ok) {
                         return;
@@ -483,11 +508,7 @@
                 }
             }
 
-            // Fallback to localStorage for guests or on error
-            localStorage.setItem('parkoreen_level_progress', JSON.stringify({
-                completed: Array.from(completedLevels),
-                group1Completed: group1Completed
-            }));
+            // The local copy above is the guest fallback and outage recovery.
         }
 
         // Show loading screen
@@ -514,6 +535,14 @@
 
             // Group 0 (0_1, 0_2, 0_3) is ALWAYS unlocked so brand-new users have something to play.
             if (LEVEL_GROUPS[groupIndex] && LEVEL_GROUPS[groupIndex].id === 0) return true;
+
+            // Recovery path for returning players whose account progress was
+            // lost or could not sync. `has_visited` is set only when the player
+            // first enters the tutorial, so keep the first post-tutorial level
+            // available instead of leaving every campaign group inaccessible.
+            if (groupIndex === 1 && levelIndex === 0 && localStorage.getItem('parkoreen_has_visited')) {
+                return true;
+            }
 
             if (completedLevels.has(levelName)) return false; // already completed
 
@@ -803,13 +832,6 @@
             updateGroupVisibility();
         }
 
-        // Check if group 1 is completed and show map editor button
-        function checkGroup1Completed() {
-            if (group1Completed) {
-                btnMapEditor.classList.remove('hidden');
-            }
-        }
-
         // Toggle menu
         function openMenu() {
             menuBackdrop.classList.add('active');
@@ -830,7 +852,6 @@
             await loadProgress();
             renderLevelGroups();
             updateGroupVisibility();
-            checkGroup1Completed();
 
             // Event listeners
             btnPrev.addEventListener('click', prevGroup);
@@ -838,9 +859,6 @@
             btnMenu.addEventListener('click', openMenu);
             menuBackdrop.addEventListener('click', closeMenu);
             menuClose.addEventListener('click', closeMenu);
-            btnMapEditor.addEventListener('click', () => {
-                window.location.href = 'host.html';
-            });
 
             // Bug 3 (auto-continue): runtime.js redirects here with
             // `?continue=<levelId>` when the user has unfinished group-0

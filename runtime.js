@@ -1981,12 +1981,19 @@ async function fetchAndCacheLevelProgress() {
         });
         if (!res.ok) return null;
         const data = await res.json();
-        // Cache server response for offline use / fallback
-        localStorage.setItem('parkoreen_level_progress', JSON.stringify({
-            completed: data.completed || [],
-            group1Completed: data.group1Completed || false
-        }));
-        return data;
+        // Merge instead of replacing: the local copy may contain completions
+        // made while the account API was unreachable or by an older client.
+        const cached = readCachedLevelProgress();
+        const merged = {
+            completed: [...new Set([
+                ...cached.completed,
+                ...(Array.isArray(data.completed) ? data.completed : [])
+            ])],
+            group1Completed: cached.group1Completed || !!data.group1Completed
+        };
+        merged.group1Completed = merged.group1Completed || LEVEL_GROUP_0.every(level => merged.completed.includes(level));
+        localStorage.setItem('parkoreen_level_progress', JSON.stringify(merged));
+        return merged;
     } catch (e) {
         console.warn('[LevelProgress] Server fetch failed, using cache:', e);
         return null;
@@ -2018,10 +2025,13 @@ async function checkLevelGroup0Required() {
 
     // Try server first (authoritative)
     let progress = await fetchAndCacheLevelProgress();
-    if (!progress) {
-        // Fall back to local cache
-        progress = readCachedLevelProgress();
-    }
+    if (!progress) progress = readCachedLevelProgress();
+
+    // An empty account response can mean older completions were never synced
+    // (or the progress service was unavailable during a previous completion).
+    // A returning player should be able to reach the level list and recover;
+    // the first-visit onboarding in index.html still guides new players.
+    if (localStorage.getItem('parkoreen_has_visited') && !(progress.completed || []).length) return;
 
     const completedSet = new Set(progress.completed || []);
     const nextLevel = getNextUnfinishedGroup0(completedSet);

@@ -2446,7 +2446,7 @@ class Editor {
                     </button>
                     <button class="btn btn-primary" id="settings-back-to-home" style="width: 100%;">
                         <span class="material-symbols-outlined">home</span>
-                        Back to Levels
+                        Back to Dashboard
                     </button>
                 </div>
             </div>
@@ -6770,13 +6770,13 @@ class Editor {
             }
         });
         
-        // Back to Levels button
+        // Back to Dashboard button
         document.getElementById('settings-back-to-home').addEventListener('click', () => {
             if (confirm('Are you sure you want to leave? Unsaved changes will be lost.')) {
-                if (typeof Navigation !== 'undefined' && typeof Navigation.toHome === 'function') {
-                    Navigation.toHome();
+                if (typeof Navigation !== 'undefined' && typeof Navigation.toDashboard === 'function') {
+                    Navigation.toDashboard();
                 } else {
-                    window.location.href = '/parkoreen/index.html';
+                    window.location.href = '/parkoreen/dashboard/';
                 }
             }
         });

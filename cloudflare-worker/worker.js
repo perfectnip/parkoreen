@@ -861,13 +861,26 @@ async function handleGetLevelProgress(env, userId) {
 
 async function handleUpdateLevelProgress(request, env, userId) {
     const { completed, group1Completed } = await request.json();
+    const key = `level_progress:${userId}`;
+    let previous = { completed: [], group1Completed: false };
+    try {
+        previous = JSON.parse(await env.USERS.get(key) || '{}');
+    } catch (e) {}
+
+    // Progress only moves forward. Concurrent completions from multiple tabs,
+    // or an older client posting a stale snapshot, must not erase account data.
+    const completedLevels = [...new Set([
+        ...(Array.isArray(previous.completed) ? previous.completed : []),
+        ...(Array.isArray(completed) ? completed : [])
+    ])];
+    const tutorialComplete = ['0_1', '0_2', '0_3'].every(level => completedLevels.includes(level));
 
     const progress = {
-        completed: Array.isArray(completed) ? completed : [],
-        group1Completed: !!group1Completed
+        completed: completedLevels,
+        group1Completed: !!previous.group1Completed || !!group1Completed || tutorialComplete
     };
 
-    await env.USERS.put(`level_progress:${userId}`, JSON.stringify(progress));
+    await env.USERS.put(key, JSON.stringify(progress));
     return jsonResponse({ success: true });
 }
 
