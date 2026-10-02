@@ -216,7 +216,8 @@
 
         .level-card:hover {
             transform: translateY(-8px) scale(1.03);
-            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+            /* Keep the tile crisp; movement provides feedback without a halo. */
+            box-shadow: 0 8px 18px rgba(0,0,0,0.24);
             border-color: var(--primary);
         }
 
@@ -809,11 +810,12 @@
             }
             cards.forEach((card, index) => {
                 card.animate([
-                    { opacity: 0, transform: 'translateY(34px) scale(.82) rotate(-2deg)' },
-                    { opacity: 1, transform: 'translateY(-8px) scale(1.045) rotate(.5deg)', offset: .72 },
+                    { opacity: 0, transform: 'translateY(42px) scale(.76) rotate(-3deg)' },
+                    { opacity: 1, transform: 'translateY(-12px) scale(1.08) rotate(1deg)', offset: .66 },
+                    { opacity: 1, transform: 'translateY(3px) scale(.985) rotate(-.25deg)', offset: .84 },
                     { opacity: 1, transform: 'translateY(0) scale(1) rotate(0)' }
                 ], {
-                    duration: 720,
+                    duration: 860,
                     delay: index * 55,
                     easing: 'cubic-bezier(.18,1,.32,1)'
                 });

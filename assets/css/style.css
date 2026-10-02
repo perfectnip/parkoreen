@@ -2789,7 +2789,7 @@ body.device-mobile textarea {
 
 .map-card:hover {
     transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.26);
 }
 
 .map-card-preview {
@@ -3605,9 +3605,21 @@ body.device-mobile textarea {
     from { opacity: 0; transform: translateY(12px) scale(.99); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes parkoreen-bouncy-enter {
+    0% { opacity: 0; transform: translate3d(0, 30px, 0) scale(.82); }
+    56% { opacity: 1; transform: translate3d(0, -10px, 0) scale(1.055); }
+    76% { transform: translate3d(0, 4px, 0) scale(.975); }
+    100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
 @keyframes parkoreen-row-enter {
     from { opacity: 0; transform: translateX(10px); }
     to { opacity: 1; transform: translateX(0); }
+}
+@keyframes parkoreen-menu-tap {
+    0% { transform: scale(1); }
+    34% { transform: translateY(2px) scale(.9); }
+    70% { transform: translateY(-3px) scale(1.08); }
+    100% { transform: translateY(0) scale(1); }
 }
 @keyframes parkoreen-icon-tap {
     0% { transform: scale(1); }
@@ -3616,15 +3628,26 @@ body.device-mobile textarea {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    .page-header { animation: parkoreen-soft-enter 360ms cubic-bezier(.2,.8,.2,1) both; }
-    .auth-card, .join-card, .settings-card { animation: parkoreen-soft-enter 420ms cubic-bezier(.2,.8,.2,1) both; }
-    .community-head { animation: parkoreen-soft-enter 360ms cubic-bezier(.2,.8,.2,1) both; }
+    .page-header { animation: parkoreen-bouncy-enter 640ms cubic-bezier(.18,1,.32,1) both; }
+    .auth-card, .join-card, .settings-card { animation: parkoreen-bouncy-enter 720ms cubic-bezier(.18,1,.32,1) both; }
+    .community-head { animation: parkoreen-bouncy-enter 640ms cubic-bezier(.18,1,.32,1) both; }
+    .map-grid > .map-card, .community-grid > .community-card {
+        animation: parkoreen-bouncy-enter 700ms cubic-bezier(.18,1,.32,1) both;
+    }
+    .map-grid > .map-card:nth-child(2), .community-grid > .community-card:nth-child(2) { animation-delay: 65ms; }
+    .map-grid > .map-card:nth-child(3), .community-grid > .community-card:nth-child(3) { animation-delay: 125ms; }
+    .map-grid > .map-card:nth-child(4), .community-grid > .community-card:nth-child(4) { animation-delay: 185ms; }
     .dashboard-menu-row { animation: parkoreen-row-enter 250ms cubic-bezier(.2,.8,.2,1) backwards; }
     .dashboard-menu-row:nth-child(2) { animation-delay: 35ms; }
     .dashboard-menu-row:nth-child(3) { animation-delay: 70ms; }
     .dashboard-menu-row:nth-child(4) { animation-delay: 105ms; }
     .page-header .btn:active:not(:disabled) .material-symbols-outlined,
     .dashboard-menu-row:active .material-symbols-outlined { animation: parkoreen-icon-tap 260ms cubic-bezier(.2,.8,.2,1); }
+    .page-header .btn:active:not(:disabled),
+    .dashboard-menu-row:active,
+    .map-card .btn:active:not(:disabled),
+    .level-card:active:not(.locked),
+    .levels-nav-btn:active:not(:disabled) { animation: parkoreen-menu-tap 440ms cubic-bezier(.18,1,.32,1); }
     .auth-card .btn, .join-card .btn, .settings-card .btn {
         transition: transform 180ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms ease;
     }
@@ -3632,6 +3655,7 @@ body.device-mobile textarea {
 
 @media (prefers-reduced-motion: reduce) {
     .page-header, .auth-card, .join-card, .settings-card, .community-head,
+    .map-grid > .map-card, .community-grid > .community-card,
     .dashboard-menu-row { animation: none !important; }
     .page-header .btn, .auth-card .btn, .join-card .btn, .settings-card .btn { transition-duration: .01ms !important; }
 }
