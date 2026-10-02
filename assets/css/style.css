@@ -3344,7 +3344,6 @@ body.device-mobile textarea {
 .ai-assistant-thread:hover { background: rgba(255,255,255,.06); }
 .ai-assistant-thread.active { border-color: rgba(167,139,250,.36); background: rgba(167,139,250,.15); color: #fff; }
 .ai-assistant-thread:disabled { opacity: .65; cursor: wait; }
-.ai-assistant-history-note { margin: 0; padding: 10px 12px 14px; color: #858292; font-size: .68rem; line-height: 1.4; }
 .ai-assistant-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 .ai-assistant-header h2 {
@@ -3357,12 +3356,6 @@ body.device-mobile textarea {
 
 .ai-assistant-header h2 .material-symbols-outlined {
     color: #b6a0ff;
-}
-
-.ai-assistant-header p {
-    margin: 4px 0 0;
-    color: #aaa8b8;
-    font-size: .78rem;
 }
 
 .ai-assistant-suggestions {
@@ -3492,14 +3485,6 @@ body.device-mobile textarea {
     outline-offset: 1px;
 }
 
-.ai-assistant-footnote {
-    margin: 0;
-    padding: 0 18px 12px;
-    color: #9996a7;
-    font-size: .68rem;
-    line-height: 1.4;
-}
-
 @media (max-width: 640px) {
     #btn-ai-assistant {
         top: 62px !important;
@@ -3524,7 +3509,7 @@ body.device-mobile textarea {
     .ai-assistant-header-actions .btn-secondary .material-symbols-outlined { font-size: 21px; }
     .ai-assistant-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
     .ai-assistant-history { min-height: 0; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.1); }
-    .ai-assistant-history-title, .ai-assistant-history-note { display: none; }
+    .ai-assistant-history-title { display: none; }
     .ai-assistant-thread-list { flex: 0 0 auto; flex-direction: row; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 8px 10px; }
     .ai-assistant-thread { max-width: 180px; flex: 0 0 auto; padding: 8px 10px; }
 
@@ -3540,8 +3525,6 @@ body.device-mobile textarea {
     .ai-assistant-form {
         padding: 10px 12px;
     }
-
-    .ai-assistant-footnote { padding: 0 12px 9px; }
 
     .ai-assistant-form button {
         min-width: 44px;

@@ -557,7 +557,7 @@ class Editor {
         overlay.innerHTML = `
             <div class="ai-assistant-panel">
                 <header class="ai-assistant-header">
-                    <div><h2 id="ai-assistant-title"><span class="material-symbols-outlined">auto_awesome</span> Map Assistant</h2><p>GPT-5.6 Luna · edits are previewed before they change your map</p></div>
+                    <div><h2 id="ai-assistant-title"><span class="material-symbols-outlined">auto_awesome</span> Map Assistant</h2></div>
                     <div class="ai-assistant-header-actions">
                         <button type="button" class="btn btn-secondary" id="ai-assistant-new"><span class="material-symbols-outlined">add</span>New chat</button>
                         <button class="btn btn-icon btn-ghost" type="button" data-ai-close aria-label="Close assistant"><span class="material-symbols-outlined">close</span></button>
@@ -567,7 +567,6 @@ class Editor {
                     <aside class="ai-assistant-history" aria-label="Saved conversations">
                         <div class="ai-assistant-history-title">Saved conversations</div>
                         <div class="ai-assistant-thread-list" id="ai-assistant-thread-list"></div>
-                        <p class="ai-assistant-history-note">Saved in this browser for this map.</p>
                     </aside>
                     <div class="ai-assistant-chat">
                 <div class="ai-assistant-suggestions" aria-label="Example requests">
@@ -915,7 +914,7 @@ class Editor {
                 this._aiPendingMap = this.applyAIAssistantOperations(baseMap, operations);
                 this._aiPendingBase = JSON.stringify(baseMap);
                 this._aiPendingOperations = operations;
-                document.getElementById('ai-assistant-change-count').textContent = `${operations.length} proposed edit${operations.length === 1 ? '' : 's'} · review before applying`;
+                document.getElementById('ai-assistant-change-count').textContent = `${operations.length} edit${operations.length === 1 ? '' : 's'}`;
                 const preview = document.getElementById('ai-assistant-preview');
                 preview.replaceChildren();
                 for (const operation of operations.slice(0, 12)) {
