@@ -19,6 +19,10 @@ const CORS_HEADERS = {
     'Access-Control-Max-Age': '86400',
 };
 
+// Temporarily pause paid map-generation requests while output quality is
+// improved. Set true to re-enable the signed-in endpoint.
+const MAP_ASSISTANT_ENABLED = false;
+
 const JWT_SECRET = 'parkoreen-secret-key-change-in-production';
 const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_MECHANICS_STATE_BYTES = 32 * 1024;
@@ -3320,6 +3324,7 @@ export default {
             }
 
             if (path === '/editor/ai-assist' && method === 'POST') {
+                if (!MAP_ASSISTANT_ENABLED) return errorResponse('The Map Assistant is temporarily unavailable while we improve map generation.', 503);
                 return handleMapAIAssist(request, env, userId);
             }
 

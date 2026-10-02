@@ -26,10 +26,12 @@ Or use the Cloudflare Dashboard:
 
 ## Map Editor AI assistant
 
-The editor's GPT-5.6 Luna assistant calls the OpenAI Responses API through this Worker. Configure the OpenAI API key as a Worker secret; never put it in `wrangler.toml`, browser code, or Git:
+The Map Assistant is temporarily paused while map-generation quality is improved. Its editor button is hidden and `/editor/ai-assist` returns `503` before making an OpenAI request. The client and Worker implementations are retained so the feature can be re-enabled after quality work by setting `MAP_ASSISTANT_ENABLED` to `true` in both `assets/js/editor.js` and `worker.js`. Existing conversations remain in each player's browser.
+
+When the feature is re-enabled, it uses the OpenAI Responses API through this Worker. Configure the API key as a Worker secret; never put it in `wrangler.toml`, browser code, or Git:
 
 ```sh
 cd cloudflare-worker && npx wrangler secret put OPENAI_API_KEY
 ```
 
-The endpoint is signed-in only and applies per-account request limits. The assistant receives the current map and recent conversation. Embedded media data is omitted by the editor. Its map edits are returned as structured operations and must be previewed and explicitly applied in the editor.
+When enabled, the endpoint is signed-in only and applies per-account request limits. The assistant receives the current map and recent conversation. Embedded media data is omitted by the editor. Its map edits are returned as structured operations and must be previewed and explicitly applied in the editor. Community maps are not automatically used as training data; any future training dataset should require separate creator opt-in and curation.

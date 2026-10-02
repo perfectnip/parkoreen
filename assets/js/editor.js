@@ -6,6 +6,10 @@
 // ============================================
 // EDITOR TOOLS
 // ============================================
+// Temporarily paused while we improve map-generation quality. Keep the
+// assistant implementation and local chat history available for reactivation.
+const MAP_ASSISTANT_ENABLED = false;
+
 const EditorTool = {
     NONE: 'none',
     FLY: 'fly',
@@ -491,7 +495,7 @@ class Editor {
     // ========================================
     initUI() {
         this.createEditorUI();
-        this.createAIAssistant();
+        if (MAP_ASSISTANT_ENABLED) this.createAIAssistant();
         this.createToolbar();
         this.createPanels();
         this.createColorPicker();
@@ -521,7 +525,7 @@ class Editor {
             <button class="btn btn-icon btn-secondary editor-btn-corner editor-btn-tr" id="btn-settings" title="Settings">
                 <span class="material-symbols-outlined">settings</span>
             </button>
-            <button class="btn btn-secondary" id="btn-ai-assistant" type="button" title="Ask the Parkoreen AI map assistant" aria-label="Open AI map assistant" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:7px;white-space:nowrap;border-color:#8069dc;background:rgba(47,35,90,.94);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);">
+            <button class="btn btn-secondary hidden" id="btn-ai-assistant" type="button" title="Map Assistant temporarily unavailable" aria-label="Map Assistant temporarily unavailable" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:7px;white-space:nowrap;border-color:#8069dc;background:rgba(47,35,90,.94);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.28);">
                 <span class="material-symbols-outlined">auto_awesome</span><span>AI Assistant</span>
             </button>
             <button class="btn btn-icon btn-secondary editor-btn-corner editor-btn-bl" id="btn-add" title="Add">
