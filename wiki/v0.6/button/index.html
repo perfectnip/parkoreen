@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Button — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Button</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🔵 Button</h1>
+      <p class="subtitle">An interactive trigger — either a clickable button or a pressure-plate style collide trigger.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Buttons are interactive objects that can be <strong>clicked</strong> by the player or activated when the player <strong>walks onto them</strong>. They can be connected to plugin scripts to trigger events when pressed.</p>
+
+    <h2>Interaction modes</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Mode</th><th>Trigger condition</th><th>Visual style</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>click</code></td>
+          <td>Player clicks the button in gameplay</td>
+          <td>Raised button with a face; shows label/tooltip on hover</td>
+        </tr>
+        <tr>
+          <td><code>collide</code></td>
+          <td>Player physically lands on / walks into the button</td>
+          <td>Flat pressure-plate style</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Button Interaction</td><td>click</td><td><code>click</code> or <code>collide</code>.</td></tr>
+        <tr><td>Only Once</td><td>Off</td><td>If on, the button activates only once per game session and cannot be triggered again.</td></tr>
+        <tr><td>Display Name</td><td>(empty)</td><td>Label rendered on top of or near the button during gameplay. Visible to the player.</td></tr>
+        <tr><td>Display Description</td><td>(empty)</td><td>Secondary text shown as a tooltip when the player hovers over the button.</td></tr>
+        <tr><td>Color</td><td>auto</td><td>Main body color of the button.</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>Visual rotation in 90° steps.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirrors the button sprite.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      Button events are handled by plugin scripts (e.g. the Code plugin). Without a plugin, pressing a button has no built-in effect.
+    </div>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

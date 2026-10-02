@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tilemaps — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Tilemaps</span>
+    <a class="topbar-home" href="../../../">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'☾ Dark':'☀ Light';})()">☀ Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>▦ Tilemaps</h1>
+      <p class="subtitle">Paint compact 32 × 32 px terrain with independent artwork, collision, animation, and Mechanics behavior.</p>
+    </div>
+
+    <div class="note">Tilemaps are sparse cell grids attached to named draw layers. Cells do not become separate map objects, so large painted areas remain compact and are edited with the Tilemap Brush.</div>
+
+    <h2>Paint a tilemap</h2>
+    <ol>
+      <li>Open a map in the editor and choose <strong>Add → Tilemap Brush</strong>.</li>
+      <li>Choose the draw layer, cell behavior, collision shape, and artwork in the placement toolbar.</li>
+      <li>Click or drag on the canvas to paint. Use the editor's <strong>Erase</strong> tool to remove cells.</li>
+      <li>Switch layers to paint separate terrain and foreground or background detail.</li>
+    </ol>
+    <p>Cells align to the 32 px world grid. Their visual layer controls draw order and parallax; it does not change collision. The editor keeps the canvas and placement coordinates aligned, while configured parallax takes effect during Play and Test.</p>
+
+    <h2>Cell behavior</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Behavior</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Solid</strong></td><td>Blocks the player. Use a full-cell box or a custom convex polygon.</td></tr>
+        <tr><td><strong>One-way platform</strong></td><td>Supports the player from above and permits passage from below. A polygon can shape the surface.</td></tr>
+        <tr><td><strong>Ramp rising to the right / left</strong></td><td>Uses a sloped collision surface so the player can walk up or down the tile.</td></tr>
+        <tr><td><strong>Damage on touch</strong></td><td>Hurts a player who touches the cell; it does not act as a platform.</td></tr>
+        <tr><td><strong>Decorative</strong></td><td>Draws artwork without collision or damage.</td></tr>
+      </tbody>
+    </table>
+    <p>Artwork and collision are stored independently. Changing the selected atlas frame does not change the cell's behavior. Custom polygons use 3–12 ordered, convex vertices whose coordinates are normalized from 0 to 1 within the cell; this option applies to solid and one-way cells.</p>
+
+    <h2>Tile atlases</h2>
+    <p>Upload a PNG, JPEG, or WebP image for a layer, then set the frame width and height and select a frame index. Frames are read left to right and top to bottom. Atlas images are bounded to 8 MiB and 32 megapixels combined per map. Clear the atlas to return to built-in textures. The image and frame settings are saved with the map and travel in <code>.pkrn</code> exports.</p>
+
+    <h2>Animation</h2>
+    <p>Choose one of two animation modes when painting a cell:</p>
+    <ul>
+      <li><strong>Texture cycle</strong> rotates through 2–8 built-in texture frames.</li>
+      <li><strong>Atlas frame cycle</strong> rotates through 2–8 selected frames from the layer's atlas.</li>
+    </ul>
+    <p>Both modes support 1–12 frames per second. Animation runs in the editor, Play, and Test; each cell keeps its authored collision. A map can animate at most 2,048 cells.</p>
+
+    <h2>Use tilemaps in Mechanics</h2>
+    <ul>
+      <li><strong>Player Touches Tilemap</strong> runs when the player enters matching collidable cells.</li>
+      <li><strong>Player Leaves Tilemap</strong> runs after contact with all matching cells ends and includes the last contacted cell. Contact can start again afterward.</li>
+      <li>Both triggers can filter by solid, one-way (including ramps), or damage behavior.</li>
+      <li><strong>Set Tilemap Cell Behavior</strong> changes a selected or touched cell during the session.</li>
+      <li><strong>Set Tilemap Cell Frame</strong> changes a cell's atlas animation frame without changing its collision.</li>
+      <li><strong>Set Tilemap Cell Enabled</strong> removes a cell temporarily or restores its authored artwork and behavior.</li>
+    </ul>
+    <p>Runtime changes reset to the saved map state when the session resets. Supported changes in hosted rooms are checked by the room host and synchronized to players.</p>
+
+    <h2>Save, export, and performance</h2>
+    <p>Tilemap cells, collision polygons, atlases, animation, draw-layer assignments, and Mechanics references persist through map save/load and <code>.pkrn</code> import/export. Cell data is stored sparsely rather than as one object per cell. Large-map streaming and unlimited animation are not supported.</p>
+    <div class="note">Related: <a href="../editor/">Editor tools and layers</a>, <a href="../mechanics/">Mechanics triggers and actions</a>, and <a href="../map-config/">Map Config</a>.</div>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

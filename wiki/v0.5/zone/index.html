@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zone — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Zone</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>🔲 Zone</h1>
+      <p class="subtitle">A named invisible region used to mark an area of the map, often for use with plugins.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Zones are resizable rectangular regions that are invisible during gameplay. In the editor they appear as a colored semi-transparent rectangle with an optional name label. They are primarily used to identify named regions that plugin scripts can react to.</p>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Name (Zone Name)</td><td>(empty)</td><td>The zone's string identifier. Other zones or scripts can reference zones by this name.</td></tr>
+        <tr><td>Color</td><td>#9b59b6</td><td>Editor tint color (not shown during gameplay).</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Editor visualization opacity. Does not affect gameplay.</td></tr>
+        <tr><td>Collision</td><td>Off</td><td>When on, the zone rectangle acts as a solid wall/floor. Useful for invisible collision boundaries.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order in the editor.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note tip">
+      You can create invisible solid barriers by setting <strong>Collision</strong> on and <strong>Opacity</strong> to 0.
+    </div>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

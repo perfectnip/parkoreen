@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saw Blade — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Saw Blade</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>⚙ Saw Blade</h1>
+      <p class="subtitle">A circular, rotating hazard that kills the player on contact.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Saw blades (internally called <em>spinners</em>) are 32×32 circular obstacles that spin continuously in the editor and during gameplay. Like spikes, touching a saw blade kills the player.</p>
+    <p>The circular collision shape means orientation does not affect gameplay — the blade is equally dangerous from all sides.</p>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Color</td><td>#787878</td><td>Blade fill color.</td></tr>
+        <tr><td>Size (Width × Height)</td><td>2 × 2 blocks</td><td>Blade dimensions. Single-object edit uses the <strong>Adjust Size</strong> drag mode; multi-edit accepts numeric block values directly. Minimum: 1 block (32 px) per axis.</td></tr>
+        <tr><td>Spin Speed</td><td>1</td><td>Rotation speed multiplier (also affects degrees per tick). Min: 0 (no spin), step 0.1.</td></tr>
+        <tr><td>Spin Direction</td><td>Clockwise (1)</td><td><code>Clockwise</code> (1) or <code>Counter-clockwise</code> (-1).</td></tr>
+        <tr><td>Damage Amount</td><td>1</td><td>HP removed when the player touches the blade (used by the HP plugin; otherwise treated as instant kill).</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>Visual starting angle.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirrors the blade sprite.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Multi-select</h2>
+    <p>When multiple saw blades are selected with the Select tool, the shared <strong>Object Config</strong> panel exposes the saw-blade-specific fields so they can be edited together:</p>
+    <ul>
+      <li><strong>Width (blocks)</strong> and <strong>Height (blocks)</strong> — set the dimensions of every selected blade in grid blocks (step 0.5; minimum 1 block). A <code>MIXED</code> placeholder appears when blades currently differ in size; entering a value applies it to all of them.</li>
+      <li><strong>Damage Amount</strong> — applies to all spike-type and spinner-type hazards in the selection.</li>
+      <li><strong>Spin Direction</strong> and <strong>Spin Speed</strong> — appear when every selected object is a saw blade.</li>
+      <li>Common fields like <strong>Color</strong>, <strong>Opacity</strong>, <strong>Rotation</strong>, <strong>Collision</strong>, and <strong>Flip Horizontal</strong> apply alongside.</li>
+    </ul>
+
+    <div class="note tip">
+      Setting <strong>Spin Speed</strong> to <code>0</code> creates a perfectly still blade — useful as a decorative circular obstacle.
+    </div>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

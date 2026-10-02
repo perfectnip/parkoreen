@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugin Development — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Plugin Development</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'☾ Dark':'☀ Light';})()">☀ Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🧰 Plugin Development</h1>
+      <p class="subtitle">A practical path for creating and reviewing a Parkoreen plugin with the current API.</p>
+    </div>
+
+    <div class="note"><strong>V0.6 support:</strong> Plugin development and localhost preview are available to contributors. Plugins run as trusted scripts in the game page; importing a map or a <code>.parkplugin</code> archive does not install them. Public user installation and publishing are not supported yet.</div>
+
+    <h2>Quick start</h2>
+    <ol>
+      <li>From the repository root, create a starter folder: <code>node tools/create-plugin.mjs my-plugin</code>. Use a unique lowercase id with letters, numbers, and hyphens.</li>
+      <li>Implement the behavior in the generated files under <code>assets/plugins/my-plugin/</code>. Declare scripts, sounds, assets, settings, controls, and dependencies in <code>plugin.json</code>; do not load code from map data.</li>
+      <li>Run <code>node tools/serve-plugin-dev.mjs</code>. Open the printed local preview URL with the one-time token and your plugin id, for example <code>?pluginDev=my-plugin&amp;pluginDevToken=TOKEN</code>. The preview reloads when the selected plugin files change and does not add the plugin to the shared registry.</li>
+      <li>Validate the folder: <code>node tools/validate-plugin.mjs assets/plugins/my-plugin</code>. Fix manifest, declared-file, path, control, dependency, and JavaScript syntax errors, then review the source and test it on a development map.</li>
+      <li>For code review or transfer, create an archive with <code>node tools/package-plugin.mjs assets/plugins/my-plugin</code> and inspect one with <code>node tools/verify-plugin-package.mjs my-plugin-0.1.0.parkplugin</code>. Archives are not installable by Parkoreen.</li>
+    </ol>
+
+    <h2>Authoring references</h2>
+    <ul>
+      <li><a href="../../../assets/plugins/plugin-template/README.md">API v1 starter and example</a></li>
+      <li><a href="../../../assets/plugins/plugin-manifest.schema.json">Plugin manifest schema</a></li>
+      <li><a href="../../../assets/plugins/plugin-template/types/plugin-api-v1.d.ts">API v1 TypeScript declarations</a></li>
+      <li><a href="../../../assets/plugins/PLUGIN_SECURITY_MODEL.md">Plugin security model and release gates</a></li>
+      <li><a href="../../../assets/plugins/PLUGIN_API_V2_DRAFT.md">Isolated API v2 draft</a>, which is a proposal and is not supported by the runtime</li>
+    </ul>
+
+    <h2>Publishing boundary</h2>
+    <p>The current API v1 is for trusted, bundled plugins. It does not provide enforceable permissions or a sandbox, so only run code you have reviewed. Local preview can load an unregistered plugin for development, but it does not install or publish it to players.</p>
+    <p>To include a reviewed plugin in Parkoreen, a maintainer adds its id to <code>assets/plugins/manifest.json</code>, checks its dependencies and declared assets, tests its behavior, and documents its settings and controls in the <a href="../plugins/#plugin-development">Plugins reference</a>. The draft API v2 describes a possible isolated community-plugin path; it must be implemented and reviewed before player installation can be offered.</p>
+
+    <h2>Need only gameplay rules?</h2>
+    <p>Use the visual <a href="../mechanics/">Mechanics editor</a> when triggers, Events, variables, timers, and built-in actions can express the behavior. Plugins are for reusable code behavior that needs a supported plugin hook or API access.</p>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

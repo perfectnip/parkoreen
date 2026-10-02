@@ -23,11 +23,11 @@
 /* CSS Variables */
 :root {
     /* Colors */
-    --primary: #2d5a27;
-    --primary-light: #4a8c3f;
-    --primary-dark: #1e3d1a;
-    --secondary: #f4a261;
-    --secondary-light: #f7c59f;
+    --primary: #007800;
+    --primary-light: #159515;
+    --primary-dark: #004f00;
+    --secondary: #ff7800;
+    --secondary-light: #ff9e3d;
     --accent: #e76f51;
     --accent-dark: #c45a3f;
     
@@ -3634,4 +3634,72 @@ body.device-mobile textarea {
     .page-header, .auth-card, .join-card, .settings-card, .community-head,
     .dashboard-menu-row { animation: none !important; }
     .page-header .btn, .auth-card .btn, .join-card .btn, .settings-card .btn { transition-duration: .01ms !important; }
+}
+
+@keyframes parkoreen-route-in {
+    from { opacity: 0; transform: translate3d(0, 24px, 0) scale(.985); filter: blur(5px); }
+    72% { opacity: 1; transform: translate3d(0, -4px, 0) scale(1.004); filter: blur(0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: none; }
+}
+@keyframes parkoreen-route-out {
+    to { opacity: 0; transform: translate3d(0, -12px, 0) scale(.99); filter: blur(3px); }
+}
+@keyframes parkoreen-page-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes parkoreen-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes parkoreen-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes parkoreen-spring-in {
+    0% { opacity: 0; transform: translate3d(0, 28px, 0) scale(.86); }
+    62% { opacity: 1; transform: translate3d(0, -8px, 0) scale(1.035); }
+    82% { transform: translate3d(0, 3px, 0) scale(.99); }
+    100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes parkoreen-spring-left {
+    0% { opacity: 0; transform: translate3d(36px, 0, 0) scale(.96); }
+    72% { opacity: 1; transform: translate3d(-7px, 0, 0) scale(1.01); }
+    100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes parkoreen-press-bounce {
+    0% { transform: scale(1); }
+    42% { transform: scale(.9); }
+    76% { transform: scale(1.06); }
+    100% { transform: scale(1); }
+}
+
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: parkoreen-route-out 220ms cubic-bezier(.4,0,1,1) both; }
+::view-transition-new(root) { animation: parkoreen-route-in 520ms cubic-bezier(.18,1,.32,1) both; }
+
+@media (prefers-reduced-motion: no-preference) {
+    body:not(.game-active) .page-container,
+    body:not(.game-active) .auth-container,
+    body:not(.game-active) .join-container,
+    body:not(.game-active) .settings-container {
+        animation: parkoreen-page-fade 420ms ease-out both;
+    }
+    .modal-overlay.active { animation: parkoreen-fade-in 260ms ease-out both; }
+    .modal-overlay.active .modal { animation: parkoreen-spring-in 520ms cubic-bezier(.18,1,.32,1) both; }
+    .dashboard-menu-backdrop.active { animation: parkoreen-fade-in 300ms ease-out both; }
+    .dashboard-menu-panel.active { animation: parkoreen-spring-left 520ms cubic-bezier(.18,1,.32,1) both; }
+    .config-panel.active, .layers-panel.active, .object-edit-panel.active, .placement-toolbar.active {
+        animation-duration: 480ms;
+        animation-timing-function: cubic-bezier(.18,1,.32,1);
+    }
+    .map-card, .community-card, .level-card { animation-duration: 680ms; }
+    .map-grid > :nth-child(2), .community-grid > :nth-child(2), .levels-groups-container .level-card:nth-child(2) { animation-delay: 65ms; }
+    .map-grid > :nth-child(3), .community-grid > :nth-child(3), .levels-groups-container .level-card:nth-child(3) { animation-delay: 120ms; }
+    .map-grid > :nth-child(4), .community-grid > :nth-child(4), .levels-groups-container .level-card:nth-child(4) { animation-delay: 175ms; }
+    .map-grid > :nth-child(5), .community-grid > :nth-child(5), .levels-groups-container .level-card:nth-child(5) { animation-delay: 230ms; }
+    .map-grid > :nth-child(6), .community-grid > :nth-child(6), .levels-groups-container .level-card:nth-child(6) { animation-delay: 285ms; }
+    .btn, .toolbar-btn, .placement-opt-btn, .level-card, .group-dot, .hud-btn {
+        transition-timing-function: cubic-bezier(.18,1,.32,1);
+    }
+    .btn:active:not(:disabled), .toolbar-btn:active:not(:disabled), .placement-opt-btn:active:not(:disabled) {
+        animation: parkoreen-press-bounce 340ms cubic-bezier(.18,1,.32,1);
+    }
+    .page-header .btn:hover:not(:disabled), .dashboard-menu-row:hover,
+    .map-card:hover, .community-card:hover { transition-duration: 340ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }

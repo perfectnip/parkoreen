@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Player</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🧑 Player</h1>
+      <p class="subtitle">Player physics, movement, hitboxes, and respawn logic.</p>
+    </div>
+
+    <h2>Size</h2>
+    <p>The player sprite is <strong>32×32 px</strong>, matching one grid cell.</p>
+
+    <h2>Physics defaults</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Property</th><th>Default value</th></tr></thead>
+      <tbody>
+        <tr><td>Gravity</td><td>0.71 per tick</td></tr>
+        <tr><td>Jump force</td><td>-13.2 (upward)</td></tr>
+        <tr><td>Move speed</td><td>5 px/tick</td></tr>
+        <tr><td>Max jumps</td><td>1</td></tr>
+      </tbody>
+    </table>
+    <p>All values are overridable per-map in <a href="../map-config/">Map Config</a>.</p>
+
+    <h2>Character sprite sheet</h2>
+    <p>In the editor, open <strong>Map Config → Player → Character Sprite Sheet</strong> to replace the colored player with a map-specific animation. Upload a PNG, JPEG, or WebP sprite sheet (up to 1 MB); the player still uses the same 32×32 collision and name display.</p>
+    <p>Set the frame width and height, then choose a row, frame count, and playback speed for each state. Frames are read from left to right. The engine selects <strong>Idle</strong> when grounded and still, <strong>Run</strong> when grounded and moving, <strong>Jump</strong> while rising, and <strong>Fall</strong> while descending. Optionally configure <strong>Attack</strong>, <strong>Hurt</strong>, and <strong>Dash</strong> rows. The default optional row numbers are 4, 5, and 6, so a seven-row sheet can use rows 0–3 for locomotion, followed by Attack, Hurt, and Dash. Plugins activate rows through shared player states: Hollow Knight plays Attack during a nail swing and Dash during Dash or Super Dash, while the Health plugin can play Hurt during its damage-stun window. Attack plays once; Hurt and Dash loop while their state is active. If a state is not configured, locomotion continues to display. The sprite faces the player's last movement direction. Maps keep this configuration when saved and in <code>.pkrn</code> exports.</p>
+
+    <h2>Hitboxes</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Box</th><th>Offset from top-left</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Ground</strong></td><td>x: 0, y: 8, w: 32, h: 24</td><td>Collision with solid surfaces (landing, pushing against walls/ceilings)</td></tr>
+        <tr><td><strong>Hurt</strong></td><td>x: 4, y: 6, w: 24, h: 24</td><td>Checked against spike and hazard hitboxes to determine death</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Jump system</h2>
+    <ul>
+      <li><strong>Max Jumps</strong> — number of jumps allowed before the player must land. Default: 1.</li>
+      <li><strong>Infinite Jumps</strong> — when on, the player can jump at any time.</li>
+      <li><strong>Additional Air Jump</strong> — grants one bonus jump while airborne (double-jump), spending from Max Jumps.</li>
+      <li>Jumping is triggered with <kbd>W</kbd> or <kbd>Space</kbd>.</li>
+    </ul>
+
+    <h2>Controls</h2>
+    <p>Parkoreen selects its interface from the device and input capabilities. Touch-first phones and tablets show a virtual joystick and touch buttons; computers use keyboard controls. Devices with both touch and a mouse or keyboard switch layouts to match the most recently used input. No touchscreen-mode setting is required.</p>
+    <p>The keyboard bindings depend on <strong>Settings → Keyboard Layout</strong>. The default is <strong>JimmyQrg</strong>; <strong>Hollow Knight Original</strong> uses its own movement and ability keys.</p>
+    <table class="wiki-table">
+      <thead><tr><th>Input</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Keyboard:</strong> JimmyQrg <kbd>A</kbd> / <kbd>D</kbd>; Hollow Knight Original <kbd>←</kbd> / <kbd>→</kbd><br><strong>Touch:</strong> virtual joystick</td><td>Move</td></tr>
+        <tr><td><strong>Keyboard:</strong> JimmyQrg <kbd>W</kbd> or <kbd>Space</kbd>; Hollow Knight Original <kbd>Z</kbd><br><strong>Touch:</strong> Jump button</td><td>Jump</td></tr>
+        <tr><td><strong>Keyboard:</strong> JimmyQrg <kbd>N</kbd>; Hollow Knight Original <kbd>X</kbd><br><strong>Touch:</strong> Attack button when the Hollow Knight plugin is enabled</td><td>Hollow Knight nail attack</td></tr>
+        <tr><td><strong>Keyboard:</strong> hold <kbd>↓</kbd> with the attack key while airborne<br><strong>Touch:</strong> tilt the joystick down while pressing Attack</td><td>Down slash. It rebounds from solid ground, spikes, Soul Statues, and objects explicitly marked pogoable in Mechanics. At the default setting, the rebound reaches about half the height of a maximum jump. Ordinary enemies and decorations do not pogo unless authored as pogo targets.</td></tr>
+        <tr><td><strong>Keyboard:</strong> JimmyQrg Heal <kbd>Left Shift</kbd>, Dash <kbd>,</kbd>, Super Dash <kbd>F</kbd>; Hollow Knight Original Heal <kbd>A</kbd>, Dash <kbd>C</kbd>, Super Dash <kbd>S</kbd><br><strong>Touch:</strong> buttons appear for enabled abilities</td><td>Hollow Knight abilities</td></tr>
+        <tr><td><strong>Test toolbar:</strong> Respawn button</td><td>Respawn at the checkpoint or spawn point</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Death &amp; respawn</h2>
+    <ul>
+      <li>The player dies when the <strong>Hurt</strong> box overlaps an active hazard, or when they fall below <strong>Die Line Y</strong> (default 1000 px).</li>
+      <li>On death the player respawns at the <strong>active checkpoint</strong>, or the map's <strong>spawn point</strong> if no checkpoint has been touched.</li>
+    </ul>
+
+    <h2>Coins</h2>
+    <p>The player has a coin count. Collecting a <a href="../coin/">Coin</a> object increases their count by the coin's <code>coinAmount</code>. The coin counter HUD is shown when <strong>Show Coin Counter</strong> is enabled in Map Config.</p>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

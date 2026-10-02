@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coin — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Coin</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🪙 Coin</h1>
+      <p class="subtitle">Collectable currency items that award the player a set amount when touched.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Coins are small pickup items scattered around a map. When the player walks into a coin it is collected and the coin's <strong>Coin Amount</strong> is added to the appropriate total. Collected coins disappear until the map is reset.</p>
+
+    <h2>Coin counter HUD</h2>
+    <p>When <strong>Show Coin Counter</strong> is enabled in Map Config, a coin counter is displayed on-screen during gameplay. In hosted rooms it shows the room's shared global pickups plus the local player's independently collected player-scope coins.</p>
+
+    <h2>Activity scope</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Scope</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>global</code></td>
+          <td>The coin is collected once across all players. Once any player picks it up, it disappears for everyone and its amount is added to every player's room-shared coin counter.</td>
+        </tr>
+        <tr>
+          <td><code>player</code></td>
+          <td>Each player collects the coin independently. Its amount is added only to that player's counter; collecting it does not remove it for other players.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>In hosted rooms, the room worker checks global pickups against the player's latest reported position and syncs the result, including to players who join later. Movement is still client-reported, so this is not cheat-resistant validation.</p>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Coin Amount</td><td>1</td><td>How many coins this pickup awards to the collecting player.</td></tr>
+        <tr><td>Coin Activity Scope</td><td>global</td><td><code>global</code> or <code>player</code> — see above.</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

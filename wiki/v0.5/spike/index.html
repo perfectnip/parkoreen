@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Spike</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>🔺 Spike</h1>
+      <p class="subtitle">Triangle hazards with configurable orientation, damage, and touchbox modes.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Spikes are 32×32 triangle hazards. The map's <strong>Spike Touchbox</strong> setting determines the kill zone; <code>all-spike</code> makes the full shape dangerous from every direction.</p>
+
+    <h2>Orientation</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Rotation</th><th>Appearance</th></tr></thead>
+      <tbody>
+        <tr><td>0° (default)</td><td>Point facing up, base on bottom</td></tr>
+        <tr><td>90°</td><td>Point facing right</td></tr>
+        <tr><td>180°</td><td>Point facing down</td></tr>
+        <tr><td>270°</td><td>Point facing left</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Touchbox modes (set in Map Config)</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">normal</span><span class="opt-default">default</span><span class="opt-desc">Triangular hitbox that closely matches the visible spike shape.</span></li>
+      <li><span class="opt-name">full</span><span class="opt-default"></span><span class="opt-desc">Full 32×32 square hitbox. The most strict mode.</span></li>
+      <li><span class="opt-name">tip</span><span class="opt-default"></span><span class="opt-desc">Only the pointed tip kills. The most forgiving mode.</span></li>
+      <li><span class="opt-name">ground</span><span class="opt-default"></span><span class="opt-desc">Kill zone is the bottom row of pixels — designed for floor spikes.</span></li>
+      <li><span class="opt-name">flag</span><span class="opt-default"></span><span class="opt-desc">Tall narrow centered hitbox.</span></li>
+      <li><span class="opt-name">air</span><span class="opt-default"></span><span class="opt-desc">Only damages players coming from above (airborne contact only).</span></li>
+      <li><span class="opt-name">all-spike</span><span class="opt-default"></span><span class="opt-desc">Full-coverage mode: any contact with the spike from any direction is lethal.</span></li>
+    </ul>
+
+    <h2>Drop Hurt Only</h2>
+    <p class="note">When enabled in Map Config, spikes only deal damage if the player is falling (downward velocity) at the moment of contact.</p>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Color</td><td>#c45a3f</td><td>Spike fill color.</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>90° steps, changes orientation.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirror horizontally.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

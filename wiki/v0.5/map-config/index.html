@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map Config — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Map Config</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>⚙️ Map Config</h1>
+      <p class="subtitle">All map-level settings available in this build of Parkoreen.</p>
+    </div>
+
+    <h2>General</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Map Name</span><span class="opt-default">Untitled</span><span class="opt-desc">Display name for the map.</span></li>
+      <li><span class="opt-name">Author</span><span class="opt-default">(empty)</span><span class="opt-desc">Creator credit shown on the map screen.</span></li>
+      <li><span class="opt-name">Background</span><span class="opt-default">sky</span><span class="opt-desc"><code>sky</code> — daytime clouds. <code>galaxy</code> — space backdrop with purple clouds. The editor also includes Misty Mountains, Pine Forest, Quiet Coast, Desert Dunes, and Twilight Ruins, plus custom uploaded backgrounds.</span></li>
+    </ul>
+
+    <h2>Physics</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Gravity</span><span class="opt-default">0.71</span><span class="opt-desc">Downward acceleration applied each tick. Higher = heavier feel.</span></li>
+      <li><span class="opt-name">Terminal Fall Speed</span><span class="opt-default">Gravity-scaled (16 at default gravity)</span><span class="opt-desc">Optional maximum downward speed from 1 to 100 pixels per tick. Older maps keep a gravity-scaled limit unless you set an explicit value.</span></li>
+      <li><span class="opt-name">Jump Force</span><span class="opt-default">-13.2</span><span class="opt-desc">Vertical velocity on jump (negative = upward). More negative = higher jump.</span></li>
+      <li><span class="opt-name">Player Speed</span><span class="opt-default">5</span><span class="opt-desc">Horizontal movement speed in pixels per tick.</span></li>
+      <li><span class="opt-name">Horizontal Acceleration</span><span class="opt-default">0 (instant)</span><span class="opt-desc">Acceleration and braking in pixels per tick squared, from 0 to 20. Zero preserves legacy instant-start, instant-stop movement.</span></li>
+      <li><span class="opt-name">Air Control</span><span class="opt-default">1</span><span class="opt-desc">Scales horizontal acceleration while airborne from 0 (keep momentum) to 1 (full control). It applies when Horizontal Acceleration is above zero.</span></li>
+      <li><span class="opt-name">Max Jumps</span><span class="opt-default">1</span><span class="opt-desc">How many times the player can jump before landing.</span></li>
+      <li><span class="opt-name">Infinite Jumps</span><span class="opt-default">Off</span><span class="opt-desc">If on, jump count is never exhausted.</span></li>
+      <li><span class="opt-name">Additional Air Jump</span><span class="opt-default">Off</span><span class="opt-desc">Grants an extra mid-air jump (double-jump).</span></li>
+      <li><span class="opt-name">Die Line Y</span><span class="opt-default">1000</span><span class="opt-desc">Y position (px) at which the player instantly dies if they fall below it.</span></li>
+    </ul>
+
+    <h2>Camera</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Follow Mode</span><span class="opt-default">Both axes</span><span class="opt-desc">Follow the player on both axes, horizontally only (useful for side-scrollers), or vertically only (useful for climbing rooms).</span></li>
+      <li><span class="opt-name">Horizontal / Vertical Smoothness</span><span class="opt-default">0.12 / 0.12</span><span class="opt-desc">Controls how quickly the gameplay camera follows the player on each axis.</span></li>
+      <li><span class="opt-name">Camera Bounds</span><span class="opt-default">Off</span><span class="opt-desc">When enabled, clamps the gameplay and test camera to the configured world-space rectangle (left X, top Y, width, height). If the rectangle is smaller than the visible viewport, the camera centers it. Editor navigation remains free.</span></li>
+    </ul>
+
+    <h2>Spike settings</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Spike Touchbox</span><span class="opt-default">normal</span><span class="opt-desc">Global hitbox mode: <code>normal</code>, <code>full</code>, <code>tip</code>, <code>ground</code>, <code>flag</code>, <code>air</code>, <code>all-spike</code>.</span></li>
+      <li><span class="opt-name">Drop Hurt Only</span><span class="opt-default">Off</span><span class="opt-desc">Spikes only kill when the player is falling onto them.</span></li>
+    </ul>
+
+    <h2>Default colors</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Block Color</span><span class="opt-default">#787878</span><span class="opt-desc">Default color for new blocks.</span></li>
+      <li><span class="opt-name">Spike Color</span><span class="opt-default">#c45a3f</span><span class="opt-desc">Default color for new spikes.</span></li>
+      <li><span class="opt-name">Text Color</span><span class="opt-default">#000000</span><span class="opt-desc">Default color for new text objects.</span></li>
+      <li><span class="opt-name">Portal Color</span><span class="opt-default">#9b59b6</span><span class="opt-desc">Default color for new teleportals.</span></li>
+      <li><span class="opt-name">Bouncer Color</span><span class="opt-default">#461A0C</span><span class="opt-desc">Default color for new bouncers.</span></li>
+    </ul>
+
+    <h2>Coin settings</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Show Coin Counter</span><span class="opt-default">On</span><span class="opt-desc">Displays the coin counter HUD during gameplay when coins are present on the map.</span></li>
+    </ul>
+
+    <h2>Checkpoint colors</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Inactive Color</span><span class="opt-default">#808080</span><span class="opt-desc">Untouched checkpoint color.</span></li>
+      <li><span class="opt-name">Touched Color</span><span class="opt-default">#2196F3</span><span class="opt-desc">Previously-passed checkpoint color.</span></li>
+      <li><span class="opt-name">Active Color</span><span class="opt-default">#4CAF50</span><span class="opt-desc">Color used for the checkpoint currently selected as the respawn point.</span></li>
+      <li><span class="opt-name">Remember Latest Checkpoint</span><span class="opt-default">Off</span><span class="opt-desc">When enabled, saves the player's latest checkpoint locally and starts future play sessions there. The save stays in this browser under the current account, or the browser device when signed out; it does not sync between devices. Test runs do not change saved progress.</span></li>
+    </ul>
+
+    <h2>Cloud colors</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Cloud Color (Sky)</span><span class="opt-default">#ffffff</span><span class="opt-desc">Cloud tint when background is <code>sky</code>.</span></li>
+      <li><span class="opt-name">Cloud Color (Galaxy)</span><span class="opt-default">#9382a8</span><span class="opt-desc">Cloud tint when background is <code>galaxy</code>.</span></li>
+    </ul>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

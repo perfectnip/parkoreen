@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Text</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>📝 Text</h1>
+      <p class="subtitle">In-world text labels with full font, alignment, and spacing control.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Text objects render a string of text directly in the game world. They are purely visual — the player can pass through them. Text supports custom fonts loaded via the Code plugin, alignment options in both axes, and per-character and per-line spacing.</p>
+
+    <h2>Fonts</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Font name</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>Parkoreen Game</td><td>Built-in pixel/retro-style font, always available.</td></tr>
+        <tr><td>Custom fonts</td><td>Additional <code>.ttf</code> fonts can be registered via the <strong>Code plugin</strong>.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Content</td><td>(empty)</td><td>The text string to display. Supports newlines.</td></tr>
+        <tr><td>Font</td><td>Parkoreen Game</td><td>Font family name.</td></tr>
+        <tr><td>Font Size</td><td>16</td><td>Text height in pixels.</td></tr>
+        <tr><td>Color</td><td>#000000</td><td>Text fill color.</td></tr>
+        <tr><td>Horizontal Align</td><td>left</td><td>How multi-line text is aligned: <code>left</code>, <code>center</code>, <code>right</code>.</td></tr>
+        <tr><td>Vertical Align</td><td>top</td><td>Where the text block anchors within its bounding box: <code>top</code>, <code>center</code>, <code>bottom</code>.</td></tr>
+        <tr><td>Horizontal Spacing</td><td>0</td><td>Extra pixels added between characters (letter-spacing).</td></tr>
+        <tr><td>Vertical Spacing</td><td>0</td><td>Extra pixels added between lines (line-spacing).</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>Visual rotation in 90° steps.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirrors the text rendering.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Preview in editor</h2>
+    <p>The placement toolbar shows a live preview of the text label with the current font, size, and color settings. The preview background automatically contrasts the text color so it is always readable.</p>
+
+    <div class="note tip">
+      Use negative <strong>Horizontal Spacing</strong> values to tighten letter-spacing for a compact look.
+    </div>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

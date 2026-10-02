@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Block — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Block</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>🟫 Block</h1>
+      <p class="subtitle">Solid platforming surface — the core building unit of every Parkoreen map, now with texture support.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Blocks are 32×32 px objects the player can stand on, jump off, and push against. They are solid from every direction by default; a block can be set as a one-way platform so players land on its top while falling and pass through it from below. Ground blocks also support box, circular, capsule, two one-way ramps, and custom convex polygon collision shapes. Capsules round both ends along the block’s longer axis and collide from every side. Blocks can have a visual <strong>texture</strong> overlaid on top of their color.</p>
+
+    <h2>Textures</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Texture value</th><th>Appearance</th></tr></thead>
+      <tbody>
+        <tr><td><code>none</code></td><td>Plain filled rectangle with bevel (default).</td></tr>
+        <tr><td><code>solid</code></td><td>Flat, no bevel — good for seamless tiling.</td></tr>
+        <tr><td><code>brick</code></td><td>Brick pattern drawn over the fill color.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Color</td><td>#787878</td><td>Fill color of the block face.</td></tr>
+        <tr><td>Texture</td><td>none</td><td>Visual texture overlay (<code>none</code> / <code>solid</code> / <code>brick</code>).</td></tr>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100. 0 = fully invisible but still solid by default.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>Visual rotation (90° steps). Collision shapes stay axis aligned; circles are unchanged.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirrors the block texture horizontally.</td></tr>
+        <tr><td>Collision</td><td>On</td><td>When off the block is purely decorative.</td></tr>
+        <tr><td>Ground Collision Shape</td><td>Box</td><td>Choose a rectangular box, an inscribed circle, a capsule with rounded ends along the longer axis, a rising left-to-right/right-to-left ramp, or a custom convex polygon. Polygon vertices are ordered normalized <code>[x, y]</code> pairs from 0 to 1 (3–12 vertices); concave, self-intersecting, out-of-range, and degenerate shapes are rejected. Ramps are one-way surfaces. Capsules and boxes are solid from every side; polygons can be one-way or fully solid from every side. The block artwork remains unchanged; the tester's touchbox overlay shows the actual collider.</td></tr>
+        <tr><td>One-Way Platform</td><td>Off</td><td>Available with the box shape. When on, the player collides only while falling onto the top face. The player can pass through from below or move horizontally through it. Ramp shapes are always one-way. Custom polygons default to one-way; disable <strong>One-Way Polygon Surface</strong> to collide with all polygon sides.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order relative to other objects.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>One-way platform controls</h2>
+    <p>While standing on a one-way platform, press <strong>Down + Jump</strong> to drop through it. This consumes the ground jump as the player leaves the surface, with the normal short coyote-time grace period.</p>
+
+    <h2>Rendering</h2>
+    <p>Without a texture, blocks are drawn as filled rectangles with a 1 px bevel (lighter top/left edges, darker bottom/right). The bevel color is derived automatically from the block's fill color. With the <code>solid</code> texture the bevel is omitted for seamless edges. Collision geometry is independent from artwork; enable tester touchboxes to inspect circular, ramp, and custom polygon colliders. One-way platforms also have a warm highlight along the top so their collision direction is visible in the editor and during play.</p>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

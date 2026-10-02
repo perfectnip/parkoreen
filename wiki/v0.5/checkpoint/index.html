@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkpoint — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Checkpoint</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>🏁 Checkpoint</h1>
+      <p class="subtitle">Respawn markers with three visual states configurable in Map Config.</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>Checkpoints are flag/post objects the player walks through to save their progress. The most recently activated checkpoint is where the player respawns on death.</p>
+
+    <h2>Visual states</h2>
+    <table class="wiki-table">
+      <thead><tr><th>State</th><th>Default color</th><th>Condition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Inactive</strong></td><td>#808080 (gray)</td><td>Never been touched by the player.</td></tr>
+        <tr><td><strong>Touched</strong></td><td>#2196F3 (blue)</td><td>Player passed it but it is not the current respawn point.</td></tr>
+        <tr><td><strong>Active</strong></td><td>#4CAF50 (green)</td><td>The checkpoint currently selected as the respawn point.</td></tr>
+      </tbody>
+    </table>
+    <p class="note tip">All three colors are customizable in <strong>Map Config → Checkpoint Colors</strong>.</p>
+
+    <h2>Respawn behavior</h2>
+    <ul>
+      <li>Only one checkpoint is active at a time.</li>
+      <li>Touching a later checkpoint deactivates earlier ones (they turn blue).</li>
+      <li>Re-touching a blue checkpoint makes it active again.</li>
+      <li>On death the player respawns centered on the active checkpoint.</li>
+      <li>If no checkpoint has been activated, the player respawns at the map's spawn point.</li>
+    </ul>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Opacity</td><td>100</td><td>Transparency 0–100.</td></tr>
+        <tr><td>Rotation</td><td>0°</td><td>Visual rotation in 90° steps.</td></tr>
+        <tr><td>Flip Horizontal</td><td>Off</td><td>Mirrors the checkpoint sprite.</td></tr>
+        <tr><td>Layer</td><td>0</td><td>Draw order.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tester — V0.5-Indev — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.5-Indev</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Tester</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.5-Indev Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.5-Indev</span>
+      <h1>▶ Tester</h1>
+      <p class="subtitle">Play-test your map directly inside the editor without saving or publishing.</p>
+    </div>
+
+    <h2>Starting &amp; stopping</h2>
+    <p>Click <strong>Test Game</strong> in the editor toolbar to compile and launch the map in tester mode. The player spawns at the map's spawn point. Press <strong>Stop</strong> or <kbd>Escape</kbd> to return to the editor.</p>
+
+    <h2>Controls</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Key</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>A</kbd> / <kbd>D</kbd></td><td>Move left / right</td></tr>
+        <tr><td><kbd>W</kbd> / <kbd>Space</kbd></td><td>Jump</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Respawn at active checkpoint (or spawn point if none)</td></tr>
+        <tr><td><kbd>Escape</kbd></td><td>Exit tester and return to editor</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Tester toolbar options</h2>
+    <ul class="option-list">
+      <li><span class="opt-name">Invincibility</span><span class="opt-default">Off</span><span class="opt-desc">Prevents the player from dying. Useful for exploring a map without hazards killing you.</span></li>
+      <li><span class="opt-name">Show Touchboxes</span><span class="opt-default">Off</span><span class="opt-desc">Draws the player's Ground and Hurt hitboxes and spike hitboxes as colored overlays.</span></li>
+      <li><span class="opt-name">Show FPS</span><span class="opt-default">Off</span><span class="opt-desc">Displays the current frames-per-second counter in the top corner of the screen. Only visible in tester mode.</span></li>
+    </ul>
+
+    <div class="note">
+      Tester settings (invincibility, touchboxes, FPS) are remembered between test runs within the same editor session.
+    </div>
+
+    <h2>Limitations</h2>
+    <ul>
+      <li>Tester mode does not save progress or affect the published map.</li>
+      <li>Multiplayer is not active in tester mode — you play as a single local player.</li>
+      <li>Plugin scripts run in the tester, so you can test Code plugin behaviors.</li>
+    </ul>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

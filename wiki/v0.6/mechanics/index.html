@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mechanics — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Mechanics</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🧩 Mechanics</h1>
+      <p class="subtitle">Connect gameplay triggers to reusable Events, conditions, variables, and actions without writing a plugin.</p>
+    </div>
+
+    <p>Open the editor’s <strong>Mechanics</strong> panel to create three kinds of blocks: <strong>Triggers</strong> start a flow, <strong>Events</strong> contain ordered actions, and <strong>Variables</strong> hold values or Lists. Select <strong>Flow map</strong> to see and follow their links. Trigger and Event cards link to connected Events and referenced Variables; Event cards also link to Triggers they enable or disable, while Trigger cards show which Events change them. Variable cards link back to their using triggers and Events. Give blocks clear names, then use Flow map and the validation panel to find missing links, unreachable Events, recursive paths, and invalid values. Reachability includes Events behind disabled Triggers when a reachable Event can enable them.</p>
+
+    <h2>Build a first game mode</h2>
+    <ol>
+      <li>Choose a starter under <strong>Templates</strong>, such as Timed Round, Tag, Hide And Seek, Player Inventory, or Switch And Door. A template creates linked blocks with fresh IDs; it is a starting point you can edit or remove.</li>
+      <li>Open <strong>Flow map</strong>. Follow the trigger’s connection to its Event, then follow any branch or timer links. Rename blocks so the flow reads like your rules.</li>
+      <li>Use the Event editor to add, configure, and reorder actions. Add branches for decisions, timers for delayed work, and Run Event to reuse a flow.</li>
+      <li>Use <strong>Test Game</strong> for solo iteration. The Mechanics dashboard records author-facing runtime errors and lets you jump to the affected block.</li>
+      <li>For multiplayer rules, host a room and try it with another player. Hosted behavior depends on the trigger and action: some checks run locally, while supported shared changes are host-validated and synchronized. The editor describes behavior on the selected trigger or action.</li>
+    </ol>
+
+    <h2>Triggers</h2>
+    <p>Choose a trigger type when creating or editing a Trigger. Its settings determine the target, key, condition, or interval where relevant. The current catalog is:</p>
+    <table class="wiki-table">
+      <thead><tr><th>Trigger</th><th>When it runs</th></tr></thead>
+      <tbody>
+        <tr><td>Game Starts</td><td>Once when a play session begins.</td></tr>
+        <tr><td>Game Ends</td><td>Once after endpoint completion.</td></tr>
+        <tr><td>Player Action Input</td><td>When the configured player action occurs.</td></tr>
+        <tr><td>Player Attacks Object</td><td>When the Hollow Knight nail attack hits the selected object. Its optional pogo setting makes down-slash hits rebound from that target.</td></tr>
+        <tr><td>Player Dies</td><td>When the player enters the dead state.</td></tr>
+        <tr><td>Player Jumps / Player Lands</td><td>After a successful jump, or on an airborne-to-ground contact.</td></tr>
+        <tr><td>Player Respawns</td><td>After the player respawns.</td></tr>
+        <tr><td>Player Enters Zone / Player Leaves Zone</td><td>On a matching named-zone boundary crossing.</td></tr>
+        <tr><td>Player Touches Object</td><td>When contact with the selected object begins.</td></tr>
+        <tr><td>Player Leaves Object</td><td>When contact with the selected object ends.</td></tr>
+        <tr><td>Player Touches Tilemap</td><td>When contact with a matching collidable cell begins.</td></tr>
+        <tr><td>Player Leaves Tilemap</td><td>When contact with all matching collidable cells in a selected tilemap ends; the Event receives the last contacted cell. Hosted rooms validate the exit and rearm on contact with any matching cell.</td></tr>
+        <tr><td>Player Presses Button</td><td>When the configured map button is activated.</td></tr>
+        <tr><td>Player Key Input</td><td>When the selected key or key group is pressed.</td></tr>
+        <tr><td>Player Joins Room / Player Leaves Room</td><td>For room membership changes while the host runs the map.</td></tr>
+        <tr><td>Player Stats</td><td>When the configured stat matches the selected value.</td></tr>
+        <tr><td>Player Health Changed</td><td>When the tracked numeric health value changes in the selected direction.</td></tr>
+        <tr><td>Variable Condition</td><td>When a Map or Campaign shared variable, or the selected Player variable, enters the configured condition.</td></tr>
+        <tr><td>Repeat</td><td>At the configured interval, optionally limited by a repeat count.</td></tr>
+      </tbody>
+    </table>
+    <p>Object contact triggers include begin and end edges. Disabling an edge trigger keeps its condition state current, so enabling it while a key, contact, or matching condition is already active does not create a false new edge. Game Starts, Game Ends, death, and room lifecycle events have defined one-time behavior for their lifecycle. A solo menu that pauses the simulation also freezes Repeat, Timer, timed-fall, and timed-jump clocks. Trigger help text explains whether a hosted-room event is local or handled by the host. Guest position samples are client-reported; overlap checks improve consistency but are not server-simulated physics.</p>
+
+    <h2>Events and actions</h2>
+    <p>An Event runs its enabled actions in order. Branch actions route to linked Events; <strong>Run Event</strong> reuses a linked flow. Timers can schedule an Event later, and menus, choices, and dialogue can pause the local player while the player responds. The action catalog is grouped here by what each action changes:</p>
+    <table class="wiki-table">
+      <thead><tr><th>Area</th><th>Actions</th></tr></thead>
+      <tbody>
+        <tr><td>Variables and decisions</td><td>Set Variable, Add to Number Variable, Calculate Number Variable (add, subtract, multiply, divide), Toggle Boolean Variable, Branch on Variable, Branch on Player Count, Branch on Player Health</td></tr>
+        <tr><td>Lists and inventory</td><td>Add Item to List, Remove Item from List, Branch on List Item, Set Inventory Item Equipped, Branch on Equipped Item, Use Inventory Item, Show List Panel, Show Variable Panel</td></tr>
+        <tr><td>Objects</td><td>Set Object Enabled, Set Object Collision, Set Object Health, Damage Object, Branch on Object Health, Spawn Object, Remove Spawned Objects, Set Object Position, Set Object Draw Layer, Move Object (Animated), Set Object Sprite Frame, Set Object Opacity, Play Object Sprite Animation with an optional completion Event</td></tr>
+        <tr><td>Player and movement</td><td>Set Player Checkpoint, Teleport Player, Teleport Player Above Object, Set Player Velocity, Damage Player, Heal Player, Set Gravity, Set Jump Force, Set Player Speed, Set Movement Control</td></tr>
+        <tr><td>World and camera</td><td>Set Camera Follow Axes, Set Camera Bounds, Set Tilemap Cell Behavior, Set Tilemap Cell Frame, Set Tilemap Cell Enabled, Set Draw Layer Visibility</td></tr>
+        <tr><td>Flow and session</td><td>Set Trigger Enabled, Start Timer, Stop Timer, Run Event, Restart Scene, Transition to Map</td></tr>
+        <tr><td>Sound and UI</td><td>Play Sound, Play Plugin Sound, Stop Plugin Sound, Show Message, Show Dialogue, Show Choices, Show Menu</td></tr>
+      </tbody>
+    </table>
+    <p>Action fields validate their target and bounds; linked actions use Event pickers. Integer variables and typed List items accept only safely representable whole numbers; Add and Calculate reject values that would lose integer precision, and Calculate also rejects division by zero. Select an action in the editor to see its specific limits and multiplayer behavior. Runtime limits also bound chain depth, action count, timers, Lists, temporary objects, and dialog content so a flow cannot grow without limit. For supported hosted trigger flows, the host replays the trigger-linked Event in order, evaluates declarative branches, and records enabled choice routes when it reaches a Show Choices or Show Menu action. A guest's local selection is accepted for host replay only when the Worker verifies it is declared by that parent and the host has a matching pending route.</p>
+    <p><strong>Set Trigger Enabled</strong> changes the runtime state for the current play session. Each trigger dispatch pass uses one snapshot of enabled states, so an Event's toggle takes effect on the next pass regardless of trigger order in the map. The host synchronizes this state in hosted rooms, and reset restores the map's authored settings.</p>
+    <p>Branch on Object Health compares temporary health initialized by Set Object Health or Damage Object. Use it to route enemy phases or health-gated doors; the Flow map shows both routes. Supported shared triggers evaluate from the room host's health state, while local-only triggers remain local.</p>
+    <p>Branch on Player Health compares the current Event player's numeric <code>hp</code> value as absolute HP or as a percentage of <code>maxHP</code>. Percentage mode needs a positive numeric maximum and a current value no greater than that maximum. It needs an enabled plugin such as HK or HP that provides health. Any Event chain containing this branch runs locally in hosted rooms, because a guest's health is not host-authoritative.</p>
+    <p>Define up to 32 named clips on each object sprite sheet by setting a name, frame range, speed, and loop mode. Set Object Sprite Frame and Play Object Sprite Animation can target a selected map object or the object touched by the Event; for a spawned object, choose its source template's sprite sheet. A one-shot can start an optional completion Event and hold on its last frame. In a hosted room, the room host runs that completion Event once and synchronizes spawned-object animation state; session reset restores the authored automatic animation.</p>
+    <p>Set Draw Layer Visibility can show or hide an authored draw layer during the current session. It changes rendering only; collision and object behavior stay active. In hosted rooms, the host validates and synchronizes visibility overrides. Reset restores every layer's authored default.</p>
+    <p><strong>Set Tilemap Cell Frame</strong> changes the atlas image of one existing, non-animated cell for the current session. Choose fixed grid coordinates or the cell that triggered Player Touches Tilemap. The action preserves collision and other cell settings, accepts only frames in that tilemap's atlas, synchronizes through host-validated state, and restores the authored frame on reset.</p>
+    <p><strong>Set Tilemap Cell Enabled</strong> removes or restores one authored cell during the current session. Use fixed coordinates for a gate or bridge, or the cell touched by the current trigger for destructible terrain. Restoring a removed cell brings back its original artwork and collision. Changes synchronize through host-validated state in hosted rooms, and reset restores the authored map.</p>
+    <p>Set Object Draw Layer can move a map object between authored layers during play without changing its position or collision. Collidable objects cannot move to parallax layers. The action saves with its Event, synchronizes through host-validated state in rooms, and returns to the map's authored layer on reset.</p>
+    <p>Set Object Collision makes an authored map object solid or pass-through for the current session while keeping its artwork visible. Use it for phase platforms, opening gates, or temporary barriers. The setting saves with the Event, synchronizes through host-validated state in hosted rooms, and returns to the object's authored collision setting on reset.</p>
+    <p>Events can also include Python code for advanced rules. Its versioned <code>parkoreen</code> context has bounded snapshots and supported state operations; it is not unrestricted access to the game engine. Keep loops and chains within the limits shown by validation. Prefer declarative actions when they express the rule clearly.</p>
+
+    <h2>Variables and Lists</h2>
+    <ul>
+      <li><strong>Map scope</strong> shares one value or List in that map session. <strong>Campaign scope</strong> shares a value or List across maps that use the same Campaign Key and saves automatically for solo play in this browser account (or on this device while signed out). Campaign saves do not sync to other devices and are not read or written in Test runs or hosted rooms. <strong>Player scope</strong> keeps a separate value or List for each player.</li>
+      <li>Scalar values support text, integer, float, and boolean types. Lists hold bounded, typed items and support add, remove, and contains branches.</li>
+      <li>Some values can opt into local browser saves for solo play. These saves do not sync between devices; test runs and hosted rooms remain temporary for these options.</li>
+      <li>Player scope separates state but does not make it secret in a hosted room.</li>
+    </ul>
+
+    <h2>Save, reset, and compatibility</h2>
+    <p>Triggers, Events, variables, and their links are part of map data and travel with normal map saves and <code>.pkrn</code> export/import. Runtime changes are session state: reset restores authored object, trigger, camera, and tilemap settings. Older editors preserve mechanic records they do not understand when saving unrelated edits, but an older runtime cannot execute unsupported types.</p>
+    <p>Mechanics failures appear in the dashboard with the Event and action location. During Test Game, Parkoreen shows a brief, rate-limited notice; hosted player sessions do not show author diagnostics. Start with the <a href="../editor/">Editor guide</a> for tools, layers, tilemaps, and map editing, or the <a href="../plugins/">Plugin authoring guide</a> to extend gameplay with a reviewed plugin.</p>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

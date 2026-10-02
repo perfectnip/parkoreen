@@ -107,3 +107,9 @@ The health-change trigger tracks a numeric HP component per player, filters incr
 - Guide pages explain mechanics and the supported plugin workflow accurately.
 - The Guide includes a practical starting path for game modes: adding a mechanics template, tracing and editing its linked blocks in Flow map, and distinguishing local testing from hosted multi-player behavior.
 - Third-party plugins cannot execute until API compatibility, permissions, isolation, and recovery are implemented and reviewed.
+
+## Map Assistant quality and future creator data
+
+- Keep the Map Assistant paused until it reliably follows map requests, produces substantial and visually coherent layouts, and passes structural and playability checks. Preserve its code and local conversations so it can be restored after those gates are met.
+- When the community is large enough, invite creators to separately opt in specific published maps for an AI improvement dataset. Public visibility or the Allow Download setting is not consent to use a map for training. Exclude account details and private conversation data, honor withdrawal and deletion requests, and document how opted-in material will be used.
+- Start with a curated evaluation set of requests, maps, accepted edits, and human quality labels. Measure instruction following, valid spawn/finish and mechanics records, route reachability, visual coherence, and edit acceptance before considering retrieval or model fine-tuning. Keep a held-out set so each quality change can be compared against real failures.

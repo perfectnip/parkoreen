@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spawn &amp; End — V0.6 — Parkoreen Guide</title>
+  <link rel="stylesheet" href="../../wiki.css">
+  <script>(function(){var t=localStorage.getItem('wiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="topbar">
+    <a class="topbar-logo" href="../../../">Parkoreen</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-logo topbar-wiki" href="../../">Guide</a>
+    <span class="topbar-sep">/</span>
+    <a class="topbar-crumb" href="..">V0.6</a>
+    <span class="topbar-sep">/</span>
+    <span class="topbar-crumb">Spawn &amp; End</span>
+    <a class="topbar-home" href="../../..">← Parkoreen</a>
+    <button id="theme-toggle" onclick="(function(){var d=document.documentElement,cur=d.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'),t=cur==='light'?'dark':'light';d.setAttribute('data-theme',t);localStorage.setItem('wiki-theme',t);document.getElementById('theme-toggle').textContent=t==='light'?'&#9790; Dark':'&#9728; Light';})()">&#9728; Light</button>
+  </div>
+  <div class="page-wrap">
+    <a class="back-link" href="..">← V0.6 Overview</a>
+    <div class="page-header">
+      <span class="version-badge">V0.6</span>
+      <h1>🚩 Spawn &amp; End</h1>
+      <p class="subtitle">The map's starting point and level goal object.</p>
+    </div>
+
+    <h2>Spawn Point</h2>
+    <p>The <strong>spawn point</strong> is where the player appears when the map starts. Every map must have exactly one spawn point. If no checkpoint has been activated, the player also respawns here on death.</p>
+    <p>The spawn point is placed using <em>Add → Spawn / End → Spawn Point</em>. It appears as a flag icon in the editor.</p>
+
+    <h2>End Point</h2>
+    <p>The <strong>end point</strong> is the level goal object. When the player touches the end point, the level is considered complete and the end-of-level screen is shown.</p>
+    <p>Placed using <em>Add → Spawn / End → End Point</em>. Shown as a flag or star icon in the editor.</p>
+
+    <h2>Requirements</h2>
+    <ul>
+      <li>A map must have exactly <strong>one spawn point</strong>. Without one, the player has no start position.</li>
+      <li>A map should have at least <strong>one end point</strong> so the level can be completed.</li>
+      <li>Both are listed under the <strong>Spawn / End</strong> placement mode in the Add menu.</li>
+    </ul>
+
+    <h2>Config options</h2>
+    <table class="wiki-table">
+      <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Layer</td><td>0</td><td>Draw order relative to other objects.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>(function(){var b=document.getElementById('theme-toggle');var t=document.documentElement.getAttribute('data-theme')||(window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');b.textContent=t==='light'?'☾ Dark':'☀ Light';})();</script>
+</body>
+</html>

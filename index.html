@@ -134,8 +134,14 @@
             flex: 0 1 612px;
             width: min(612px, calc(100vw - 224px));
             min-width: 0;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scroll-behavior: smooth;
+            scroll-snap-type: x mandatory;
+            overscroll-behavior-x: contain;
+            scrollbar-width: none;
         }
+        .levels-viewport::-webkit-scrollbar { display: none; }
 
         /* Groups live as a horizontal track; we slide the track on navigation */
         .levels-groups-container {
@@ -143,12 +149,12 @@
             width: max-content;
             flex: 0 0 auto;
             gap: 60px;
-            transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-            will-change: transform;
         }
 
         .level-group {
             flex: 0 0 auto;
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
             width: 612px; /* 3 × 180 + 2 × 24 */
             display: grid;
             grid-template-columns: repeat(3, 180px);
@@ -160,6 +166,8 @@
         /* Locked-group placeholder */
         .level-group-locked {
             flex: 0 0 auto;
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
             width: 612px;
             height: 384px; /* 2 × 180 + 24 */
             display: flex;
@@ -354,9 +362,12 @@
             .levels-nav-btn { animation: level-nav-arrive 420ms cubic-bezier(.2,.8,.2,1) both; }
             #btn-prev { animation-delay: 90ms; }
             #btn-next { animation-delay: 150ms; }
-            .group-indicator { animation: level-indicator-arrive 380ms 180ms cubic-bezier(.2,.8,.2,1) both; }
+            .group-indicator { animation: level-indicator-arrive 620ms 180ms cubic-bezier(.16,1,.3,1) both; }
             .group-dot { transition: transform 180ms cubic-bezier(.2,.8,.2,1), width 180ms ease, background-color 180ms ease; }
             .group-dot:hover { transform: scale(1.35); }
+            .levels-nav-btn { transition: transform 360ms cubic-bezier(.22,1,.36,1), box-shadow 280ms ease, background-color 220ms ease; }
+            .levels-nav-btn:not(:disabled):hover { transform: translateY(-5px) scale(1.08); }
+            .levels-nav-btn:not(:disabled):active { transform: translateY(1px) scale(.9); }
             .levels-nav-btn:hover:not(:disabled) svg { animation: level-arrow-nudge 320ms ease both; }
             #btn-prev:hover:not(:disabled) svg { animation-name: level-arrow-nudge-left; }
             @keyframes level-viewport-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -364,9 +375,13 @@
             @keyframes level-indicator-arrive { from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(.96); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
             @keyframes level-arrow-nudge { 50% { transform: translateX(3px); } }
             @keyframes level-arrow-nudge-left { 50% { transform: translateX(-3px); } }
+            .level-card { transition: transform 480ms cubic-bezier(.22,1,.36,1), box-shadow 360ms ease, border-color 260ms ease; }
+            .level-card:hover:not(.locked) { transform: translateY(-10px) scale(1.045) rotate(-.5deg); }
+            .group-dot.active { animation: level-dot-pop 420ms cubic-bezier(.22,1,.36,1) both; }
+            @keyframes level-dot-pop { 0% { transform: scale(.75); } 70% { transform: scale(1.3); } 100% { transform: scale(1.2); } }
         }
         @media (prefers-reduced-motion: reduce) {
-            .levels-viewport, .levels-nav-btn, .group-indicator, .group-dot {
+            .levels-viewport, .levels-nav-btn, .levels-groups-container, .group-indicator, .group-dot {
                 animation: none !important;
                 transition-duration: .01ms !important;
             }
@@ -481,6 +496,7 @@
 
         // DOM Elements
         const container = document.getElementById('levels-container');
+        const levelsViewport = document.getElementById('levels-viewport');
         const indicator = document.getElementById('group-indicator');
         const btnPrev = document.getElementById('btn-prev');
         const btnNext = document.getElementById('btn-next');
@@ -489,6 +505,7 @@
         const menuBackdrop = document.getElementById('dash-menu-backdrop');
         const menuClose = document.getElementById('dash-menu-close');
         const btnMapEditor = document.getElementById('btn-map-editor');
+        let groupScrollTimer = null;
 
         // Load progress from API (account) or localStorage (guest fallback)
         async function loadProgress() {
@@ -679,6 +696,15 @@
             return false;
         }
 
+        function measureGroupStride() {
+            const firstNode = container.firstElementChild;
+            if (!firstNode) return;
+            const width = firstNode.getBoundingClientRect().width || 612;
+            const gap = parseFloat(getComputedStyle(container).columnGap) || 0;
+            groupStride = width + gap;
+            levelsViewport.scrollLeft = currentGroup * groupStride;
+        }
+
         function renderLevelGroups() {
             container.innerHTML = '';
 
@@ -760,14 +786,37 @@
                 indicator.appendChild(dot);
             });
 
-            // Cache the stride (group width + gap) for goToGroup's slide math.
-            // Both groups and locked placeholders share the same flex stride.
+            // Measure after layout so the viewport pages exactly one group at
+            // every breakpoint, including after a device rotates/resizes.
             requestAnimationFrame(() => {
-                const firstNode = container.firstElementChild;
-                if (firstNode) {
-                    const w = firstNode.offsetWidth || 612;
-                    groupStride = w + 60;
-                }
+                measureGroupStride();
+                animateGroupEntry(currentGroup);
+            });
+        }
+
+        function animateGroupEntry(groupIndex) {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const group = container.children[groupIndex];
+            if (!group) return;
+            const cards = group.querySelectorAll('.level-card');
+            if (!cards.length) {
+                group.animate([
+                    { opacity: 0, transform: 'translateY(26px) scale(.9)' },
+                    { opacity: 1, transform: 'translateY(-5px) scale(1.025)', offset: .72 },
+                    { opacity: 1, transform: 'translateY(0) scale(1)' }
+                ], { duration: 720, easing: 'cubic-bezier(.18,1,.32,1)' });
+                return;
+            }
+            cards.forEach((card, index) => {
+                card.animate([
+                    { opacity: 0, transform: 'translateY(34px) scale(.82) rotate(-2deg)' },
+                    { opacity: 1, transform: 'translateY(-8px) scale(1.045) rotate(.5deg)', offset: .72 },
+                    { opacity: 1, transform: 'translateY(0) scale(1) rotate(0)' }
+                ], {
+                    duration: 720,
+                    delay: index * 55,
+                    easing: 'cubic-bezier(.18,1,.32,1)'
+                });
             });
         }
 
@@ -787,10 +836,32 @@
         function goToGroup(groupIndex) {
             if (groupIndex < 0 || groupIndex >= LEVEL_GROUPS.length) return;
             currentGroup = groupIndex;
-            const offset = -groupIndex * groupStride;
-            container.style.transform = `translateX(${offset}px)`;
+            const nextScrollLeft = groupIndex * groupStride;
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                levelsViewport.scrollLeft = nextScrollLeft;
+            } else {
+                levelsViewport.scrollTo({ left: nextScrollLeft, behavior: 'smooth' });
+            }
             updateGroupVisibility();
+            animateGroupEntry(groupIndex);
         }
+
+        window.addEventListener('resize', () => requestAnimationFrame(measureGroupStride));
+        levelsViewport.addEventListener('scroll', () => {
+            clearTimeout(groupScrollTimer);
+            groupScrollTimer = setTimeout(() => {
+                if (!groupStride) return;
+                const settledGroup = Math.max(0, Math.min(
+                    LEVEL_GROUPS.length - 1,
+                    Math.round(levelsViewport.scrollLeft / groupStride)
+                ));
+                if (settledGroup !== currentGroup) {
+                    currentGroup = settledGroup;
+                    updateGroupVisibility();
+                    animateGroupEntry(currentGroup);
+                }
+            }, 110);
+        }, { passive: true });
 
         // Navigate to previous group
         function prevGroup() {
@@ -1001,7 +1072,7 @@
                     // Re-render so the now-unlocked group renders as a grid.
                     renderLevelGroups();
                     // Re-apply the current group's transform after re-render.
-                    container.style.transform = `translateX(${-nextGroup * groupStride}px)`;
+                    levelsViewport.scrollLeft = nextGroup * groupStride;
                     // Fade the now-unlocked placeholder out — wait, after re-render
                     // it's already gone. The locked placeholder was replaced by
                     // a real grid. Nothing more to do here; the slide itself
