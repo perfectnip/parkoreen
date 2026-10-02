@@ -1,23 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700;800&display=swap');
 
-/* Player-facing Parkoreen pages. Deliberately separate from the editor and game UI. */
+/* Player menus. The editor and game canvas keep their own controls and colors. */
 :root {
-    --primary: #315e43;
-    --primary-light: #427653;
-    --primary-dark: #224631;
-    --secondary: #e2a768;
-    --accent: #d86f4b;
-    --bg-dark: #e9eadf;
-    --bg-medium: #f1f1e8;
-    --bg-light: #dfe5d7;
-    --surface: #f8f8f0;
-    --surface-light: #d5ddcf;
-    --text-primary: #1c2a23;
-    --text-secondary: #526257;
-    --text-muted: #67796c;
-    --ui-border: #b4c4b2;
-    --shadow: 0 2px 0 rgba(31, 50, 38, .12);
-    --shadow-lg: 0 5px 0 rgba(31, 50, 38, .13);
+    --primary: #356e69;
+    --primary-light: #4e9486;
+    --primary-dark: #274f4e;
+    --secondary: #f2d45d;
+    --accent: #efa560;
+    --bg-dark: #c9f1ed;
+    --bg-medium: #e6f8f2;
+    --bg-light: #b6e4d7;
+    --surface: #fbfffa;
+    --surface-light: #dceee6;
+    --text-primary: #203739;
+    --text-secondary: #4f6869;
+    --text-muted: #607879;
+    --ui-border: #91b2ad;
+    --shadow: 0 4px 0 rgba(69, 102, 100, .27);
+    --shadow-lg: 0 6px 0 rgba(69, 102, 100, .27);
 }
 
 html { background: var(--bg-dark); }
@@ -525,4 +525,228 @@ input[type="checkbox"], input[type="radio"] { accent-color: #315e43; }
 }
 @media (prefers-reduced-motion: reduce) {
     .btn, .level-card, .map-card, .levels-nav-btn { transition: none; }
+}
+
+/* Game menu art direction */
+body:not(.game-active),
+.page-container,
+.auth-container,
+.join-container,
+.settings-container {
+    background: #c9f1ed;
+    color: #203739;
+}
+.page-container::before {
+    display: block;
+    position: absolute;
+    top: 118px;
+    left: 5%;
+    z-index: 0;
+    width: 130px;
+    height: 35px;
+    border-radius: 30px;
+    background: rgba(255,255,255,.48);
+    box-shadow: 65px -18px 0 5px rgba(255,255,255,.34),
+        75vw 115px 0 10px rgba(255,255,255,.35),
+        55vw 420px 0 3px rgba(255,255,255,.24);
+    mask-image: none;
+    pointer-events: none;
+}
+.page-container::after { display: none; }
+.page-header {
+    min-height: 68px;
+    border-bottom: 3px solid #78ada4;
+    background: rgba(250,255,248,.86);
+}
+.page-header .page-title { color: #264e4d; font-size: clamp(1.5rem, 2.5vw, 2rem); }
+.page-header .btn-secondary,
+.page-header .btn-ghost {
+    color: #284d4d;
+    border-color: #7da29e;
+    background: #f8fff9;
+}
+.page-header .btn-secondary:hover,
+.page-header .btn-ghost:hover { color: #203739; border-color: #567d78; background: #e1f5ec; }
+body:not(.game-active) .page-header a.btn-secondary { color: #284d4d; }
+body:not(.game-active) .page-header a.btn-secondary:hover { color: #203739; }
+.page-header .btn-primary { color: #283d3b; border-color: #ba9c40; background: #f4d45d; }
+.page-header .btn-primary:hover { color: #203739; border-color: #9d8131; background: #ffe47e; }
+body:not(.game-active) .page-header a.btn-primary,
+body:not(.game-active) .page-header a.btn-primary:hover { color: #283d3b; }
+
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-accent,
+.btn-danger {
+    border-radius: 7px;
+    box-shadow: 0 3px 0 rgba(61,91,89,.23);
+    font-weight: 800;
+}
+.btn:hover { box-shadow: 0 5px 0 rgba(61,91,89,.23); }
+.btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 rgba(61,91,89,.23); }
+.btn-primary { color: #2b3b37; border-color: #ae9036; background: #f4d45d; }
+.btn-primary:hover { color: #203739; border-color: #9d8131; background: #ffe47e; }
+body:not(.game-active) a.btn-primary,
+body:not(.game-active) a.btn-primary:hover { color: #283d3b; }
+.btn-secondary { color: #315557; border-color: #8cadab; background: #fbfffa; }
+.btn-secondary:hover { color: #203739; border-color: #678c87; background: #e7f6ef; }
+.btn-danger { color: #924b43; border-color: #d9aaa2; background: #fff7f1; }
+.btn-icon { border-radius: 7px; }
+.form-input,
+.form-select,
+input.form-input,
+select.form-input,
+textarea.form-input {
+    border: 2px solid #95b6af;
+    border-radius: 7px;
+    background: #fffefa;
+    color: #203739;
+}
+.form-input:focus,
+.form-select:focus { border-color: #3a7971; background: #fff; box-shadow: 0 0 0 3px #a9dcd0; }
+.form-label { color: #365958; }
+
+.site-kicker { color: #487775; font-size: .74rem; letter-spacing: .11em; }
+.site-period { display: none; }
+.card,
+.map-card,
+.auth-card,
+.join-card,
+.settings-card,
+.community-card,
+#map-dialog {
+    border: 2px solid #85a8a3;
+    border-radius: 11px;
+    background: #fbfffa;
+    box-shadow: 0 5px 0 #8db9ad;
+}
+
+/* Stage select */
+.levels-intro {
+    width: min(100%, 820px);
+    margin-top: clamp(24px, 4vh, 42px);
+    padding: 0 18px 14px;
+    border-color: #91bdb4;
+}
+.levels-intro h2 { margin: 3px 0 2px; font-size: clamp(1.9rem, 3vw, 2.6rem); line-height: 1.1; letter-spacing: -.05em; }
+.levels-intro p { color: #4e6968; font-size: .9rem; }
+.levels-current { gap: 0; }
+.levels-current strong { font-size: 1.12rem; }
+.levels-intro + .page-content { min-height: 360px; padding-top: 10px; padding-bottom: 65px; }
+.level-group { gap: 18px; padding: 10px; }
+.level-card,
+.level-card:nth-child(3n + 2),
+.level-card:nth-child(3n) {
+    border: 2px solid #879b99;
+    border-bottom: 8px solid #6f8382;
+    border-radius: 7px;
+    background: #f8fdf7;
+    box-shadow: 0 7px 0 rgba(72,111,108,.22);
+}
+.level-card:nth-child(3n + 2) { background: #eff9e9; }
+.level-card:nth-child(3n) { background: #f3fbf5; }
+.level-card:hover:not(.locked) {
+    transform: translateY(-6px);
+    border-color: #438578;
+    border-bottom-color: #397367;
+    box-shadow: 0 12px 0 rgba(72,111,108,.18);
+}
+.level-card-icon { color: #438578; font-size: 45px; }
+.level-card-name { color: #254b49; font-size: 1.08rem; }
+.level-card-status { color: #597a73; font-size: .78rem; }
+.level-card.completed { background: #e2f5e1; border-color: #70a986; border-bottom-color: #518668; }
+.level-card.locked { background: #edf2f0; border-color: #a8b7b7; border-bottom-color: #889b9b; opacity: .72; }
+.level-card::before { color: #6d8884; }
+.levels-nav-btn {
+    width: 54px;
+    height: 64px;
+    color: #285450;
+    border: 2px solid #84a9a3;
+    border-bottom-width: 5px;
+    border-radius: 8px;
+    background: #fafff9;
+    box-shadow: 0 4px 0 rgba(72,111,108,.22);
+}
+.levels-nav-btn:hover:not(:disabled) { color: #203739; border-color: #b69a45; background: #ffe279; }
+.levels-nav-btn:disabled { background: #fafff9; opacity: .4; }
+.group-indicator { border: 2px solid #8cb2a9; border-radius: 8px; background: #fafff9; box-shadow: 0 4px 0 #8eb6a8; }
+.group-dot { background: #a1bdb4; }
+.group-dot.active { background: #438578; }
+
+/* Map menu */
+.dashboard-intro { align-items: center; padding: 6px 0 18px; margin-bottom: 18px; border-color: #91bdb4; }
+.dashboard-intro h2 { margin: 3px 0; font-size: clamp(1.9rem, 3vw, 2.6rem); }
+.dashboard-intro p { color: #4e6968; font-size: .9rem; }
+.dashboard-intro-mark { display: none; }
+.map-card { border-radius: 9px; box-shadow: 0 5px 0 #8db9ad; }
+.map-card:hover { border-color: #51877e; box-shadow: 0 9px 0 #8db9ad; }
+.map-card-preview { height: 150px; color: #3b7971; border-color: #83a5a2; background: #d8f1e9; }
+.map-card-preview::before { background: repeating-linear-gradient(90deg, #7a898a 0 68px, transparent 68px 86px); opacity: .55; }
+.map-card-title { color: #234747; }
+.map-card-actions .btn-edit { color: #283d3b; background: #f4d45d; border-color: #ae9036; }
+.map-card-actions .btn-edit:hover { color: #203739; background: #ffe47e; }
+
+/* Community menu */
+.community-wrap { width: min(1120px, calc(100% - 40px)) !important; }
+.community-head { min-height: 70px; border-color: #91bdb4; }
+.community-brand { color: #285450 !important; font-size: 1.3rem; }
+.community-intro { padding: 26px 0 24px; }
+.community-intro h1 { margin: 3px 0; font-size: clamp(2rem, 3vw, 2.7rem); }
+.community-intro p { color: #4e6968; font-size: .9rem; }
+.community-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; }
+.community-section-heading h2 { font-size: 1.3rem; }
+.community-toolbar { border: 2px solid #91b3ac; border-radius: 9px; background: #e8f8ef; }
+.community-card { min-height: 210px; border-radius: 9px; box-shadow: 0 4px 0 #8db9ad; }
+.community-card h3 { color: #234747; }
+.community-meta { color: #597672 !important; }
+.tag-pill { color: #356e69; border-color: #9ccbc0; border-radius: 5px; background: #e5f8ee; }
+.publish-card { border-radius: 9px; }
+.tag-picker, .comment-item { border-color: #a8cbc1; background: #eaf8f1; }
+#map-dialog { border-radius: 11px; }
+
+/* Join, account, settings and help screens */
+.join-container { gap: 18px; }
+.join-container::before { content: 'JOIN GAME'; color: #285450; font-size: clamp(1.7rem, 3vw, 2.3rem); }
+.join-card, .join-card[style] { border-radius: 11px; }
+.join-title { color: #254b49; }
+#lobby-list > div { border-color: #9cbab4; background: #e8f7ee !important; }
+.auth-scene { display: none; }
+.auth-card { width: min(440px, 100%); min-height: 0; border-radius: 11px; }
+.auth-logo h1 { color: #285450; }
+.auth-footer { border-color: #b8d5cc; }
+.settings-card { border-radius: 11px; }
+.settings-title { color: #285450; font-size: 2rem; }
+.settings-section { border-color: #b8d5cc; }
+.settings-row { border-color: #d8e9e3; }
+.settings-card #keyboard-layout-info { background: #e8f7ee !important; border-color: #b8d5cc; }
+.howtoplay-card { border: 2px solid #85a8a3; border-radius: 11px; background: #fbfffa; box-shadow: 0 5px 0 #8db9ad; }
+.howtoplay-title, .section-title { color: #356e69; }
+.info-box, .object-type { background: #e7f6ed; }
+.mail-card, .room-card { border-color: #91b3ac; border-radius: 9px; background: #fbfffa; }
+.dashboard-menu-panel { border-left-color: #78ada4 !important; background: #effaf3 !important; color: #203739; }
+.dashboard-menu-panel-header { border-color: #b1d0c7 !important; }
+.dashboard-menu-panel-title, .dashboard-menu-panel .btn-ghost { color: #285450; }
+.dashboard-menu-row { color: #285450 !important; }
+.dashboard-menu-row:hover { color: #203739 !important; border-color: #8fc5b5 !important; background: #d8f3e6 !important; }
+.dashboard-menu-backdrop.active { background: rgba(30,59,59,.35) !important; }
+.page-footer, .page-footer[style] { color: #5b7b79; background: #c9f1ed; }
+
+@media (max-width: 900px) {
+    .community-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+    .levels-intro { margin-top: 18px; padding-bottom: 11px; }
+    .levels-intro h2 { font-size: 1.7rem; }
+    .levels-current { gap: 8px; }
+    .levels-intro + .page-content { min-height: 340px; }
+    .level-group { gap: 8px; padding: 5px; }
+    .level-card-icon { font-size: 32px; }
+    .level-card-name { font-size: .87rem; }
+    .levels-nav-btn { width: 42px; height: 55px; }
+    .dashboard-intro h2 { font-size: 2rem; }
+    .community-wrap { width: calc(100% - 28px) !important; }
+    .community-intro { padding: 20px 0 18px; }
+    .community-intro h1 { font-size: 2rem; }
+    .join-container { padding-top: 88px; }
 }
