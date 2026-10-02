@@ -1000,16 +1000,36 @@
                 return;
             }
 
-            // Bug 3/8: If we got here with a pending level completion (Next
-            // Level pressed on the last non-challenge level), record it and
-            // run the challenge-unlock animation.
-            const pendingComplete = sessionStorage.getItem('parkoreen_pending_complete');
-            if (pendingComplete) {
+            // Persist level completions across full-page navigation, including
+            // when this page is running inside the same-origin embed wrapper.
+            const pendingQueueKey = 'parkoreen_pending_completions';
+            let pendingCompletions = [];
+            try {
+                const queued = JSON.parse(sessionStorage.getItem(pendingQueueKey) || '[]');
+                if (Array.isArray(queued)) pendingCompletions = queued.filter(name => typeof name === 'string');
+            } catch (e) {
+                console.warn('[LevelProgress] Could not read pending completions:', e);
+            }
+            const legacyPendingComplete = sessionStorage.getItem('parkoreen_pending_complete');
+            if (legacyPendingComplete && !pendingCompletions.includes(legacyPendingComplete)) {
+                pendingCompletions.push(legacyPendingComplete);
+            }
+
+            if (pendingCompletions.length) {
+                sessionStorage.removeItem(pendingQueueKey);
                 sessionStorage.removeItem('parkoreen_pending_complete');
-                await completeLevel(pendingComplete);
-                // Re-render so the just-completed card reflects its new state.
+                for (const levelName of pendingCompletions) {
+                    if (!completedLevels.has(levelName)) await completeLevel(levelName);
+                }
                 renderLevelGroups();
-                runChallengeUnlockAnimation(pendingComplete);
+                const completedTutorialEnd = pendingCompletions.includes('0_3');
+                if (completedTutorialEnd) {
+                    sessionStorage.removeItem('parkoreen_level_complete_special');
+                    goToGroup(2);
+                    runChallengeUnlockAnimation('0_3');
+                } else if (legacyPendingComplete) {
+                    runChallengeUnlockAnimation(legacyPendingComplete);
+                }
                 return;
             }
 
@@ -1160,15 +1180,10 @@
 
         // Listen for level completion messages from host.html
         window.addEventListener('message', async (e) => {
-            if (e.data.type === 'levelComplete') {
-                const levelName = e.data.levelName;
-                await completeLevel(levelName);
-
-                // Special handling for 0_3
-                if (levelName === '0_3') {
-                    // Will be handled on return to index.html via special flag
-                }
-            }
+            if (e.origin !== window.location.origin || e.data?.type !== 'levelComplete') return;
+            const levelName = e.data.levelName;
+            if (typeof levelName !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(levelName)) return;
+            await completeLevel(levelName);
         });
 
         // Check if returning from a completed level

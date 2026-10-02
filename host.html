@@ -2996,6 +2996,22 @@
 
         let lastEndGameData = null;
 
+        function queueLevelCompletion(levelName) {
+            if (typeof levelName !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(levelName)) return;
+            const key = 'parkoreen_pending_completions';
+            let pending = [];
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(key) || '[]');
+                if (Array.isArray(saved)) pending = saved.filter(name => typeof name === 'string');
+            } catch (_) {}
+            if (!pending.includes(levelName)) pending.push(levelName);
+            sessionStorage.setItem(key, JSON.stringify(pending));
+
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'levelComplete', levelName }, window.location.origin);
+            }
+        }
+
         function setupEndGameScreen() {
             // Set up the game end callback
             engine.onGameEndCallback = (data) => {
@@ -3057,13 +3073,7 @@
                         // Mark level as completed
                         const levelName = window.currentPlayingLevel;
 
-                        // Post message to parent (index.html) for progress tracking
-                        if (window.parent !== window) {
-                            window.parent.postMessage({
-                                type: 'levelComplete',
-                                levelName: levelName
-                            }, '*');
-                        }
+                        queueLevelCompletion(levelName);
 
                         // Clear level state
                         window.isLevelMode = false;
@@ -3151,6 +3161,7 @@
                 document.getElementById('end-game-next-level').addEventListener('click', () => {
                     const ln = window.currentPlayingLevel;
                     hideEndGameScreen();
+                    queueLevelCompletion(ln);
 
                     // Bug 8: If this was the last non-challenge level in its
                     // group, defer to index.html to record completion and run
@@ -3180,10 +3191,7 @@
                 if (showExit) {
                     document.getElementById('end-game-exit').addEventListener('click', () => {
                         const ln = window.currentPlayingLevel;
-                        if (ln === '0_3') {
-                            // Special case: after 0_3, scroll to group 2 on levels page
-                            sessionStorage.setItem('parkoreen_level_complete_special', 'true');
-                        }
+                        queueLevelCompletion(ln);
                         window.location.href = 'index.html';
                     });
                 }

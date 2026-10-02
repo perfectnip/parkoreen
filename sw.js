@@ -3,10 +3,11 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'parkoreen-v253';
+const CACHE_NAME = 'parkoreen-v254';
 const ASSETS_TO_CACHE = [
     '/parkoreen/',
     '/parkoreen/index.html',
+    '/parkoreen/embed.html',
     '/parkoreen/dashboard/',
     '/parkoreen/dashboard/index.html',
     '/parkoreen/community/',
