@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700;800&display=swap');
+
 /* Player-facing Parkoreen pages. Deliberately separate from the editor and game UI. */
 :root {
     --primary: #315e43;
@@ -20,6 +22,7 @@
 
 html { background: var(--bg-dark); }
 body:not(.game-active) {
+    font-family: 'Oxanium', 'Segoe UI', sans-serif;
     background: var(--bg-dark);
     color: var(--text-primary);
     font-weight: 400;
@@ -82,6 +85,7 @@ body:not(.game-active) a.btn-secondary:hover { color: #193326; }
     backdrop-filter: none;
 }
 .page-header .page-title {
+    font-family: 'Oxanium', 'Segoe UI', sans-serif;
     color: #f6f7e8;
     background: none;
     -webkit-text-fill-color: currentColor;
