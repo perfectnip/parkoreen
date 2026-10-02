@@ -307,6 +307,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="assets/css/site.css">
 </head>
 <body>
     <div class="page-container">
@@ -332,6 +333,19 @@
                 </button>
             </div>
         </header>
+
+        <section class="levels-intro" aria-label="Official levels">
+            <div>
+                <span class="site-kicker">OFFICIAL COURSES <span> / </span> 01—04</span>
+                <h2>Pick your path<span class="site-period">.</span></h2>
+                <p>Four groups. One finish line at a time.</p>
+            </div>
+            <div class="levels-current" aria-live="polite">
+                <span class="site-kicker">NOW VIEWING</span>
+                <strong id="current-group-label">Group 1</strong>
+                <span id="current-group-count">3 courses</span>
+            </div>
+        </section>
 
         <main class="page-content" style="display: flex; align-items: center; justify-content: center; overflow: hidden;">
             <button class="levels-nav-btn" id="btn-prev" disabled aria-label="Previous level group">
@@ -633,6 +647,7 @@
 
                 const groupEl = document.createElement('div');
                 groupEl.className = 'level-group';
+                if (group.levels.length <= 3) groupEl.classList.add('short-group');
                 groupEl.dataset.group = groupIndex;
 
                 group.levels.forEach((levelName, levelIndex) => {
@@ -642,6 +657,7 @@
                     card.className = 'level-card' + (isCompleted ? ' completed' : '') + (isLocked ? ' locked' : '');
                     card.dataset.level = levelName;
                     card.dataset.group = groupIndex;
+                    card.dataset.order = String(levelIndex + 1).padStart(2, '0');
 
                     const displayName = levelName === '3_6_rainbow_tower'
                         ? 'Rainbow Tower'
@@ -703,6 +719,9 @@
 
         // Update indicator/dots/nav-button state for the current group
         function updateGroupVisibility() {
+            const activeGroup = LEVEL_GROUPS[currentGroup];
+            document.getElementById('current-group-label').textContent = activeGroup.name;
+            document.getElementById('current-group-count').textContent = `${activeGroup.levels.length} courses`;
             const dots = indicator.querySelectorAll('.group-dot');
             dots.forEach((dot, index) => {
                 dot.classList.toggle('active', index === currentGroup);
