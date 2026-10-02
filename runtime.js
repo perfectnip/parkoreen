@@ -1283,7 +1283,7 @@ class JimmyQrgManager {
             align-items: center;
             justify-content: center;
             z-index: 999999;
-            font-family: 'Parkoreen UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Oxanium', -apple-system, BlinkMacSystemFont, sans-serif;
         `;
 
         const popup = document.createElement('div');
@@ -1412,7 +1412,7 @@ class JimmyQrgManager {
             align-items: center;
             justify-content: center;
             z-index: 999999;
-            font-family: 'Parkoreen UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Oxanium', -apple-system, BlinkMacSystemFont, sans-serif;
         `;
 
         const popup = document.createElement('div');
@@ -1430,7 +1430,7 @@ class JimmyQrgManager {
             <button id="goodboy-ok" style="
                 padding: 14px 48px;
                 font-size: 1.1rem;
-                font-weight: 600;
+                font-weight: 500;
                 background: linear-gradient(135deg, #22c55e, #16a34a);
                 border: none;
                 color: white;

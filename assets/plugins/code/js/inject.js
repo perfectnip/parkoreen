@@ -1792,7 +1792,7 @@
             node.id = 'parkoreen-mechanics-message';
             node.setAttribute('role', 'status');
             node.setAttribute('aria-live', 'polite');
-            node.style.cssText = 'position:fixed;z-index:100000;top:18px;left:50%;transform:translateX(-50%);max-width:min(90vw,640px);padding:12px 20px;border:1px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(15,18,30,.94);color:#fff;font:600 15px/1.4 system-ui,sans-serif;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35);opacity:0;transition:opacity .15s ease;pointer-events:none;';
+            node.style.cssText = 'position:fixed;z-index:100000;top:18px;left:50%;transform:translateX(-50%);max-width:min(90vw,640px);padding:12px 20px;border:1px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(15,18,30,.94);color:#fff;font:500 15px/1.4 system-ui,sans-serif;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35);opacity:0;transition:opacity .15s ease;pointer-events:none;';
             document.body.appendChild(node);
         }
         clearTimeout(node._hideTimer);
@@ -1939,7 +1939,7 @@
         closeButton.type = 'button';
         closeButton.textContent = 'Close';
         closeButton.setAttribute('aria-label', 'Close status panel');
-        closeButton.style.cssText = 'min-height:42px;padding:8px 12px;border:1px solid rgba(255,255,255,.25);border-radius:9px;background:#202b3e;color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer;';
+        closeButton.style.cssText = 'min-height:42px;padding:8px 12px;border:1px solid rgba(255,255,255,.25);border-radius:9px;background:#202b3e;color:#fff;font:500 14px system-ui,sans-serif;cursor:pointer;';
         const list = document.createElement('ul');
         list.style.cssText = 'display:flex;flex-direction:column;gap:7px;margin:0;padding:0 3px 0 0;overflow:auto;list-style:none;';
         header.append(heading, closeButton);
@@ -2015,12 +2015,12 @@
         const menuTitle = document.createElement('h2');
         menuTitle.textContent = entry.menuTitle || '';
         menuTitle.id = `mechanics-menu-title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        menuTitle.style.cssText = 'margin:0 0 18px;color:#f5f7ff;font:800 24px/1.2 system-ui,sans-serif;overflow-wrap:anywhere;';
+        menuTitle.style.cssText = 'margin:0 0 18px;color:#f5f7ff;font:500 24px/1.2 system-ui,sans-serif;overflow-wrap:anywhere;';
         menuTitle.hidden = !isMenu;
         if (isMenu) panel.setAttribute('aria-labelledby', menuTitle.id);
 
         const speaker = document.createElement('div');
-        speaker.style.cssText = 'min-height:1.3em;margin-bottom:8px;color:#9cecff;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;';
+        speaker.style.cssText = 'min-height:1.3em;margin-bottom:8px;color:#9cecff;font-size:13px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;';
         speaker.textContent = entry.speaker;
         speaker.hidden = !entry.speaker;
 
@@ -2033,7 +2033,7 @@
         footer.style.cssText = 'display:flex;justify-content:flex-end;align-items:center;margin-top:14px;';
         const nextButton = document.createElement('button');
         nextButton.type = 'button';
-        nextButton.style.cssText = 'min-width:116px;min-height:44px;padding:9px 18px;border:1px solid rgba(156,236,255,.8);border-radius:10px;background:#17364a;color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer;touch-action:manipulation;';
+        nextButton.style.cssText = 'min-width:116px;min-height:44px;padding:9px 18px;border:1px solid rgba(156,236,255,.8);border-radius:10px;background:#17364a;color:#fff;font:500 14px system-ui,sans-serif;cursor:pointer;touch-action:manipulation;';
         footer.appendChild(nextButton);
         if (Array.isArray(entry.choices)) {
             const choicesNode = document.createElement('div');
@@ -2045,7 +2045,7 @@
                 choiceButton.type = 'button';
                 choiceButton.textContent = choice.label;
                 choiceButton.setAttribute('aria-label', choice.label);
-                choiceButton.style.cssText = 'min-height:48px;padding:10px 16px;border:1px solid rgba(156,236,255,.7);border-radius:10px;background:#17364a;color:#fff;font:700 15px/1.35 system-ui,sans-serif;cursor:pointer;touch-action:manipulation;text-align:left;';
+                choiceButton.style.cssText = 'min-height:48px;padding:10px 16px;border:1px solid rgba(156,236,255,.7);border-radius:10px;background:#17364a;color:#fff;font:500 15px/1.35 system-ui,sans-serif;cursor:pointer;touch-action:manipulation;text-align:left;';
                 choiceButton.addEventListener('click', () => advance(choice.eventId));
                 choicesNode.appendChild(choiceButton);
             }
@@ -2056,7 +2056,7 @@
                 cancelButton.type = 'button';
                 cancelButton.textContent = 'Cancel';
                 cancelButton.setAttribute('aria-label', 'Cancel menu');
-                cancelButton.style.cssText = 'width:100%;min-height:44px;margin-top:10px;padding:9px 16px;border:1px solid rgba(188,214,255,.38);border-radius:10px;background:rgba(255,255,255,.06);color:#e5eaf3;font:700 14px system-ui,sans-serif;cursor:pointer;touch-action:manipulation;';
+                cancelButton.style.cssText = 'width:100%;min-height:44px;margin-top:10px;padding:9px 16px;border:1px solid rgba(188,214,255,.38);border-radius:10px;background:rgba(255,255,255,.06);color:#e5eaf3;font:500 14px system-ui,sans-serif;cursor:pointer;touch-action:manipulation;';
                 cancelButton.addEventListener('click', () => advance(entry.cancelEventId || null));
                 panel.appendChild(cancelButton);
             }

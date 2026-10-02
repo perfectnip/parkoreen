@@ -655,6 +655,7 @@ class Player {
         const near = world.queryNear(x + 1, y + 1, GRID_SIZE - 2, GRID_SIZE - 2);
         for (let i = 0; i < near.length; i++) {
             const o = near[i];
+            if (['checkpoint', 'spawnpoint', 'endpoint'].includes(o.actingType)) continue;
             if (!o.collision || o.actingType === 'spike' || o.actingType === 'text' || o.type === 'teleportal') continue;
             if (o.type === 'spinner' || o.appearanceType === 'spinner') continue;
             if (this.collisionShapeIntersectsBox(this._blockCheckBox, o)) return true;
@@ -718,6 +719,7 @@ class Player {
         const nearby = world.queryNear(box.x - 2, box.y - 2, box.width + 4, box.height + 4);
         for (let ni = 0; ni < nearby.length; ni++) {
             const obj = nearby[ni];
+            if (['checkpoint', 'spawnpoint', 'endpoint'].includes(obj.actingType)) continue;
             if (!obj.collision) continue;
             if (obj.oneWayPlatform &&
                 (direction !== 'vertical' || this.vy <= 0 || previousY + this.height > obj.y + 1)) continue;
@@ -962,6 +964,7 @@ class Player {
         for (let i = 0; i < near.length; i++) {
             const o = near[i];
             if (o === spike) continue;
+            if (['checkpoint', 'spawnpoint', 'endpoint'].includes(o.actingType)) continue;
             if (!o.collision) continue;
             if (o.actingType === 'spike' || o.actingType === 'text' || o.type === 'teleportal') continue;
             if (o.type === 'spinner' || o.appearanceType === 'spinner') continue;
@@ -1818,6 +1821,18 @@ class WorldObject {
         this.appearanceType = config.appearanceType || 'ground'; // ground, spike, checkpoint, spawnpoint, endpoint
         this.actingType = config.actingType || 'ground'; // ground, spike, checkpoint, spawnpoint, endpoint, text
         this.collision = config.collision !== undefined ? config.collision : true;
+        const markerTypes = new Set(['checkpoint', 'spawnpoint', 'endpoint']);
+        const markerType = markerTypes.has(this.appearanceType)
+            ? this.appearanceType
+            : markerTypes.has(this.actingType) ? this.actingType : null;
+        if (markerType) {
+            this.type = 'koreen';
+            this.appearanceType = markerType;
+            this.actingType = markerType;
+            this.collision = false;
+            this.width = GRID_SIZE;
+            this.height = GRID_SIZE;
+        }
         this.collisionShape = ['circle', 'capsule', 'slopeUpRight', 'slopeUpLeft', 'polygon'].includes(config.collisionShape) &&
             this.type === 'block' && this.appearanceType === 'ground' && this.actingType === 'ground' &&
             Number.isFinite(this.width) && this.width > 0 && Number.isFinite(this.height) && this.height > 0
@@ -6494,7 +6509,7 @@ class GameEngine {
         });
         
         const title = document.createElement('div');
-        title.style.cssText = 'font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 12px; padding-right: 30px;';
+        title.style.cssText = 'font-size: 20px; font-weight: 500; color: #fff; margin-bottom: 12px; padding-right: 30px;';
         title.textContent = buttonObj.displayName || 'Button';
         
         const desc = document.createElement('div');
@@ -7043,7 +7058,7 @@ class GameEngine {
                 'align-items:center',
                 'gap:6px',
                 'font-size:15px',
-                'font-weight:700',
+                'font-weight:500',
                 'color:#f5c518',
                 'pointer-events:none',
                 'z-index:9990',

@@ -634,7 +634,7 @@
                 align-items: center;
                 gap: 10px;
                 font-size: 24px;
-                font-weight: 600;
+                font-weight: 500;
                 color: #fff;
                 margin: 0;
                 flex: 1;
@@ -647,7 +647,7 @@
             
             .code-beta-badge {
                 font-size: 10px;
-                font-weight: 700;
+                font-weight: 500;
                 background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
                 color: white;
                 padding: 3px 8px;
@@ -725,7 +725,7 @@
                 gap: 12px;
             }
 
-            .code-runtime-errors-header { margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+            .code-runtime-errors-header { margin-bottom: 8px; font-size: 13px; font-weight: 500; }
             .code-runtime-error-row + .code-runtime-error-row { margin-top: 5px; }
             .code-runtime-error-row button {
                 width: 100%;
@@ -770,7 +770,7 @@
             .mechanics-flow-lane-title {
                 fill: #aab6c8;
                 font-size: 13px;
-                font-weight: 700;
+                font-weight: 500;
                 letter-spacing: 0.06em;
                 text-transform: uppercase;
             }
@@ -801,7 +801,7 @@
             .mechanics-flow-node.variable rect { stroke: #10b981; }
             .mechanics-flow-node.has-error rect { stroke: #ef4444; }
             .mechanics-flow-node.has-warning rect { stroke: #f59e0b; }
-            .mechanics-flow-node-title { fill: #fff; font-size: 14px; font-weight: 600; }
+            .mechanics-flow-node-title { fill: #fff; font-size: 14px; font-weight: 500; }
             .mechanics-flow-node-subtitle { fill: #aab6c8; font-size: 11px; }
 
             .mechanics-flow-empty {
@@ -889,7 +889,7 @@
                 border-bottom: 1px solid transparent;
                 color: #fff;
                 font-size: 16px;
-                font-weight: 600;
+                font-weight: 500;
                 width: 100%;
                 outline: none;
                 padding: 4px 0;
@@ -932,7 +932,7 @@
 
             .code-block-connections-label {
                 color: var(--text-muted, #888);
-                font-weight: 600;
+                font-weight: 500;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }
@@ -1291,7 +1291,7 @@
             
             .code-section-title {
                 font-size: 12px;
-                font-weight: 600;
+                font-weight: 500;
                 color: var(--text-muted, #666);
                 margin-bottom: 16px;
                 text-transform: uppercase;

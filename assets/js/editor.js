@@ -840,12 +840,23 @@ class Editor {
                 'Build a physically reachable route from spawn to endpoint using the current physics settings. Keep hazards avoidable and checkpoints on safe ground.',
                 'For an empty map, create the full requested level using these canonical formats; an empty object list is not a missing schema.'
             ],
+            physics: {
+                gridSize: GRID_SIZE,
+                playerSpeed: this.world?.playerSpeed ?? 5,
+                gravity: this.world?.gravity ?? 0.71,
+                jumpForce: this.world?.jumpForce ?? -13.2,
+                estimatedMaximumJumpHeight: Math.pow(Math.abs(this.world?.jumpForce ?? -13.2), 2) / (2 * (this.world?.gravity ?? 0.71)),
+                estimatedMaximumAirTime: (2 * Math.abs(this.world?.jumpForce ?? -13.2)) / (this.world?.gravity ?? 0.71),
+                estimatedMaximumHorizontalTravel: ((2 * Math.abs(this.world?.jumpForce ?? -13.2)) / (this.world?.gravity ?? 0.71)) * (this.world?.playerSpeed ?? 5),
+                cameraFollowMode: this.world?.cameraFollowMode || 'both',
+                note: 'Treat estimates as theoretical limits, not targets; keep every generated jump comfortably below them.'
+            },
             objectTemplates: {
                 platform: object({ name: 'Platform', appearanceType: 'ground', actingType: 'ground' }),
-                spawnPoint: object({ id: 'ai_spawn', type: 'koreen', name: 'Spawn Point', appearanceType: 'spawnpoint', actingType: 'spawnpoint', collision: false, color: '#4CAF50' }),
-                endPoint: object({ id: 'ai_endpoint', type: 'koreen', name: 'End Point', appearanceType: 'endpoint', actingType: 'endpoint', collision: false, color: '#FFD700' }),
+                spawnPoint: object({ id: 'ai_spawn', type: 'koreen', name: 'Spawn Point', width: 32, height: 32, appearanceType: 'spawnpoint', actingType: 'spawnpoint', collision: false, color: '#4CAF50' }),
+                endPoint: object({ id: 'ai_endpoint', type: 'koreen', name: 'End Point', width: 32, height: 32, appearanceType: 'endpoint', actingType: 'endpoint', collision: false, color: '#FFD700' }),
                 spike: object({ id: 'ai_spike', name: 'Spike', appearanceType: 'spike', actingType: 'spike', color: this.world?.defaultSpikeColor || '#c45a3f' }),
-                checkpoint: object({ id: 'ai_checkpoint', type: 'koreen', name: 'Checkpoint', appearanceType: 'checkpoint', actingType: 'checkpoint', color: '#4CAF50' }),
+                checkpoint: object({ id: 'ai_checkpoint', type: 'koreen', name: 'Checkpoint', width: 32, height: 32, appearanceType: 'checkpoint', actingType: 'checkpoint', collision: false, color: '#4CAF50' }),
                 bouncer: object({ id: 'ai_bouncer', name: 'Bouncer', appearanceType: 'bouncer', actingType: 'bouncer', bouncerStrength: 20, bouncerDirection: 0, bouncerMatchAppearance: true, bouncerAppearanceDirection: 0 }),
                 coin: object({ id: 'ai_coin', type: 'koreen', name: 'Coin', appearanceType: 'coin', actingType: 'coin', collision: false, coinAmount: 1, coinActivityScope: 'global' }),
                 spinner: object({ id: 'ai_spinner', type: 'spinner', name: 'Spinner', appearanceType: 'spinner', actingType: 'spike', spinSpeed: 1 }),
@@ -925,6 +936,25 @@ class Editor {
             }
         }
         if (!Array.isArray(next.objects) || next.objects.length > 20000 || JSON.stringify(next).length > 8 * 1024 * 1024) throw new Error('The proposed map is too large or incomplete to apply.');
+
+        // Normalize only changed AI-generated markers. Special points are
+        // deliberately non-solid and should keep the same footprint as the
+        // editor's placement tools, even if the model returns platform geometry.
+        const originalObjects = new Map((map.objects || []).map(object => [object.id, JSON.stringify(object)]));
+        const markerTypes = new Set(['checkpoint', 'spawnpoint', 'endpoint']);
+        for (const object of next.objects) {
+            if (!object || typeof object !== 'object') continue;
+            const markerType = markerTypes.has(object.appearanceType)
+                ? object.appearanceType
+                : markerTypes.has(object.actingType) ? object.actingType : null;
+            if (!markerType || originalObjects.get(object.id) === JSON.stringify(object)) continue;
+            object.type = 'koreen';
+            object.appearanceType = markerType;
+            object.actingType = markerType;
+            object.width = GRID_SIZE;
+            object.height = GRID_SIZE;
+            object.collision = false;
+        }
         return next;
     }
 
@@ -932,15 +962,25 @@ class Editor {
         if (!operations.some(operation => ['objects', 'tilemaps'].includes(operation?.path?.[0]))) return;
         const changedObjects = new Set();
         const changedTilemaps = new Set();
+        let objectCount = baseMap.objects?.length || 0;
+        let tilemapCount = baseMap.tilemaps?.length || 0;
         for (const operation of operations) {
             const root = operation?.path?.[0];
             const index = Number(operation?.path?.[1]);
             if (root === 'objects') {
                 if (Number.isInteger(index)) changedObjects.add(index);
-                else (nextMap.objects || []).forEach((_, i) => changedObjects.add(i));
+                else if (operation.op === 'add') changedObjects.add(objectCount++);
+                else {
+                    (nextMap.objects || []).forEach((_, i) => changedObjects.add(i));
+                    objectCount = nextMap.objects?.length || 0;
+                }
             } else if (root === 'tilemaps') {
                 if (Number.isInteger(index)) changedTilemaps.add(index);
-                else (nextMap.tilemaps || []).forEach((_, i) => changedTilemaps.add(i));
+                else if (operation.op === 'add') changedTilemaps.add(tilemapCount++);
+                else {
+                    (nextMap.tilemaps || []).forEach((_, i) => changedTilemaps.add(i));
+                    tilemapCount = nextMap.tilemaps?.length || 0;
+                }
             }
         }
         const bounds = [];
@@ -969,9 +1009,9 @@ class Editor {
         const right = Math.max(...bounds.map(item => item.right));
         const bottom = Math.max(...bounds.map(item => item.bottom));
         const camera = this.camera;
-        const padding = 128;
-        const fitZoom = Math.min(camera.width / (right - left + padding * 2), camera.height / (bottom - top + padding * 2));
-        camera.setZoom(Math.max(camera.minZoom, Math.min(camera.defaultZoom, fitZoom)));
+        // Center on the edited objects without zooming out to fit them. A
+        // root-level append previously included every existing map object and
+        // could shrink the editor view dramatically after even a small edit.
         camera.targetX = camera.x = (left + right) / 2 - camera.width / 2 / camera.zoom;
         camera.targetY = camera.y = (top + bottom) / 2 - camera.height / 2 / camera.zoom;
     }
@@ -1007,21 +1047,32 @@ class Editor {
             const result = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
             const operations = Array.isArray(result.operations) ? result.operations : [];
-            const assistantReply = result.message || (operations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            const protectedSettingRoots = new Set([
+                'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds',
+                'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed',
+                'jumpForce', 'gravity', 'maxJumps', 'infiniteJumps', 'additionalAirjump'
+            ]);
+            const explicitlyRequestedSettingChange = /\b(camera|zoom|follow mode|framing|camera bounds|physics|player speed|gravity|jump force|air control|max jumps|infinite jumps)\b/i.test(prompt);
+            const safeOperations = operations.filter(operation =>
+                explicitlyRequestedSettingChange || !protectedSettingRoots.has(operation?.path?.[0])
+            );
+            const ignoredProtectedSettingEdits = operations.length - safeOperations.length;
+            let assistantReply = result.message || (safeOperations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            if (ignoredProtectedSettingEdits) assistantReply += ' I kept your existing camera and movement settings because this request did not ask to change them.';
             waiting.querySelector('p').textContent = assistantReply;
             this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: assistantReply.slice(0, 2000) });
             this._aiConversation = this._aiConversation.slice(-8);
             const thread = this._aiThreads.find(item => item.id === this._aiCurrentThreadId);
             if (thread) thread.conversation = this._aiConversation.slice(-8);
             this.persistAIAssistantMessage('assistant', assistantReply);
-            if (operations.length) {
-                this._aiPendingMap = this.applyAIAssistantOperations(baseMap, operations);
+            if (safeOperations.length) {
+                this._aiPendingMap = this.applyAIAssistantOperations(baseMap, safeOperations);
                 this._aiPendingBase = JSON.stringify(baseMap);
-                this._aiPendingOperations = operations;
-                document.getElementById('ai-assistant-change-count').textContent = `${operations.length} edit${operations.length === 1 ? '' : 's'}`;
+                this._aiPendingOperations = safeOperations;
+                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edit${safeOperations.length === 1 ? '' : 's'}`;
                 const preview = document.getElementById('ai-assistant-preview');
                 preview.replaceChildren();
-                for (const operation of operations) {
+                for (const operation of safeOperations) {
                     const row = document.createElement('li');
                     const pathLabel = operation.path.map(part => /^\d+$/.test(part) ? `#${Number(part) + 1}` : part).join(' › ');
                     let description = `${operation.op.toUpperCase()} · ${pathLabel}`;
@@ -1078,7 +1129,7 @@ class Editor {
             this._aiPendingOperations = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
             this.closeAIAssistant();
-            this.showToast('AI edits applied and centered on the changed map content. Undo with Ctrl+Z (or ⌘Z on Mac).', 'success');
+            this.showToast('AI edits applied. Camera zoom was preserved. Undo with Ctrl+Z (or ⌘Z on Mac).', 'success');
         } catch (error) {
             this.showToast(error.message || 'Could not apply the assistant changes.', 'error');
         } finally {
@@ -1466,7 +1517,7 @@ class Editor {
                         
                         <!-- Default Colors -->
                         <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-light);">
-                            <label class="form-label" style="font-weight: 600; margin-bottom: 12px;">Default Colors</label>
+                            <label class="form-label" style="font-weight: 500; margin-bottom: 12px;">Default Colors</label>
                             <div class="form-group">
                                 <label class="form-label">Block Color</label>
                         <div class="color-picker-option">
@@ -1506,7 +1557,7 @@ class Editor {
                 
                         <!-- Checkpoint Colors -->
                         <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-light);">
-                            <label class="form-label" style="font-weight: 600; margin-bottom: 12px;">Checkpoint Colors</label>
+                            <label class="form-label" style="font-weight: 500; margin-bottom: 12px;">Checkpoint Colors</label>
                     <div class="form-group">
                                 <label class="form-label">Default</label>
                                 <div class="color-picker-option">
@@ -1782,7 +1833,7 @@ class Editor {
                 </div>
                 
                         <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-light);">
-                            <label class="form-label" style="font-weight: 600; margin-bottom: 12px;">Spike Behavior</label>
+                            <label class="form-label" style="font-weight: 500; margin-bottom: 12px;">Spike Behavior</label>
                             <div class="form-group">
                                 <label class="form-label">Touchbox Mode</label>
                                 <select class="form-select" id="config-spike-touchbox">
@@ -1993,7 +2044,7 @@ class Editor {
                             </label>
                         </div>
                         <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface-light);">
-                            <label class="form-label" style="font-weight: 600; margin-bottom: 12px;">Visual Effects</label>
+                            <label class="form-label" style="font-weight: 500; margin-bottom: 12px;">Visual Effects</label>
                             <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 13px;">Nail Slash Effects</span>
                                 <label class="toggle"><input type="checkbox" id="config-hk-slash-effects" checked><span class="toggle-slider"></span></label>
@@ -2804,7 +2855,7 @@ class Editor {
                     
                     <div class="form-group" id="object-edit-bouncer-group" style="display: none;">
                         <hr style="border-color: var(--surface-light); margin: 8px 0;">
-                        <label class="form-label" style="font-weight: 600;">Bounce Strength</label>
+                        <label class="form-label" style="font-weight: 500;">Bounce Strength</label>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <input type="range" class="form-range" id="object-edit-bouncer-strength" min="5" max="50" step="1" value="20" style="flex: 1;">
                             <span id="object-edit-bouncer-strength-label" style="font-size: 13px; min-width: 32px; text-align: right; color: #fff;">20</span>
@@ -9687,7 +9738,7 @@ class Editor {
                     previewStyle = `width: 24px; height: 24px; position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 2px dashed rgba(255, 255, 255, 1); background: rgba(255, 255, 255, 0.3); border-radius: 4px;`;
                     previewContent = `<span class="material-symbols-outlined" style="font-size: 14px; color: rgba(255, 255, 255, 1);">select_all</span>`;
                 } else if (obj.type === 'text') {
-                    previewStyle = `width: 24px; height: 24px; position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: ${obj.color}; font-size: 14px;`;
+                    previewStyle = `width: 24px; height: 24px; position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 500; color: ${obj.color}; font-size: 14px;`;
                     previewContent = 'T';
                 } else {
                     // Block/ground - square

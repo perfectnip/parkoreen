@@ -201,7 +201,7 @@
         }
         .loading-title {
             font-size: 1.5rem;
-            font-weight: 600;
+            font-weight: 500;
             margin-bottom: 20px;
             color: #4ade80;
         }
@@ -599,7 +599,7 @@
                 padding: 32px;
                 max-width: 400px;
                 text-align: center;
-                font-family: 'Parkoreen UI', sans-serif;
+                font-family: 'Oxanium', sans-serif;
             `;
             
             popup.innerHTML = `
@@ -2251,7 +2251,7 @@
                     'padding:10px 20px',
                     'font-size:clamp(2rem, 7vw, 5.5rem)',
                     'font-family:"Parkoreen Game", "Jersey 10", monospace',
-                    'font-weight:900',
+                    'font-weight:500',
                     'line-height:1.08',
                     'letter-spacing:0.02em',
                     'text-align:center',
@@ -2612,8 +2612,8 @@
             messageEl.dataset.senderName = name || '';
             messageEl.dataset.senderUsername = '';
             messageEl.innerHTML = `
-                <span class="chat-message-name" style="color: ${color || '#fff'}; font-weight: 700;">${escapeHtml(getDisplayedChatAuthor(name || '', ''))}:</span>
-                <span class="chat-message-text" style="font-weight: 700;">${formatChatColors(message)}</span>
+                <span class="chat-message-name" style="color: ${color || '#fff'}; font-weight: 500;">${escapeHtml(getDisplayedChatAuthor(name || '', ''))}:</span>
+                <span class="chat-message-text" style="font-weight: 500;">${formatChatColors(message)}</span>
             `;
             container.appendChild(messageEl);
             container.scrollTop = container.scrollHeight;
