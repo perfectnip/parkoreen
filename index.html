@@ -303,6 +303,34 @@
             background: var(--primary);
             transform: scale(1.2);
         }
+
+        @media (max-width: 700px) {
+            .page-content { gap: 8px; padding: 0 10px 20px; }
+            .levels-nav-btn { width: 44px; height: 44px; }
+            .levels-nav-btn svg { width: 28px; height: 28px; }
+            .levels-groups-container { gap: 16px; }
+            .level-group,
+            .level-group-locked {
+                width: max(168px, calc(100vw - 148px));
+            }
+            .level-group {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-rows: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .level-card { width: 100%; height: auto; aspect-ratio: 1; border-width: 2px; }
+            .level-card-icon { font-size: clamp(30px, 9vw, 42px); margin-bottom: 6px; }
+            .level-card-name { font-size: clamp(.84rem, 3.5vw, 1rem); }
+            .level-card-status { font-size: .72rem; }
+            .group-indicator { bottom: 12px; gap: 10px; }
+            .group-dot { width: 10px; height: 10px; }
+        }
+
+        @media (max-width: 380px) {
+            .page-header-left .btn { padding: 7px 9px; gap: 5px; font-size: .78rem; }
+            #btn-map-editor { font-size: 0; }
+            #btn-map-editor .material-symbols-outlined { font-size: 22px; }
+        }
     </style>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -638,6 +666,15 @@
             return false;
         }
 
+        function measureGroupStride() {
+            const firstNode = container.firstElementChild;
+            if (!firstNode) return;
+            const width = firstNode.getBoundingClientRect().width || 612;
+            const gap = parseFloat(getComputedStyle(container).columnGap) || 0;
+            groupStride = width + gap;
+            container.style.transform = `translateX(${-currentGroup * groupStride}px)`;
+        }
+
         function renderLevelGroups() {
             container.innerHTML = '';
 
@@ -717,15 +754,8 @@
                 indicator.appendChild(dot);
             });
 
-            // Cache the stride (group width + gap) for goToGroup's slide math.
-            // Both groups and locked placeholders share the same flex stride.
-            requestAnimationFrame(() => {
-                const firstNode = container.firstElementChild;
-                if (firstNode) {
-                    const w = firstNode.offsetWidth || 612;
-                    groupStride = w + 60;
-                }
-            });
+            // Measure the responsive group width and gap for slide navigation.
+            requestAnimationFrame(measureGroupStride);
         }
 
         // Update indicator/dots/nav-button state for the current group
@@ -748,6 +778,8 @@
             container.style.transform = `translateX(${offset}px)`;
             updateGroupVisibility();
         }
+
+        window.addEventListener('resize', () => requestAnimationFrame(measureGroupStride));
 
         // Navigate to previous group
         function prevGroup() {
