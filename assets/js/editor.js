@@ -576,9 +576,8 @@ class Editor {
                 </div>
                 <div class="ai-assistant-messages" id="ai-assistant-messages" aria-live="polite"></div>
                 <div class="ai-assistant-pending hidden" id="ai-assistant-pending">
-                    <div><strong>Map changes ready</strong><span id="ai-assistant-change-count"></span></div>
-                    <button type="button" class="btn btn-accent" id="ai-assistant-apply"><span class="material-symbols-outlined">check</span>Apply &amp; view map</button>
-                    <ul class="ai-assistant-preview" id="ai-assistant-preview" aria-label="Proposed map edits"></ul>
+                    <div><strong id="ai-assistant-result-title">Map updated</strong><span id="ai-assistant-change-count"></span></div>
+                    <button type="button" class="btn btn-secondary" id="ai-assistant-apply"><span class="material-symbols-outlined">undo</span>Undo AI edit</button>
                 </div>
                 <form class="ai-assistant-form" id="ai-assistant-form">
                     <textarea id="ai-assistant-input" rows="3" maxlength="2000" placeholder="Describe what you want to build or change…" aria-label="Message the map assistant" required></textarea>
@@ -596,6 +595,7 @@ class Editor {
         this._aiPendingMap = null;
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
+        this._aiAppliedSnapshot = null;
         this.loadAIAssistantConversations();
 
         document.getElementById('btn-ai-assistant').addEventListener('click', () => this.openAIAssistant());
@@ -632,7 +632,7 @@ class Editor {
             event.preventDefault();
             aiForm.requestSubmit();
         });
-        document.getElementById('ai-assistant-apply').addEventListener('click', () => this.applyAIAssistantChanges());
+        document.getElementById('ai-assistant-apply').addEventListener('click', () => this.undoAIAssistantChanges());
         overlay.addEventListener('keydown', event => {
             if (event.key === 'Escape') this.closeAIAssistant();
         });
@@ -1032,62 +1032,77 @@ class Editor {
         this._aiPendingBase = null;
         this._aiPendingOperations = null;
         document.getElementById('ai-assistant-pending').classList.add('hidden');
-        const baseMap = this.world.toJSON();
-        const mapForAI = this.stripAIAssistantMedia(baseMap);
         const waiting = this.addAIAssistantMessage('assistant', 'Thinking about your map…');
         sendButton.disabled = true;
         document.getElementById('ai-assistant-new').disabled = true;
         document.querySelectorAll('#ai-assistant-thread-list button').forEach(button => { button.disabled = true; });
         try {
-            const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ prompt, conversation: this._aiConversation.slice(-8), map: mapForAI, mechanicsReference: this.getAIAssistantMechanicsReference() })
-            });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
-            const operations = Array.isArray(result.operations) ? result.operations : [];
             const protectedSettingRoots = new Set([
                 'cameraLerpX', 'cameraLerpY', 'cameraFollowMode', 'cameraBounds',
                 'playerSpeed', 'horizontalAcceleration', 'airControl', 'terminalFallSpeed',
                 'jumpForce', 'gravity', 'maxJumps', 'infiniteJumps', 'additionalAirjump'
             ]);
             const explicitlyRequestedSettingChange = /\b(camera|zoom|follow mode|framing|camera bounds|physics|player speed|gravity|jump force|air control|max jumps|infinite jumps)\b/i.test(prompt);
-            const safeOperations = operations.filter(operation =>
-                explicitlyRequestedSettingChange || !protectedSettingRoots.has(operation?.path?.[0])
-            );
-            const ignoredProtectedSettingEdits = operations.length - safeOperations.length;
-            let assistantReply = result.message || (safeOperations.length ? 'I prepared map changes for you to review.' : 'I could not produce map changes. Try describing the goal more specifically.');
+            const conversation = this._aiConversation.slice(-8);
+            let baseMap = this.world.toJSON();
+            let operations = [];
+            let result = null;
+            let ignoredProtectedSettingEdits = 0;
+            // If the player edits while the model is generating, discard the stale
+            // proposal and ask it to continue from a fresh snapshot. Keep retrying
+            // while edits continue, with a small cap to avoid runaway requests.
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const requestMap = JSON.stringify(baseMap);
+                const requestPrompt = attempt === 0 ? prompt : [
+                    'The user changed the map while you were working. Continue the original request using the latest map snapshot below.',
+                    'Preserve the user\'s new edits and settings. Re-plan against this exact current map; do not overwrite or duplicate existing content.',
+                    `Original request: ${prompt}`,
+                    'Your previous proposal is context only. Return operations that apply cleanly to the current map.'
+                ].join('\n');
+                if (attempt > 0) waiting.querySelector('p').textContent = 'The map changed while I worked. Rebuilding on your latest edits…';
+                const response = await fetch(`${window.API_URL}/editor/ai-assist`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ prompt: requestPrompt, conversation, map: this.stripAIAssistantMedia(baseMap), mechanicsReference: this.getAIAssistantMechanicsReference() })
+                });
+                result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.message || (response.status === 503 ? 'The AI service is not configured yet.' : 'The map assistant could not complete that request.'));
+                operations = Array.isArray(result.operations) ? result.operations : [];
+                const currentMap = this.world.toJSON();
+                if (JSON.stringify(currentMap) === requestMap) break;
+                if (attempt === 3) throw new Error('The map kept changing while I was rebuilding. Your edits are safe; send the request again when the map is ready.');
+                baseMap = currentMap;
+            }
+            const safeOperations = operations.filter(operation => explicitlyRequestedSettingChange || !protectedSettingRoots.has(operation?.path?.[0]));
+            ignoredProtectedSettingEdits = operations.length - safeOperations.length;
+            let assistantReply = result.message || (safeOperations.length ? 'I updated the map.' : 'I could not produce map changes. Try describing the goal more specifically.');
             if (ignoredProtectedSettingEdits) assistantReply += ' I kept your existing camera and movement settings because this request did not ask to change them.';
+            if (safeOperations.length) {
+                const nextMap = this.applyAIAssistantOperations(baseMap, safeOperations);
+                this.beginUndoTransaction();
+                try {
+                    this.world.fromJSON(nextMap);
+                    if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
+                    this.updateBackground();
+                    this.syncConfigPanel?.();
+                    this.updateLayersList();
+                    this.triggerMapChange();
+                    this.focusAIAssistantChanges(baseMap, nextMap, safeOperations);
+                    this._aiAppliedSnapshot = JSON.stringify(this.world.toJSON());
+                    document.getElementById('ai-assistant-result-title').textContent = 'Applied to your map';
+                    document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edit${safeOperations.length === 1 ? '' : 's'} · undo anytime`;
+                    document.getElementById('ai-assistant-pending').classList.remove('hidden');
+                    this.showToast('AI edits applied. Use Undo AI edit to revert them.', 'success');
+                } finally {
+                    this.endUndoTransaction();
+                }
+            }
             waiting.querySelector('p').textContent = assistantReply;
             this._aiConversation.push({ role: 'user', content: prompt }, { role: 'assistant', content: assistantReply.slice(0, 2000) });
             this._aiConversation = this._aiConversation.slice(-8);
             const thread = this._aiThreads.find(item => item.id === this._aiCurrentThreadId);
             if (thread) thread.conversation = this._aiConversation.slice(-8);
             this.persistAIAssistantMessage('assistant', assistantReply);
-            if (safeOperations.length) {
-                this._aiPendingMap = this.applyAIAssistantOperations(baseMap, safeOperations);
-                this._aiPendingBase = JSON.stringify(baseMap);
-                this._aiPendingOperations = safeOperations;
-                document.getElementById('ai-assistant-change-count').textContent = `${safeOperations.length} edit${safeOperations.length === 1 ? '' : 's'}`;
-                const preview = document.getElementById('ai-assistant-preview');
-                preview.replaceChildren();
-                for (const operation of safeOperations) {
-                    const row = document.createElement('li');
-                    const pathLabel = operation.path.map(part => /^\d+$/.test(part) ? `#${Number(part) + 1}` : part).join(' › ');
-                    let description = `${operation.op.toUpperCase()} · ${pathLabel}`;
-                    if (operation.op !== 'remove') {
-                        try {
-                            const value = JSON.parse(operation.valueJson);
-                            const valueLabel = typeof value === 'object' ? (value?.name || value?.mapName || value?.appearanceType || value?.type || 'map entry') : JSON.stringify(value);
-                            description += ` → ${String(valueLabel).slice(0, 90)}`;
-                        } catch (_) {}
-                    }
-                    row.textContent = description;
-                    preview.appendChild(row);
-                }
-                document.getElementById('ai-assistant-pending').classList.remove('hidden');
-            }
         } catch (error) {
             const errorMessage = error.message || 'The map assistant could not complete that request.';
             waiting.querySelector('p').textContent = errorMessage;
@@ -1100,40 +1115,29 @@ class Editor {
         }
     }
 
-    async applyAIAssistantChanges() {
-        if (!this._aiPendingMap) return;
-        if (JSON.stringify(this.world.toJSON()) !== this._aiPendingBase) {
-            this._aiPendingMap = null;
-            this._aiPendingBase = null;
-            this._aiPendingOperations = null;
+    async undoAIAssistantChanges() {
+        if (!this._aiAppliedSnapshot) return;
+        const applyButton = document.getElementById('ai-assistant-apply');
+        if (JSON.stringify(this.world.toJSON()) !== this._aiAppliedSnapshot) {
+            this._aiAppliedSnapshot = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
-            this.addAIAssistantMessage('assistant', 'Your map changed after I prepared those edits, so I cleared that preview. Ask me to make the changes again against the latest map.');
+            this.showToast('The map has changed since the AI edit. Use the regular undo history to step back through recent edits.', 'info');
             return;
         }
-        const applyButton = document.getElementById('ai-assistant-apply');
         applyButton.disabled = true;
         try {
-            const baseMap = JSON.parse(this._aiPendingBase);
-            const nextMap = this._aiPendingMap;
-            const operations = this._aiPendingOperations || [];
-            this.beginUndoTransaction();
-            this.world.fromJSON(nextMap);
+            this.undo();
             if (window.PluginManager) await window.PluginManager.initFromWorld(this.world);
             this.updateBackground();
             this.syncConfigPanel?.();
             this.updateLayersList();
             this.triggerMapChange();
-            this.focusAIAssistantChanges(baseMap, nextMap, operations);
-            this._aiPendingMap = null;
-            this._aiPendingBase = null;
-            this._aiPendingOperations = null;
+            this._aiAppliedSnapshot = null;
             document.getElementById('ai-assistant-pending').classList.add('hidden');
-            this.closeAIAssistant();
-            this.showToast('AI edits applied. Camera zoom was preserved. Undo with Ctrl+Z (or ⌘Z on Mac).', 'success');
+            this.showToast('AI edit undone.', 'success');
         } catch (error) {
-            this.showToast(error.message || 'Could not apply the assistant changes.', 'error');
+            this.showToast(error.message || 'Could not undo the AI edit.', 'error');
         } finally {
-            this.endUndoTransaction();
             applyButton.disabled = false;
         }
     }
