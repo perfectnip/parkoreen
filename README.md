@@ -45,12 +45,11 @@ Build parkour courses in the editor, test them locally, then host a real-time mu
 
 | Path | Purpose |
 |------|---------|
-| `/` | Official levels; Level Editor opens the map dashboard |
+| `/` → redirects to `/dashboard/` | Entry point |
 | `/dashboard/` | Map list, create/edit/host maps |
-| `/community/` | Browse, rate, comment on, and publish player maps |
 | `/login/` `/signup/` | Authentication |
 | `/settings/` | Volume, font size, keyboard layout |
-| `/join.html` | Join by code, browse public lobbies, or quick join |
+| `/join/` | Join a room by code |
 | `/mails/` | In-app mail / notifications |
 | `/admin/` | Admin panel (role-gated) |
 | `/wiki/` | Parkoreen Guide (offline-first HTML reference) |
