@@ -130,9 +130,18 @@
             fill: currentColor;
         }
 
+        .levels-viewport {
+            flex: 0 1 612px;
+            width: min(612px, calc(100vw - 224px));
+            min-width: 0;
+            overflow: hidden;
+        }
+
         /* Groups live as a horizontal track; we slide the track on navigation */
         .levels-groups-container {
             display: flex;
+            width: max-content;
+            flex: 0 0 auto;
             gap: 60px;
             transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
             will-change: transform;
@@ -303,6 +312,65 @@
             background: var(--primary);
             transform: scale(1.2);
         }
+
+        @media (max-width: 850px) {
+            .level-group, .level-group-locked { width: min(612px, calc(100vw - 224px)); }
+            .level-group {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-rows: repeat(2, minmax(0, 1fr));
+            }
+            .level-card { width: 100%; height: auto; aspect-ratio: 1; }
+        }
+
+        @media (max-width: 700px) {
+            .page-content { gap: 8px; padding: 0 10px 20px; }
+            .levels-nav-btn { width: 44px; height: 44px; }
+            .levels-nav-btn svg { width: 28px; height: 28px; }
+            .levels-viewport { flex: 0 1 auto; width: max(168px, calc(100vw - 148px)); }
+            .levels-groups-container { gap: 16px; }
+            .level-group, .level-group-locked { width: max(168px, calc(100vw - 148px)); }
+            .level-group {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-rows: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .level-card { width: 100%; height: auto; aspect-ratio: 1; border-width: 2px; }
+            .level-card-icon { font-size: clamp(30px, 9vw, 42px); margin-bottom: 6px; }
+            .level-card-name { font-size: clamp(.84rem, 3.5vw, 1rem); }
+            .level-card-status { font-size: .72rem; }
+            .group-indicator { bottom: 12px; gap: 10px; }
+            .group-dot { width: 10px; height: 10px; }
+        }
+
+        @media (max-width: 380px) {
+            .page-content { gap: 6px; padding-right: 7px; padding-left: 7px; }
+            .levels-nav-btn { width: 36px; height: 40px; }
+            .levels-nav-btn svg { width: 24px; height: 24px; }
+            .levels-viewport, .level-group, .level-group-locked { width: max(136px, calc(100vw - 116px)); }
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .levels-viewport { animation: level-viewport-arrive 420ms cubic-bezier(.2,.8,.2,1) both; }
+            .levels-nav-btn { animation: level-nav-arrive 420ms cubic-bezier(.2,.8,.2,1) both; }
+            #btn-prev { animation-delay: 90ms; }
+            #btn-next { animation-delay: 150ms; }
+            .group-indicator { animation: level-indicator-arrive 380ms 180ms cubic-bezier(.2,.8,.2,1) both; }
+            .group-dot { transition: transform 180ms cubic-bezier(.2,.8,.2,1), width 180ms ease, background-color 180ms ease; }
+            .group-dot:hover { transform: scale(1.35); }
+            .levels-nav-btn:hover:not(:disabled) svg { animation: level-arrow-nudge 320ms ease both; }
+            #btn-prev:hover:not(:disabled) svg { animation-name: level-arrow-nudge-left; }
+            @keyframes level-viewport-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes level-nav-arrive { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes level-indicator-arrive { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+            @keyframes level-arrow-nudge { 50% { transform: translateX(3px); } }
+            @keyframes level-arrow-nudge-left { 50% { transform: translateX(-3px); } }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .levels-viewport, .levels-nav-btn, .group-indicator, .group-dot {
+                animation: none !important;
+                transition-duration: .01ms !important;
+            }
+        }
     </style>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -334,15 +402,17 @@
         </header>
 
         <main class="page-content" style="display: flex; align-items: center; justify-content: center; overflow: hidden;">
-            <button class="levels-nav-btn" id="btn-prev" disabled aria-label="Previous level group">
+            <button class="levels-nav-btn" id="btn-prev" type="button" disabled aria-label="Previous level group" title="Previous level group" aria-controls="levels-viewport">
                 <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
             </button>
 
-            <div class="levels-groups-container" id="levels-container">
-                <!-- Level groups will be inserted here -->
+            <div class="levels-viewport" id="levels-viewport" aria-label="Level groups">
+                <div class="levels-groups-container" id="levels-container">
+                    <!-- Level groups will be inserted here -->
+                </div>
             </div>
 
-            <button class="levels-nav-btn" id="btn-next" aria-label="Next level group">
+            <button class="levels-nav-btn" id="btn-next" type="button" aria-label="Next level group" title="Next level group" aria-controls="levels-viewport">
                 <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
             </button>
         </main>
