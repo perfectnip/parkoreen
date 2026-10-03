@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Install Parkoreen as an app on Android, Windows, macOS, Linux, or Chromebook.">
+  <meta name="theme-color" content="#2d5a27">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="apple-touch-icon" href="../assets/png/icons/icon-play-128.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <title>Get Parkoreen — Play on any device</title>
+  <style>
+    body { min-height:100vh; overflow:auto; padding:24px; }
+    .download-page { width:min(1040px,100%); margin:0 auto 48px; }
+    .download-hero { text-align:center; padding:44px 20px 32px; }
+    .download-hero h1 { margin:8px 0 12px; font-size:clamp(2rem,6vw,3.5rem); }
+    .download-hero p { max-width:680px; margin:0 auto; color:var(--text-secondary); line-height:1.65; }
+    .download-actions { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-top:22px; }
+    .install-status { min-height:1.5em; margin:12px 0 0; color:var(--text-secondary); }
+    .device-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+    .device-card { padding:22px; border:1px solid var(--surface-light,rgba(255,255,255,.12)); border-radius:16px; background:var(--bg-medium,#1a1a2e); }
+    .device-card h2 { margin:0 0 10px; display:flex; align-items:center; gap:10px; }
+    .device-card p,.device-card li { color:var(--text-secondary); line-height:1.55; }
+    .device-card ol { padding-left:22px; }
+    .device-card li+li { margin-top:6px; }
+    .device-card.is-recommended { border-color:#007800; box-shadow:0 0 0 1px rgba(0,120,0,.22); }
+    .download-foot { margin:22px 0; color:var(--text-secondary); line-height:1.6; }
+    .download-foot a { color:var(--accent,#ff7800); }
+    @media (prefers-reduced-motion:no-preference) {
+      .device-card { animation:card-in .48s cubic-bezier(.2,.8,.2,1) both; }
+      .device-card:nth-child(2) { animation-delay:60ms; }
+      .device-card:nth-child(3) { animation-delay:120ms; }
+      .device-card:nth-child(4) { animation-delay:180ms; }
+      .device-card:nth-child(5) { animation-delay:240ms; }
+      @keyframes card-in { from { opacity:0; transform:translateY(14px) scale(.98); } to { opacity:1; transform:translateY(0) scale(1); } }
+    }
+  </style>
+</head>
+<body>
+<main class="download-page">
+  <header class="download-hero">
+    <a class="btn btn-secondary" href="../"><span class="material-symbols-outlined">arrow_back</span>Back to Parkoreen</a>
+    <h1>Parkoreen on your device</h1>
+    <p>Install Parkoreen as a web app for a home-screen or desktop shortcut and a focused, app-like window. It’s the same game on every device, and it updates from the web whenever you’re online.</p>
+    <div class="download-actions">
+      <button class="btn btn-primary" id="install-app" type="button" hidden><span class="material-symbols-outlined">download</span>Install Parkoreen</button>
+      <a class="btn btn-secondary" href="../">Play in browser</a>
+    </div>
+    <p class="install-status" id="install-status" aria-live="polite">Choose your device below for installation steps.</p>
+  </header>
+
+  <section class="device-grid" aria-label="Install instructions by device">
+    <article class="device-card" data-platform="android">
+      <h2><span class="material-symbols-outlined">phone_android</span>Android</h2>
+      <ol><li>Open this page in Chrome.</li><li>Tap <strong>Install Parkoreen</strong> above, or open the ⋮ menu and choose <strong>Install app</strong> (sometimes shown as <strong>Add to Home screen</strong>).</li><li>Open Parkoreen from your home screen or app list.</li></ol>
+      <p>The Android version is an installable web app, not a separate APK. Chrome updates it from the website; keep a connection to receive the newest game version.</p>
+      <a href="https://support.google.com/chromebook/answer/9658361?co=GENIE.Platform%3DAndroid&amp;hl=en" target="_blank" rel="noopener">Android web app install help</a>
+    </article>
+    <article class="device-card" data-platform="windows">
+      <h2><span class="material-symbols-outlined">desktop_windows</span>Windows</h2>
+      <ol><li>Open this page in Chrome or Edge.</li><li>Select the install icon in the address bar, or use the browser menu’s <strong>Install Parkoreen</strong> option.</li><li>Launch it from the Start menu or taskbar.</li></ol>
+      <p>The installed app uses the same online game and updates through the browser.</p>
+      <a href="https://support.google.com/chrome/answer/9658361?co=genie.platform%3DDesktop&amp;hl=en" target="_blank" rel="noopener">Chrome web app install help</a>
+    </article>
+    <article class="device-card" data-platform="macos">
+      <h2><span class="material-symbols-outlined">laptop_mac</span>macOS</h2>
+      <ol><li>In Safari, open this page.</li><li>Choose <strong>Share → Add to Dock</strong>. You can also install from Chrome’s address bar or app menu.</li><li>Open Parkoreen from the Dock or Applications.</li></ol>
+      <p>Safari web apps use the current Parkoreen website and receive its updates while online.</p>
+      <a href="https://support.apple.com/guide/safari/turn-a-website-into-an-app-ibrw9e991864/mac" target="_blank" rel="noopener">Apple’s Add to Dock guide</a>
+    </article>
+    <article class="device-card" data-platform="linux">
+      <h2><span class="material-symbols-outlined">computer</span>Linux</h2>
+      <ol><li>Open this page in Chrome or Chromium.</li><li>Select the install icon in the address bar, or open the browser menu and choose <strong>Install Parkoreen</strong>.</li><li>Launch it from your desktop’s application list.</li></ol>
+      <p>On browsers without web app installation, bookmark Parkoreen or create a browser shortcut.</p>
+    </article>
+    <article class="device-card" data-platform="chromebook">
+      <h2><span class="material-symbols-outlined">laptop_chromebook</span>Chromebook</h2>
+      <ol><li>Open this page in Chrome.</li><li>Click the install icon in the address bar, or choose <strong>Save and share → Install page as app</strong>.</li><li>Launch Parkoreen from the Chromebook Launcher.</li></ol>
+      <p>This is the web app version and works on Chromebooks that can access the Parkoreen site.</p>
+      <a href="https://support.google.com/chromebook/answer/9658361?co=GENIE.Platform%3DDesktop&amp;hl=en" target="_blank" rel="noopener">ChromeOS web app install help</a>
+    </article>
+  </section>
+
+  <footer class="download-foot">
+    <h2>Updates and offline use</h2>
+    <p>Parkoreen checks for new web assets when you open the game and updates its local app cache automatically. No separate installer or manual update download is needed. Online access is still required for accounts, Community, multiplayer, and other server features; cached screens may open offline with limited functionality.</p>
+    <p>For the best experience, use a current version of Chrome, Edge, Safari, or Chromium. Installation options depend on your browser and device settings.</p>
+  </footer>
+</main>
+<script src="../assets/js/pwa.js?v=1"></script>
+<script>
+(() => {
+  const button = document.getElementById('install-app');
+  const status = document.getElementById('install-status');
+  const cards = [...document.querySelectorAll('[data-platform]')];
+  const agent = navigator.userAgent;
+  let platform = 'linux';
+  if (/Android/i.test(agent)) platform = 'android';
+  else if (/CrOS/i.test(agent)) platform = 'chromebook';
+  else if (/iPhone|iPad|Macintosh/i.test(agent)) platform = 'macos';
+  else if (/Windows/i.test(agent)) platform = 'windows';
+  cards.find(card => card.dataset.platform === platform)?.classList.add('is-recommended');
+
+  const syncInstallButton = () => { button.hidden = !window.ParkoreenInstall?.available; };
+  window.addEventListener('parkoreen-install-available', syncInstallButton);
+  window.addEventListener('parkoreen-app-installed', () => {
+    button.hidden = true;
+    status.textContent = 'Parkoreen is installed. Open it from your home screen or app launcher.';
+  });
+  button.addEventListener('click', async () => {
+    const installed = await window.ParkoreenInstall?.prompt();
+    if (installed) status.textContent = 'Parkoreen is installing. You can open it from your app launcher.';
+    else if (!window.ParkoreenInstall?.available) status.textContent = 'Use your browser menu and choose Install app or Add to Home screen.';
+    syncInstallButton();
+  });
+  syncInstallButton();
+})();
+</script>
+</body>
+</html>

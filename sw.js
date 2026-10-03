@@ -3,7 +3,7 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'parkoreen-v255';
+const CACHE_NAME = 'parkoreen-v256';
 const ASSETS_TO_CACHE = [
     '/parkoreen/',
     '/parkoreen/index.html',
@@ -11,6 +11,8 @@ const ASSETS_TO_CACHE = [
     '/parkoreen/dashboard/index.html',
     '/parkoreen/community/',
     '/parkoreen/community/index.html',
+    '/parkoreen/download/',
+    '/parkoreen/download/index.html',
     '/parkoreen/join.html',
     '/parkoreen/host.html',
     '/parkoreen/settings/',
@@ -26,6 +28,7 @@ const ASSETS_TO_CACHE = [
     '/parkoreen/assets/js/style.js',
     '/parkoreen/assets/js/exportImport.js',
     '/parkoreen/runtime.js',
+    '/parkoreen/assets/js/pwa.js',
     '/parkoreen/manifest.json',
     '/parkoreen/assets/png/backgrounds/misty-mountains.jpg',
     '/parkoreen/assets/png/backgrounds/pine-forest-haze.jpg',

@@ -187,6 +187,10 @@
             </button>
         </div>
         <div class="dashboard-menu-panel-body">
+            <a href="../download/" class="dashboard-menu-row" style="text-decoration:none;">
+                <span class="material-symbols-outlined">download</span>
+                <span>Get Parkoreen</span>
+            </a>
             <a href="../community/" class="dashboard-menu-row" style="text-decoration:none;">
                 <span class="material-symbols-outlined">public</span>
                 <span>Community</span>
@@ -339,11 +343,7 @@
         console.log('[Debug] MapManager.listMaps:', window.MapManager ? window.MapManager.listMaps : 'N/A');
         console.log('[Debug] MapManager.listMaps type:', window.MapManager ? typeof window.MapManager.listMaps : 'N/A');
         
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('../sw.js')
-                .then(function() { console.log('SW registered'); })
-                .catch(function(e) { console.log('SW failed:', e); });
-        }
+        // PWA setup is shared by the game, dashboard, and download page.
     </script>
     
     <script>
@@ -715,5 +715,6 @@
             return d.innerHTML;
         }
     </script>
+    <script src="../assets/js/pwa.js?v=1"></script>
 </body>
 </html>

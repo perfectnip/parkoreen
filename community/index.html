@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Discover, rate, and share Parkoreen maps.">
     <title>Community — Parkoreen</title>
+    <link rel="manifest" href="../manifest.json">
+    <meta name="theme-color" content="#2d5a27">
     <link rel="stylesheet" href="../assets/css/style.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
     <style>
@@ -23,6 +25,9 @@
         .tag-pill { padding:4px 9px; border-radius:999px; background:rgba(103,171,255,.16); color:var(--text-primary); font-size:12px; }
         .community-rating { color:#ffc857; font-size:14px; }
         .community-meta { color:var(--text-secondary); font-size:13px; }
+        .community-stats { display:flex; flex-wrap:wrap; gap:8px 14px; color:var(--text-secondary); font-size:12px; }
+        .community-section { margin:24px 0; }
+        .community-section h2 { margin-bottom:8px; }
         .community-card .map-actions { margin-top:auto; }
         .community-card .map-actions .btn { flex:1; }
         .tag-picker { display:flex; gap:8px; flex-wrap:wrap; max-height:140px; overflow:auto; padding:8px; border-radius:8px; background:rgba(0,0,0,.12); }
@@ -38,7 +43,7 @@
 <main class="community-wrap">
     <header class="community-head">
         <div><h1>Parkoreen Community</h1><div class="community-meta">Find a map, share your creations, and play together.</div></div>
-        <div class="community-head"><a class="btn btn-secondary" href="../index.html"><span class="material-symbols-outlined">home</span>Home</a><a class="btn btn-secondary" href="../join.html"><span class="material-symbols-outlined">groups</span>Lobbies</a></div>
+        <div class="community-head"><a class="btn btn-secondary" href="../download/"><span class="material-symbols-outlined">download</span>Get App</a><a class="btn btn-secondary" href="../index.html"><span class="material-symbols-outlined">home</span>Home</a><a class="btn btn-secondary" href="../join.html"><span class="material-symbols-outlined">groups</span>Lobbies</a></div>
     </header>
     <section class="card publish-card" id="publish-card">
         <h2>Publish a map</h2>
@@ -52,6 +57,12 @@
             <label class="tag-choice"><input type="checkbox" id="allow-download"> Allow players to download the .pkrn map file</label>
             <div style="margin-top:12px;"><button class="btn btn-primary" type="submit">Publish map</button></div>
         </form>
+    </section>
+    <section class="community-section" id="published-section" hidden>
+        <h2>Your published maps</h2>
+        <p class="community-meta">See ratings, comments, plays, and downloads for your community maps.</p>
+        <div class="community-grid" id="published-grid"></div>
+        <p id="published-status" class="community-meta"></p>
     </section>
     <div class="community-toolbar">
         <label class="form-label">Tag <select class="form-select" id="tag-filter"><option value="">All tags</option></select></label>
@@ -76,12 +87,14 @@
 <script src="../runtime.js?v=29"></script>
 <script src="../assets/js/style.js?v=12"></script>
 <script src="../assets/js/exportImport.js?v=17"></script>
+<script src="../assets/js/pwa.js?v=1"></script>
 <script>
 (() => {
     const token = () => window.Auth?.getToken?.() || '';
     const authHeaders = () => token() ? { Authorization: 'Bearer ' + token() } : {};
     const status = document.getElementById('community-status');
     const grid = document.getElementById('community-grid');
+    const publishedGrid = document.getElementById('published-grid');
     let selectedMapId = null;
     let loadedTags = [];
     async function api(path, options = {}) {
@@ -109,11 +122,15 @@
         const title = document.createElement('h3'); title.textContent = map.name || 'Untitled Map';
         const owner = document.createElement('div'); owner.className = 'community-meta'; owner.textContent = 'By ' + (map.ownerName || 'Player');
         const rating = document.createElement('div'); rating.className = 'community-rating'; rating.textContent = '★ ' + (Number(map.ratingAverage || 0).toFixed(1)) + ' · ' + (map.ratingCount || 0) + ' ratings';
+        const stats = document.createElement('div'); stats.className = 'community-stats';
+        [['Plays', map.playCount], ['Comments', map.commentCount], ['Downloads', map.downloadCount]].forEach(([label, value]) => {
+            const item = document.createElement('span'); item.textContent = `${Number(value || 0).toLocaleString()} ${label.toLowerCase()}`; stats.appendChild(item);
+        });
         const tags = document.createElement('div'); tags.className = 'tag-list'; (map.tags || []).forEach(value => { const pill = document.createElement('span'); pill.className = 'tag-pill'; pill.textContent = value; tags.appendChild(pill); });
         const actions = document.createElement('div'); actions.className = 'map-actions';
         const view = document.createElement('button'); view.className = 'btn btn-secondary'; view.textContent = 'Details'; view.onclick = () => openMap(map.id);
         const host = document.createElement('button'); host.className = 'btn btn-primary'; host.textContent = 'Host'; host.onclick = () => hostMap(map.id);
-        actions.append(view, host); card.append(title, owner, rating, tags, actions);
+        actions.append(view, host); card.append(title, owner, rating, stats, tags, actions);
         return card;
     }
     async function loadMaps() {
@@ -141,6 +158,19 @@
             if (!maps.length) select.appendChild(new Option('Create a map in your dashboard first', ''));
         } catch (error) { select.appendChild(new Option('Could not load your maps', '')); }
     }
+    async function loadPublishedMaps() {
+        const section = document.getElementById('published-section');
+        const publishedStatus = document.getElementById('published-status');
+        section.hidden = !window.Auth?.isLoggedIn();
+        publishedGrid.replaceChildren();
+        if (section.hidden) return;
+        publishedStatus.textContent = 'Loading your published maps…';
+        try {
+            const data = await api('/community/maps?mine=1&sort=new');
+            (data.maps || []).forEach(map => publishedGrid.appendChild(mapCard(map)));
+            publishedStatus.textContent = data.maps?.length ? '' : 'You have not published any maps yet.';
+        } catch (error) { publishedStatus.textContent = error.message; }
+    }
     async function openMap(id) {
         selectedMapId = id;
         const [detail, comments] = await Promise.all([api('/community/maps/' + id), api('/community/maps/' + id + '/comments')]);
@@ -151,7 +181,7 @@
         const actions = document.getElementById('dialog-actions'); actions.replaceChildren();
         const host = document.createElement('button'); host.type = 'button'; host.className = 'btn btn-primary'; host.textContent = 'Host this map'; host.onclick = () => hostMap(id); actions.appendChild(host);
         if (map.allowDownload) { const download = document.createElement('button'); download.type = 'button'; download.className = 'btn btn-secondary'; download.textContent = 'Download .pkrn'; download.onclick = () => downloadMap(id, map.name); actions.appendChild(download); }
-        document.getElementById('dialog-rating').textContent = '★ ' + Number(map.ratingAverage || 0).toFixed(1) + ' · ' + (map.ratingCount || 0) + ' ratings';
+        document.getElementById('dialog-rating').textContent = '★ ' + Number(map.ratingAverage || 0).toFixed(1) + ' · ' + (map.ratingCount || 0) + ' ratings · ' + Number(map.commentCount || 0).toLocaleString() + ' comments · ' + Number(map.playCount || 0).toLocaleString() + ' plays · ' + Number(map.downloadCount || 0).toLocaleString() + ' downloads';
         const stars = document.getElementById('dialog-stars'); stars.replaceChildren();
         for (let n = 1; n <= 5; n++) { const button = document.createElement('button'); button.className = 'star-button'; button.type = 'button'; button.textContent = n <= (map.myRating || 0) ? '★' : '☆'; button.setAttribute('aria-label', 'Rate ' + n + ' stars'); button.onclick = () => rateMap(n); stars.appendChild(button); }
         renderComments(comments.comments || []);
@@ -193,7 +223,7 @@
             await api('/community/publish', { method: 'POST', body: JSON.stringify({ mapId: document.getElementById('publish-map').value, tags: combined, allowDownload: document.getElementById('allow-download').checked }) });
             status.textContent = 'Map published to the Community.'; document.getElementById('new-tags').value = '';
             document.querySelectorAll('#tag-picker input').forEach(input => input.checked = false);
-            await loadTags(); await loadMaps();
+            await loadTags(); await loadMaps(); await loadPublishedMaps();
         } catch (error) { status.textContent = error.message; }
     });
     document.getElementById('comment-form').addEventListener('submit', async event => {
@@ -203,10 +233,10 @@
         catch (error) { status.textContent = error.message; }
     });
     document.getElementById('dialog-close').onclick = () => document.getElementById('map-dialog').close();
-    document.getElementById('refresh-maps').onclick = loadMaps;
+    document.getElementById('refresh-maps').onclick = async () => { await loadMaps(); await loadPublishedMaps(); };
     document.getElementById('tag-filter').onchange = loadMaps;
     document.getElementById('sort-order').onchange = loadMaps;
-    document.addEventListener('DOMContentLoaded', async () => { await loadTags(); await loadOwnedMaps(); await loadMaps(); });
+    document.addEventListener('DOMContentLoaded', async () => { await loadTags(); await loadOwnedMaps(); await loadMaps(); await loadPublishedMaps(); });
 })();
 </script>
 </body>

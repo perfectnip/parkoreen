@@ -567,16 +567,26 @@ async function handleCommunityTags(env) {
 }
 
 async function handleCommunityList(url, env, userId) {
-    const catalog = await communityCatalog(env);
+    const allCatalogIds = await communityCatalog(env);
     const tagFilter = (url.searchParams.get('tag') || '').trim().toLowerCase();
     const sort = url.searchParams.get('sort') || 'suggested';
+    const ownMapsOnly = url.searchParams.get('mine') === '1';
+    if (ownMapsOnly && !userId) return errorResponse('Sign in to view your published maps', 401);
+    let catalog = allCatalogIds;
+    if (ownMapsOnly) {
+        const indexed = await env.MAPS.get(`community:owner:${userId}`);
+        // Older community entries predate the owner index. Small catalogs can
+        // be scanned once; new publishes are indexed below.
+        catalog = indexed ? JSON.parse(indexed) : allCatalogIds.slice(0, allCatalogIds.length <= 1000 ? 1000 : 500);
+    }
     const preferenceData = userId ? await env.USERS.get(`community:preferences:${userId}`) : null;
     const preferences = preferenceData ? JSON.parse(preferenceData) : { plays: {}, ratings: {} };
     const maps = [];
-    for (const id of catalog.slice(0, 500)) {
+    for (const id of catalog.slice(0, ownMapsOnly ? 1000 : 500)) {
         const raw = await env.MAPS.get(`community:map:${id}`);
         if (!raw) continue;
         const map = JSON.parse(raw);
+        if (ownMapsOnly && map.ownerId !== userId) continue;
         if (tagFilter && !map.tags.some(tag => tag.toLowerCase() === tagFilter)) continue;
         const playAffinity = map.tags.reduce((sum, tag) => sum + (preferences.plays?.[tag.toLowerCase()] || 0), 0);
         const ratingAffinity = map.tags.reduce((sum, tag) => sum + (preferences.ratings?.[tag.toLowerCase()] || 0), 0);
@@ -586,6 +596,7 @@ async function handleCommunityList(url, env, userId) {
             id: map.id, name: map.name, ownerName: map.ownerName, tags: map.tags,
             publishedAt: map.publishedAt, ratingAverage: map.ratingAverage || 0,
             ratingCount: map.ratingCount || 0, commentCount: map.commentCount || 0,
+            playCount: map.playCount || 0, downloadCount: map.downloadCount || 0,
             allowDownload: map.allowDownload === true, score
         });
     }
@@ -616,9 +627,16 @@ async function handleCommunityPublish(request, env, userId) {
         allowDownload: body.allowDownload === true,
         publishedAt: previous?.publishedAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(), ratingAverage: previous?.ratingAverage || 0,
-        ratingCount: previous?.ratingCount || 0, commentCount: previous?.commentCount || 0
+        ratingCount: previous?.ratingCount || 0, commentCount: previous?.commentCount || 0,
+        playCount: previous?.playCount || 0, downloadCount: previous?.downloadCount || 0
     };
-    await env.MAPS.put(`community:map:${mapId}`, JSON.stringify(record));
+    const ownerKey = `community:owner:${userId}`;
+    const ownerMapIds = JSON.parse((await env.MAPS.get(ownerKey)) || '[]');
+    if (!ownerMapIds.includes(mapId)) ownerMapIds.unshift(mapId);
+    await Promise.all([
+        env.MAPS.put(`community:map:${mapId}`, JSON.stringify(record)),
+        env.MAPS.put(ownerKey, JSON.stringify(ownerMapIds.slice(0, 1000)))
+    ]);
     const catalog = await communityCatalog(env);
     if (!catalog.includes(mapId)) catalog.unshift(mapId);
     await env.MAPS.put('community:catalog', JSON.stringify(catalog.slice(0, 20000)));
@@ -634,8 +652,13 @@ async function handleCommunityUnpublish(mapId, env, userId) {
     if (!raw) return errorResponse('Map not found', 404);
     const record = JSON.parse(raw);
     if (record.ownerId !== userId) return errorResponse('Access denied', 403);
+    const ownerKey = `community:owner:${userId}`;
+    const ownerMapIds = JSON.parse((await env.MAPS.get(ownerKey)) || '[]').filter(id => id !== mapId);
     await env.MAPS.delete(`community:map:${mapId}`);
-    await env.MAPS.put('community:catalog', JSON.stringify((await communityCatalog(env)).filter(id => id !== mapId)));
+    await Promise.all([
+        env.MAPS.put('community:catalog', JSON.stringify((await communityCatalog(env)).filter(id => id !== mapId))),
+        env.MAPS.put(ownerKey, JSON.stringify(ownerMapIds))
+    ]);
     return jsonResponse({ success: true });
 }
 
@@ -649,13 +672,18 @@ async function handleCommunityMap(mapId, env, userId, mode = 'detail') {
             id: record.id, name: record.name, ownerName: record.ownerName, tags: record.tags,
             allowDownload: record.allowDownload === true, publishedAt: record.publishedAt,
             ratingAverage: record.ratingAverage || 0, ratingCount: record.ratingCount || 0,
-            commentCount: record.commentCount || 0, myRating: userRatingRaw ? Number(userRatingRaw) : 0
+            commentCount: record.commentCount || 0, playCount: record.playCount || 0,
+            downloadCount: record.downloadCount || 0, myRating: userRatingRaw ? Number(userRatingRaw) : 0
         } });
     }
     if (mode === 'download' && !record.allowDownload) return errorResponse('The creator has disabled downloads', 403);
     const sourceRaw = await env.MAPS.get(`map:${mapId}`);
     const source = sourceRaw ? JSON.parse(sourceRaw) : null;
     if (!source?.data) return errorResponse('Map data is unavailable', 404);
+    if (mode === 'download') {
+        record.downloadCount = Math.max(0, Number(record.downloadCount) || 0) + 1;
+        await env.MAPS.put(`community:map:${mapId}`, JSON.stringify(record));
+    }
     return jsonResponse({ id: mapId, name: record.name, data: source.data });
 }
 
@@ -707,10 +735,14 @@ async function handleCommunityPlay(mapId, env, userId) {
     const raw = await env.MAPS.get(`community:map:${mapId}`);
     if (!raw) return errorResponse('Community map not found', 404);
     const map = JSON.parse(raw);
+    map.playCount = Math.max(0, Number(map.playCount) || 0) + 1;
     const prefsRaw = await env.USERS.get(`community:preferences:${userId}`);
     const prefs = prefsRaw ? JSON.parse(prefsRaw) : { plays: {}, ratings: {} };
     for (const tag of map.tags) prefs.plays[tag.toLowerCase()] = Math.min(500, (prefs.plays[tag.toLowerCase()] || 0) + 1);
-    await env.USERS.put(`community:preferences:${userId}`, JSON.stringify(prefs));
+    await Promise.all([
+        env.USERS.put(`community:preferences:${userId}`, JSON.stringify(prefs)),
+        env.MAPS.put(`community:map:${mapId}`, JSON.stringify(map))
+    ]);
     return jsonResponse({ success: true });
 }
 
